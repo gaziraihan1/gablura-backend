@@ -114,14 +114,14 @@ export const getWorkspace = async (req: AuthRequest, res: Response) => {
       ? await WorkspaceQuery.getById(slug, req.user!.id)
       : await WorkspaceQuery.getBySlug(slug, req.user!.id);
 
-    if (workspace?.deletedAt) {
-      res.status(403).json({
-        success: false,
-        code: "WORKSPACE_SUSPENDED",
-        message: "This workspace has been suspended",
-      });
-      return;
-    }
+    // if (workspace?.suspended) {
+    //   res.status(403).json({
+    //     success: false,
+    //     code: "WORKSPACE_SUSPENDED",
+    //     message: "This workspace has been suspended",
+    //   });
+    //   return;
+    // }
 
     res.json({ success: true, data: workspace });
   } catch (error) {

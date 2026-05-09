@@ -7,6 +7,7 @@ import {
 } from "./label.types.js";
 import { labelListInclude, taskLabelInclude } from "./label.selects.js";
 import { LabelAccess } from "./label.access.js";
+import { LabelCache } from "../../lib/redis/cache.client.js";
 
 export const LabelMutation = {
   async createLabel(data: CreateLabelDto) {
@@ -42,7 +43,7 @@ export const LabelMutation = {
       data.createdById,
     );
 
-    return prisma.label.create({
+    const label = await prisma.label.create({
       data: {
         name: data.name,
         color: data.color,
@@ -52,6 +53,11 @@ export const LabelMutation = {
       },
       include: labelListInclude,
     });
+
+    // Invalidate label list cache
+    await LabelCache.invalidateLabelList(data.createdById, data.workspaceId ?? null);
+
+    return label;
   },
 
   async updateLabel(labelId: string, userId: string, data: UpdateLabelDto) {
@@ -78,7 +84,7 @@ export const LabelMutation = {
       );
     }
 
-    return prisma.label.update({
+    const updatedLabel = await prisma.label.update({
       where: { id: labelId },
       data: {
         ...(data.name !== undefined && { name: data.name }),
@@ -89,6 +95,11 @@ export const LabelMutation = {
       },
       include: labelListInclude,
     });
+
+    await LabelCache.invalidateLabel(labelId);
+    await LabelCache.invalidateLabelList(existingLabel.createdById, existingLabel.workspaceId);
+
+    return updatedLabel;
   },
 
   async deleteLabel(labelId: string, userId: string) {
@@ -107,6 +118,9 @@ export const LabelMutation = {
     }
 
     await prisma.label.delete({ where: { id: labelId } });
+
+    await LabelCache.invalidateLabel(labelId);
+    await LabelCache.invalidateLabelList(label.createdById, label.workspaceId);
 
     return { tasksAffected: label._count.tasks };
   },

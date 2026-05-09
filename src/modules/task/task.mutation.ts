@@ -10,6 +10,7 @@ import {
   rollbackWorkspaceQuota,
 } from "./task.quota.service.js";
 import { redis } from "../../lib/redis.js";
+import { AnalyticsCache, WorkspaceCache } from "../../lib/redis/cache.client.js";
 
 // ─── Plan resolution ──────────────────────────────────────────────────────────
 // Adapt these two functions to match however your DB stores plan info.
@@ -225,6 +226,14 @@ export const TaskMutation = {
 
     console.log(`✨ Task created: "${task.title}" (ID: ${task.id})`);
 
+    // Invalidate analytics and workspace stats cache
+    if (finalWorkspaceId) {
+      await Promise.all([
+        AnalyticsCache.invalidateWorkspace(finalWorkspaceId),
+        WorkspaceCache.invalidateWorkspace(finalWorkspaceId),
+      ]);
+    }
+
     if (onCreated) {
       onCreated({ task, assigneeIds: data.assigneeIds || [] }).catch((err) =>
         console.error("Post-creation callback failed:", err),
@@ -285,6 +294,13 @@ export const TaskMutation = {
     });
 
     console.log(`✏️  Task updated: "${task.title}" (ID: ${task.id})`);
+
+    if (existingTask.workspaceId) {
+      await Promise.all([
+        AnalyticsCache.invalidateWorkspace(existingTask.workspaceId),
+        WorkspaceCache.invalidateWorkspace(existingTask.workspaceId),
+      ]);
+    }
 
     let addedAssigneeIds: string[] = [];
     if (data.assigneeIds !== undefined) {
@@ -356,6 +372,13 @@ export const TaskMutation = {
     });
 
     console.log(`🔄 Task status updated: "${existingTask.title}" → ${status}`);
+
+    if (existingTask.workspaceId) {
+      await Promise.all([
+        AnalyticsCache.invalidateWorkspace(existingTask.workspaceId),
+        WorkspaceCache.invalidateWorkspace(existingTask.workspaceId),
+      ]);
+    }
 
     if (onUpdated) {
       onUpdated({
