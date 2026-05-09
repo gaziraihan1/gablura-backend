@@ -6,6 +6,7 @@ import {
 import { WorkspaceAccess } from "./workspace.access.js";
 import type { WorkspaceStats } from "./workspace.types.js";
 import { projectWorkspaceListSelect } from "../project/project.selects.js";
+import { CacheClient, CACHE_KEYS, CACHE_TTL } from "../../lib/redis/cache.client.js";
 
 export const WorkspaceQuery = {
   async getUserWorkspaces(userId: string) {
@@ -17,6 +18,12 @@ export const WorkspaceQuery = {
   },
 
   async getBySlug(slug: string, userId: string) {
+    // Try cache first
+    const cacheKey = CACHE_KEYS.workspaceBySlug(slug);
+    const cached = await CacheClient.get(cacheKey);
+    if (cached) return cached;
+
+    // Fetch from database
     const workspace = await prisma.workspace.findFirst({
       where: {
         slug,
@@ -28,10 +35,17 @@ export const WorkspaceQuery = {
       include: workspaceDetailInclude,
     });
     if (!workspace) throw new Error("Workspace not found");
+
+    await CacheClient.set(cacheKey, workspace, CACHE_TTL.WORKSPACE_METADATA);
+
     return workspace;
   },
 
   async getById(id: string, userId: string) {
+    const cacheKey = CACHE_KEYS.workspaceById(id);
+    const cached = await CacheClient.get(cacheKey);
+    if (cached) return cached;
+
     const workspace = await prisma.workspace.findFirst({
       where: {
         id,
@@ -43,6 +57,9 @@ export const WorkspaceQuery = {
       include: workspaceDetailInclude,
     });
     if (!workspace) throw new Error("Workspace not found");
+
+    await CacheClient.set(cacheKey, workspace, CACHE_TTL.WORKSPACE_METADATA);
+
     return workspace;
   },
 
@@ -63,6 +80,11 @@ export const WorkspaceQuery = {
   },
 
   async getOverview(slug: string, userId: string) {
+    // Try cache first
+    const cacheKey = CACHE_KEYS.workspaceOverview(slug);
+    const cached = await CacheClient.get(cacheKey);
+    if (cached) return cached;
+
     const isId = /^[a-z0-9]{20,}$/i.test(slug);
 
     const workspace = await prisma.workspace.findFirst({
@@ -84,10 +106,18 @@ export const WorkspaceQuery = {
       }),
     ]);
 
-    return { workspace, stats, projects };
+    const result = { workspace, stats, projects };
+
+    await CacheClient.set(cacheKey, result, CACHE_TTL.WORKSPACE_OVERVIEW);
+
+    return result;
   },
 
   async computeStats(workspaceId: string): Promise<WorkspaceStats> {
+    const cacheKey = CACHE_KEYS.workspaceStats(workspaceId);
+    const cached = await CacheClient.get<WorkspaceStats>(cacheKey);
+    if (cached) return cached;
+
     const [
       totalProjects,
       totalTasks,
@@ -107,7 +137,8 @@ export const WorkspaceQuery = {
         },
       }),
     ]);
-    return {
+
+    const stats = {
       totalProjects,
       totalTasks,
       totalMembers,
@@ -115,6 +146,10 @@ export const WorkspaceQuery = {
       overdueTasks,
       completionRate: totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0,
     };
+
+    await CacheClient.set(cacheKey, stats, CACHE_TTL.WORKSPACE_STATS);
+
+    return stats;
   },
 
   async getInvitationByToken(token: string) {

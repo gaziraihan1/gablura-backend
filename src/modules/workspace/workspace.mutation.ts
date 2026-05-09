@@ -9,6 +9,7 @@ import type {
   UpdateWorkspaceInput,
   WorkspaceRole,
 } from "./workspace.types.js";
+import { WorkspaceCache } from "../../lib/redis/cache.client.js";
 
 type OnWorkspaceCreated = (data: { workspace: any }) => Promise<void>;
 type OnWorkspaceUpdated = (data: { workspaceId: string }) => Promise<void>;
@@ -49,6 +50,9 @@ export const WorkspaceMutation = {
       include: workspaceListInclude,
     });
 
+    // Invalidate user's workspace list cache
+    await WorkspaceCache.invalidateUserWorkspaces(userId);
+
     if (onCreated) onCreated({ workspace }).catch(console.error);
     return workspace;
   },
@@ -65,13 +69,30 @@ export const WorkspaceMutation = {
       data: input,
       include: workspaceListInclude,
     });
+
+    // Invalidate workspace cache
+    await WorkspaceCache.invalidateWorkspace(workspaceId, workspace.slug);
+
     if (onUpdated) onUpdated({ workspaceId }).catch(console.error);
     return workspace;
   },
 
   async delete(workspaceId: string, userId: string) {
     await WorkspaceAccess.assertOwner(workspaceId, userId);
+
+    // Get workspace slug before deleting
+    const workspace = await prisma.workspace.findUnique({
+      where: { id: workspaceId },
+      select: { slug: true, ownerId: true },
+    });
+
     await prisma.workspace.delete({ where: { id: workspaceId } });
+
+    // Invalidate workspace cache
+    if (workspace) {
+      await WorkspaceCache.invalidateWorkspace(workspaceId, workspace.slug);
+      await WorkspaceCache.invalidateUserWorkspaces(workspace.ownerId);
+    }
   },
 
   async inviteMember(
@@ -154,6 +175,13 @@ export const WorkspaceMutation = {
       where: { id: invitation.id },
       data: { status: "ACCEPTED" },
     });
+// Invalidate member-related caches
+if (invitation.workspaceId) {
+  await WorkspaceCache.invalidateMembers(invitation.workspaceId);
+  await WorkspaceCache.invalidateUserWorkspaces(userId);
+  const workspaceSlug = invitation.workspace?.slug ?? undefined;
+  await WorkspaceCache.invalidateWorkspace(invitation.workspaceId, workspaceSlug);
+}
 
     if (onAccepted && invitation.invitedById) {
       onAccepted({

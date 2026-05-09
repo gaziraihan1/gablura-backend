@@ -1,4 +1,3 @@
-
 import { prisma } from "../../lib/prisma.js";
 import { AnalyticsAccess } from "./analytics.access.js";
 import {
@@ -20,6 +19,7 @@ import type {
   MemberWorkload,
   DeadlineRiskAnalysis,
 } from "./analytics.types.js";
+import { CacheClient, CACHE_KEYS, CACHE_TTL } from "../../lib/redis/cache.client.js";
 
 export const AnalyticsQuery = {
 
@@ -28,6 +28,11 @@ export const AnalyticsQuery = {
     userId: string,
   ): Promise<ExecutiveKPIs> {
     await AnalyticsAccess.assertWorkspaceAdminOrOwner(userId, workspaceId);
+
+    // Try cache first
+    const cacheKey = CACHE_KEYS.analyticsKPIs(workspaceId);
+    const cached = await CacheClient.get<ExecutiveKPIs>(cacheKey);
+    if (cached) return cached;
 
     const [
       totalProjects,
@@ -78,7 +83,7 @@ export const AnalyticsQuery = {
     const completionRate =
       totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
 
-    return {
+    const kpis = {
       totalProjects,
       activeProjects,
       totalTasks,
@@ -90,6 +95,11 @@ export const AnalyticsQuery = {
       totalHours,
       storageUsed,
     };
+
+    // Cache the result
+    await CacheClient.set(cacheKey, kpis, CACHE_TTL.ANALYTICS_DASHBOARD);
+
+    return kpis;
   },
 
   async getTaskStatusDistribution(

@@ -5,6 +5,7 @@ import { LabelAccess }                         from './label.access.js';
 import { NotFoundError }                       from './label.types.js';
 import { normalizePage, buildPaginationMeta }  from './label.utils.js';
 import type { Prisma, TaskStatus, Priority }               from '@prisma/client';
+import { CacheClient, CACHE_KEYS, CACHE_TTL } from '../../lib/redis/cache.client.js';
 
 // Infer result row types from the select/include shapes
 type LabelListRow  = Prisma.LabelGetPayload<{ include: typeof labelListInclude }>;
@@ -17,6 +18,15 @@ export const LabelQuery = {
     userId:  string,
     filters: LabelFilters = {},
   ): Promise<PaginatedResult<LabelListRow>> {
+    // Try cache first (only for default page/limit to keep it simple)
+    const isDefaultPagination = (!filters.page || filters.page === 1) && (!filters.limit || filters.limit === 50);
+    const cacheKey = CACHE_KEYS.labelList(userId, filters.workspaceId ?? null);
+    
+    if (isDefaultPagination) {
+      const cached = await CacheClient.get<PaginatedResult<LabelListRow>>(cacheKey);
+      if (cached) return cached;
+    }
+
     const { page, limit, skip } = normalizePage(filters.page, filters.limit);
 
     const where: Prisma.LabelWhereInput = filters.workspaceId
@@ -34,7 +44,14 @@ export const LabelQuery = {
       }),
     ]);
 
-    return { data: labels, pagination: buildPaginationMeta(total, { page, limit }) };
+    const result = { data: labels, pagination: buildPaginationMeta(total, { page, limit }) };
+
+    // Cache the result (only for default pagination)
+    if (isDefaultPagination) {
+      await CacheClient.set(cacheKey, result, CACHE_TTL.LABEL_LIST);
+    }
+
+    return result;
   },
 
   // ─── Single label (metadata only, no tasks) ───────────────────────────────
@@ -42,12 +59,20 @@ export const LabelQuery = {
   async getLabel(labelId: string, userId: string) {
     await LabelAccess.assertLabelAccess(labelId, userId);
 
+    // Try cache first
+    const cacheKey = CACHE_KEYS.labelById(labelId);
+    const cached = await CacheClient.get(cacheKey);
+    if (cached) return cached;
+
     const label = await prisma.label.findUnique({
       where:   { id: labelId },
       include: labelDetailInclude,
     });
 
     if (!label) throw new NotFoundError('Label not found');
+
+    // Cache the result
+    await CacheClient.set(cacheKey, label, CACHE_TTL.LABEL_LIST);
 
     return label;
   },
@@ -109,6 +134,15 @@ async getLabelTasks(
     userId:  string,
     filters: PopularLabelsFilters = {},
   ): Promise<PaginatedResult<LabelListRow>> {
+    // Try cache first (only for default page/limit)
+    const isDefaultPagination = (!filters.page || filters.page === 1) && (!filters.limit || filters.limit === 10);
+    const cacheKey = CACHE_KEYS.popularLabels(userId, filters.workspaceId ?? null);
+    
+    if (isDefaultPagination) {
+      const cached = await CacheClient.get<PaginatedResult<LabelListRow>>(cacheKey);
+      if (cached) return cached;
+    }
+
     const { page, limit, skip } = normalizePage(filters.page, filters.limit ?? 10);
 
     const where: Prisma.LabelWhereInput = filters.workspaceId
@@ -138,6 +172,13 @@ async getLabelTasks(
       }),
     ]);
 
-    return { data: labels, pagination: buildPaginationMeta(total, { page, limit }) };
+    const result = { data: labels, pagination: buildPaginationMeta(total, { page, limit }) };
+
+    // Cache the result (only for default pagination)
+    if (isDefaultPagination) {
+      await CacheClient.set(cacheKey, result, CACHE_TTL.LABEL_LIST);
+    }
+
+    return result;
   },
 };
