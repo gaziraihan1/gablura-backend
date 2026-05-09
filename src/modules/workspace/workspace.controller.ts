@@ -114,7 +114,7 @@ export const getWorkspace = async (req: AuthRequest, res: Response) => {
       ? await WorkspaceQuery.getById(slug, req.user!.id)
       : await WorkspaceQuery.getBySlug(slug, req.user!.id);
 
-    // if (workspace?.suspended) {
+    // if (workspace?.deletedAt) {
     //   res.status(403).json({
     //     success: false,
     //     code: "WORKSPACE_SUSPENDED",

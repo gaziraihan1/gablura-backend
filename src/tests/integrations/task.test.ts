@@ -4,7 +4,7 @@
 //   2. PATCH status member → expect 500 (same reason)
 //   3. subtask depth guard → expect 404 (assertCanCreateSubtask rejects depth=1 parent)
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import request   from 'supertest';
 import app        from '../../app.js';
 import { prisma } from '../../lib/prisma.js';
@@ -17,6 +17,7 @@ import {
 } from '../factories/index.js';
 import { authHeaders } from '../helpers/auth.js';
 import { WorkspaceRole, TaskStatus, Priority } from '@prisma/client';
+import { CacheClient } from '../../lib/redis/cache.client.js';
 
 vi.mock('../../modules/task/task.quota.service.js', () => ({
   checkAndConsumePersonalQuota: vi.fn().mockResolvedValue({
@@ -38,6 +39,9 @@ vi.mock('../../modules/task/task.quota.service.js', () => ({
   }),
 }));
 
+beforeEach(async () => {
+  await CacheClient.deletePattern('stats:*').catch(() => {});
+});
 async function createWorkspaceTask(
   workspaceId: string,
   createdById: string,
@@ -597,7 +601,7 @@ describe('GET /api/tasks/stats', () => {
     const res = await request(app)
       .get(`/api/tasks/stats?workspaceId=${workspace.id}`)
       .set(authHeaders(user));
-
+console.log(res.status, JSON.stringify(res.body, null, 2)); // not res.status + res.body
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
     expect(res.body.data.totalTasks).toBe(6);

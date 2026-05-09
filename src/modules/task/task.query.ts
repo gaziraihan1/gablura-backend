@@ -47,22 +47,18 @@ async function countOverdueTasks(
 
   const ids = scopedIds.map((t) => t.id);
 
-  // Prisma.join wraps each value safely — no manual string interpolation
   const result = await prisma.$queryRaw<[{ count: bigint }]>`
     SELECT COUNT(*)::int AS count
-    FROM   tasks
-    WHERE  id = ANY(${Prisma.sql`ARRAY[${Prisma.join(ids)}]::uuid[]`})
+    FROM   "Task"
+    WHERE  id = ANY(${Prisma.sql`ARRAY[${Prisma.join(ids)}]::text[]`})
       AND  status NOT IN ('COMPLETED', 'CANCELLED')
       AND  (
-             -- Branch A: actual time logged exceeds estimate
              (
                "estimatedHours" IS NOT NULL
                AND "actualHours" IS NOT NULL
                AND "actualHours" > "estimatedHours"
              )
              OR
-             -- Branch B: elapsed hours since creation exceeds estimate
-             --           (no actual hours logged yet)
              (
                "estimatedHours" IS NOT NULL
                AND "actualHours" IS NULL
@@ -70,7 +66,6 @@ async function countOverdueTasks(
                    > "estimatedHours"
              )
              OR
-             -- Branch C: no estimate at all — plain deadline has passed
              (
                "estimatedHours" IS NULL
                AND "dueDate" IS NOT NULL
@@ -362,12 +357,13 @@ export const TaskQuery = {
         {} as Record<string, number>,
       ),
     };
+    
 
     console.log('📊 Stats result:', stats);
 
     // 4. Cache — 2 min TTL. Bust via CacheClient.deletePattern(`stats:${userId}:*`)
     //    in createTask / updateTask / updateTaskStatus / deleteTask mutations.
-    await CacheClient.set(cacheKey, stats, 120);
+    CacheClient.set(cacheKey, stats, 120).catch(() => {});
 
     return stats;
   },
