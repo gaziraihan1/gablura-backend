@@ -1,13 +1,30 @@
 import { Router } from "express";
 import { prisma } from "../../lib/prisma.js";
 import { authenticate, AuthRequest } from "../../middleware/auth.js";
-import { isFocuraAdmin } from "../../config/admin.config.js";
 import { requireFocuraAdmin } from "../../middleware/focuraAdmin.js";
-import { is } from "zod/locales";
+import { Ratelimit } from "@upstash/ratelimit";
+import { Redis } from "@upstash/redis";
+
+// init once (outside handler)
+const redis = Redis.fromEnv();
+
+const ratelimit = new Ratelimit({
+  redis,
+  limiter: Ratelimit.slidingWindow(10, "10 m"), // 10 requests / 10 min
+});
 
 const router = Router();
 
 router.post("/", async (req, res) => {
+  const identifier = req.ip ?? "anonymous";
+
+  const { success } = await ratelimit.limit(identifier);
+   if (!success) {
+    return res.status(429).json({
+      success: false,
+      message: "Too many requests",
+    });
+  }
   try {
     const { email }: { email: string } = req.body;
 
