@@ -195,6 +195,7 @@ export interface CreateTaskOptions {
   dueDate?: Date;
   estimatedHours?: number;
   parentId?: string;
+  completedAt?: Date | null;
 }
 
 export async function createTask(
@@ -214,6 +215,8 @@ export async function createTask(
       dueDate: opts.dueDate ?? null,
       estimatedHours: opts.estimatedHours ?? null,
       parentId: opts.parentId ?? null,
+      completedAt: opts.status === TaskStatus.COMPLETED ? new Date() : null, // auto-set completedAt for convenience
+      ...opts
     },
   });
 }

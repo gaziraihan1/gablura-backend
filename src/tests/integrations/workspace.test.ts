@@ -432,21 +432,21 @@ describe('DELETE /api/workspaces/:id', () => {
     const still = await prisma.workspace.findUnique({ where: { id: workspace.id } });
     expect(still).not.toBeNull();
   });
-//   it('403 — suspended workspace cannot be accessed', async () => {
-//   const { user, workspace } = await createWorkspaceWithOwner();
+  //   it('403 — suspended workspace cannot be accessed', async () => {
+  //   const { user, workspace } = await createWorkspaceWithOwner();
 
-//   await prisma.workspace.update({
-//     where: { id: workspace.id },
-//     data: { deletedAt: new Date() },
-//   });
+  //   await prisma.workspace.update({
+  //     where: { id: workspace.id },
+  //     data: { deletedAt: new Date() },
+  //   });
 
-//   const res = await request(app)
-//     .get(`/api/workspaces/${workspace.slug}`)
-//     .set(authHeaders(user));
+  //   const res = await request(app)
+  //     .get(`/api/workspaces/${workspace.slug}`)
+  //     .set(authHeaders(user));
 
-//   expect(res.status).toBe(403);
-//   expect(res.body.code).toBe('WORKSPACE_SUSPENDED');
-// });
+  //   expect(res.status).toBe(403);
+  //   expect(res.body.code).toBe('WORKSPACE_SUSPENDED');
+  // });
 
   it('403 — MEMBER cannot delete workspace', async () => {
     const { workspace } = await createWorkspaceWithOwner();

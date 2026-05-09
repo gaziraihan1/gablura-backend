@@ -146,7 +146,7 @@ export const AnalyticsQuery = {
     SELECT
       DATE_TRUNC('day', "completedAt") AS day,
       COUNT(*)                         AS count
-    FROM   tasks
+    FROM   "Task"
     WHERE  "workspaceId" = ${workspaceId}
       AND  status        = 'COMPLETED'
       AND  "completedAt" >= ${startDate}
