@@ -54,20 +54,22 @@ describe('POST /api/tasks/:taskId/comments', () => {
     expect(data.user.id).toBe(user.id);
   });
 
-  it('404 — workspace MEMBER (not task creator) can comment', async () => {
-    const { user: owner, workspace } = await createWorkspaceWithOwner();
-    const member = await createUser();
-    await addMemberToWorkspace(member.id, workspace.id, WorkspaceRole.MEMBER);
-    const task = await createTask(workspace.id, owner.id);
+  it('404 — workspace MEMBER (not project member) cannot comment', async () => {
+  const { user: owner, workspace } = await createWorkspaceWithOwner();
+  const member = await createUser();
 
-    const res = await request(app)
-      .post(url(task.id))
-      .set(authHeaders(member))
-      .send({ content: 'Member comment here' });
+  await addMemberToWorkspace(member.id, workspace.id, WorkspaceRole.MEMBER);
 
-    expect(res.status).toBe(404);
-    expect(res.body.data.userId).toBe(member.id);
-  });
+  const task = await createTask(workspace.id, owner.id);
+
+  const res = await request(app)
+    .post(url(task.id))
+    .set(authHeaders(member))
+    .send({ content: 'Member comment here' });
+
+  expect(res.status).toBe(404);
+  expect(res.body.success).toBe(false);
+});
 
   it('201 — task assignee (not workspace member) can comment', async () => {
     const { user: owner, workspace } = await createWorkspaceWithOwner();
