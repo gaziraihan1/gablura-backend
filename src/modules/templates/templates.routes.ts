@@ -3,10 +3,8 @@ import { prisma } from "../../lib/prisma.js";
 import { authenticate, AuthRequest } from "../../middleware/auth.js";
 import { requireFocuraAdmin } from "../../middleware/focuraAdmin.js";
 import { Ratelimit } from "@upstash/ratelimit";
-import { Redis } from "@upstash/redis";
+import { redis } from "../../lib/redis.js";
 
-// init once (outside handler)
-const redis = Redis.fromEnv();
 
 const ratelimit = new Ratelimit({
   redis,
