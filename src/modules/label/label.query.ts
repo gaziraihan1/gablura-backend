@@ -52,43 +52,56 @@ export const LabelQuery = {
     return label;
   },
 
-  // ─── Tasks attached to a label (paginated, filterable) ───────────────────
 
-  async getLabelTasks(
-    labelId: string,
-    userId:  string,
-    filters: LabelTasksFilters = {},
-  ): Promise<PaginatedResult<LabelTasksRow>> {
-    await LabelAccess.assertLabelAccess(labelId, userId);
+async getLabelTasks(
+  labelId: string,
+  userId:  string,
+  filters: LabelTasksFilters = {},
+): Promise<PaginatedResult<LabelTasksRow>> {
+  await LabelAccess.assertLabelAccess(labelId, userId);
 
-    const { page, limit, skip } = normalizePage(filters.page, filters.limit);
+  const { page, limit, skip } = normalizePage(filters.page, filters.limit);
 
-    // Cast the raw filter strings to Prisma's enum types.
-    // Validation (Zod) has already confirmed the values are valid enum members
-    // before they reach this layer, so the casts are safe.
-    const taskFilter: Prisma.TaskWhereInput = {
-      ...(filters.status   ? { status:   filters.status   as TaskStatus } : {}),
-      ...(filters.priority ? { priority: filters.priority as Priority   } : {}),
-    };
+  const taskFilter: Prisma.TaskWhereInput = {
+    ...(filters.status   ? { status:   filters.status   as TaskStatus } : {}),
+    ...(filters.priority ? { priority: filters.priority as Priority   } : {}),
+    OR: [
+      { createdById: userId },
+      { assignees:   { some: { userId } } },
+      { project: { workspace: { ownerId: userId } } },
+      {
+        project: {
+          workspace: {
+            members: { some: { userId, role: 'ADMIN' } },
+          },
+        },
+      },
+      {
+        project: {
+          members: { some: { userId, role: 'MANAGER' } },
+        },
+      },
+    ],
+  };
 
-    const where: Prisma.TaskLabelWhereInput = {
-      labelId,
-      ...(Object.keys(taskFilter).length ? { task: taskFilter } : {}),
-    };
+  const where: Prisma.TaskLabelWhereInput = {
+    labelId,
+    task: taskFilter,
+  };
 
-    const [total, tasks] = await prisma.$transaction([
-      prisma.taskLabel.count({ where }),
-      prisma.taskLabel.findMany({
-        where,
-        include: labelTasksInclude,
-        orderBy: { task: { createdAt: 'desc' } },
-        skip,
-        take:    limit,
-      }),
-    ]);
+  const [total, tasks] = await prisma.$transaction([
+    prisma.taskLabel.count({ where }),
+    prisma.taskLabel.findMany({
+      where,
+      include: labelTasksInclude,
+      orderBy: { task: { createdAt: 'desc' } },
+      skip,
+      take:    limit,
+    }),
+  ]);
 
-    return { data: tasks, pagination: buildPaginationMeta(total, { page, limit }) };
-  },
+  return { data: tasks, pagination: buildPaginationMeta(total, { page, limit }) };
+},
 
   // ─── Popular labels (paginated) ───────────────────────────────────────────
 

@@ -9,20 +9,13 @@ export const CommentAccess = {
         OR: [
           { createdById: userId },
           { assignees: { some: { userId } } },
-
+          { project: { members: { some: { userId } } } },
           {
             workspace: {
-              OR: [{ ownerId: userId }, { members: { some: { userId } } }],
+              OR: [{ ownerId: userId }, { members: { some: { userId, role: "ADMIN" } } }],
             },
           },
 
-          {
-            project: {
-              workspace: {
-                OR: [{ ownerId: userId }, { members: { some: { userId } } }],
-              },
-            },
-          },
         ],
       },
     });

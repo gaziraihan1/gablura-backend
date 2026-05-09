@@ -15,12 +15,13 @@ export const SubtaskAccess = {
         OR: [
           { createdById: userId },
           { assignees: { some: { userId } } },
+          { project: { members: { some: { userId } } } },
           {
             project: {
               workspace: {
                 OR: [
                   { ownerId: userId },
-                  { members: { some: { userId } } },
+                  { members: { some: { userId, role: "ADMIN" } } },
                 ],
               },
             },
