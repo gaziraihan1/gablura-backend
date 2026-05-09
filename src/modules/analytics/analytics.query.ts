@@ -128,45 +128,49 @@ export const AnalyticsQuery = {
   },
 
   async getTaskCompletionTrend(
-    workspaceId: string,
-    userId: string,
-    days: number = 30,
-  ): Promise<TrendDataPoint[]> {
-    await AnalyticsAccess.assertWorkspaceAdminOrOwner(userId, workspaceId);
+  workspaceId: string,
+  userId: string,
+  days: number = 30,
+): Promise<TrendDataPoint[]> {
+  await AnalyticsAccess.assertWorkspaceAdminOrOwner(userId, workspaceId);
 
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - days);
-    startDate.setHours(0, 0, 0, 0);
+  const startDate = new Date();
+  startDate.setDate(startDate.getDate() - days);
+  startDate.setHours(0, 0, 0, 0);
 
-    const completedTasks = await prisma.task.findMany({
-      where: {
-        workspaceId,
-        status: "COMPLETED",
-        completedAt: { gte: startDate },
-      },
-      select: { completedAt: true },
-      orderBy: { completedAt: "asc" },
-    });
+  // ── Single GROUP BY query — zero rows in Node memory ─────────────────────
+  // Replaces findMany (potentially 100K rows) + JS forEach grouping.
+  // DATE_TRUNC truncates each completedAt to midnight so the GROUP BY key
+  // matches exactly what getDayKey() was producing.
+  const rows = await prisma.$queryRaw<{ day: Date; count: bigint }[]>`
+    SELECT
+      DATE_TRUNC('day', "completedAt") AS day,
+      COUNT(*)                         AS count
+    FROM   tasks
+    WHERE  "workspaceId" = ${workspaceId}
+      AND  status        = 'COMPLETED'
+      AND  "completedAt" >= ${startDate}
+    GROUP  BY DATE_TRUNC('day', "completedAt")
+    ORDER  BY day ASC
+  `;
 
-    const trendMap = new Map<string, number>();
-    for (let i = 0; i < days; i++) {
-      const date = new Date(startDate);
-      date.setDate(date.getDate() + i);
-      trendMap.set(getDayKey(date), 0);
-    }
+  // Index the DB results by ISO date string for O(1) lookup
+  const dbMap = new Map<string, number>(
+    rows.map((r) => [getDayKey(r.day), Number(r.count)]),
+  );
 
-    completedTasks.forEach((task) => {
-      if (task.completedAt) {
-        const dateKey = getDayKey(task.completedAt);
-        trendMap.set(dateKey, (trendMap.get(dateKey) || 0) + 1);
-      }
-    });
+  // Fill every day in the window — days with no completions default to 0.
+  // This keeps the same dense-array contract the old code guaranteed.
+  const trend: TrendDataPoint[] = [];
+  for (let i = 0; i < days; i++) {
+    const date = new Date(startDate);
+    date.setDate(date.getDate() + i);
+    const key = getDayKey(date);
+    trend.push({ date: new Date(date), count: dbMap.get(key) ?? 0 });
+  }
 
-    return Array.from(trendMap.entries()).map(([date, count]) => ({
-      date: new Date(date),
-      count,
-    }));
-  },
+  return trend;
+},
 
   async getOverdueTrend(
     workspaceId: string,
