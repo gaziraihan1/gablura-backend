@@ -1,7 +1,7 @@
-import jwt        from 'jsonwebtoken';
-import crypto     from 'crypto';
+import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import { readFileSync } from 'fs';
-import type { User } from '@prisma/client';
+import type { User, UserRole } from '@prisma/client';
 
 // ── Private key (lazy-loaded, cached) ────────────────────────────────────────
 let _cachedPrivateKey: string | null = null;
@@ -53,44 +53,118 @@ export interface TokenOptions {
   jti?: string;
 }
 
+// Type for test user - more flexible than Pick<User>
+export type TestUser = Pick<User, 'id' | 'email' | 'role'>;
+
 /**
  * Creates a valid RS256 access token for a test user.
  * Payload matches your backendToken.ts createTokenPair() exactly.
  */
 export function generateTestToken(
-  user: Pick<User, 'id' | 'email' | 'role'>,
+  user: TestUser,
   opts: TokenOptions = {}
 ): string {
   return jwt.sign(
     {
-      sub:       user.id,
-      email:     user.email,
-      role:      user.role,
-      type:      'access',
-      version:   1,
-      jti:       opts.jti ?? crypto.randomUUID(),
+      sub: user.id,
+      email: user.email,
+      role: user.role,
+      type: 'access',
+      version: 1,
+      jti: opts.jti ?? crypto.randomUUID(),
       sessionId: opts.sessionId ?? crypto.randomUUID(),
     },
     getPrivateKey(),
     {
       algorithm: 'RS256',
       expiresIn: (opts.expiresIn ?? '1h') as any,
-      issuer:    'focura-app',
-      audience:  'focura-backend',
+      issuer: 'focura-app',
+      audience: 'focura-backend',
     }
   );
 }
 
-/** Ready-to-use header object for supertest .set() */
+/** 
+ * Ready-to-use header object for supertest .set() 
+ * Use for GET/HEAD/OPTIONS requests only
+ */
 export function authHeaders(
-  user: Pick<User, 'id' | 'email' | 'role'>
+  user: TestUser
 ): { Authorization: string } {
   return { Authorization: `Bearer ${generateTestToken(user)}` };
 }
 
+/**
+ * Auth + CSRF headers for POST/PUT/PATCH/DELETE requests
+ * This is the main function you should use for mutations
+ * 
+ * NOTE: This function is now defined here to avoid circular imports
+ */
+export async function authWithCsrfHeaders(
+  user: TestUser,
+  opts: TokenOptions = {}
+): Promise<{ Authorization: string; 'x-csrf-token': string }> {
+  const sessionId = opts.sessionId ?? 'test-session';
+  const token = generateTestToken(user, { ...opts, sessionId });
+  
+  // Generate CSRF token inline to avoid circular dependency
+  const csrfToken = await generateTestCsrfTokenInline(user.id, sessionId);
+  
+  return {
+    Authorization: `Bearer ${token}`,
+    'x-csrf-token': csrfToken,
+  };
+}
+
+// Internal CSRF token generation (to avoid circular import)
+async function generateTestCsrfTokenInline(
+  userId: string,
+  sessionId: string
+): Promise<string> {
+  const CSRF_TOKEN_LENGTH = 32;
+  const token = crypto.randomBytes(CSRF_TOKEN_LENGTH).toString('base64url');
+  const key = `csrf:${userId}:${sessionId}`;
+  
+  // Try Redis first (if available in test environment)
+  try {
+    // Dynamic import to avoid issues if redis module fails
+    const { redis } = await import('../../lib/redis.js');
+    
+    if (redis && process.env.UPSTASH_REDIS_REST_URL) {
+      try {
+        await redis.setex(key, 3600, token);
+        return token;
+      } catch (error) {
+        // Redis failed, use in-memory fallback
+      }
+    }
+  } catch {
+    // Redis module not available or failed to import
+  }
+  
+  // Fallback: In-memory storage
+  if (!global._testCsrfTokens) {
+    global._testCsrfTokens = new Map<string, string>();
+  }
+  
+  global._testCsrfTokens.set(key, token);
+  
+  // Auto-cleanup after TTL
+  setTimeout(() => {
+    global._testCsrfTokens?.delete(key);
+  }, 3600 * 1000);
+  
+  return token;
+}
+
+// Declare global type for TypeScript
+declare global {
+  var _testCsrfTokens: Map<string, string> | undefined;
+}
+
 /** Expired token → 401 TOKEN_EXPIRED */
 export function expiredAuthHeaders(
-  user: Pick<User, 'id' | 'email' | 'role'>
+  user: TestUser
 ): { Authorization: string } {
   return { Authorization: `Bearer ${generateTestToken(user, { expiresIn: -1 })}` };
 }
@@ -106,12 +180,21 @@ export function invalidAuthHeaders(): { Authorization: string } {
 
 export function buildExchangeProof(params: {
   userId: string;
-  email:  string;
-  role:   string;
+  email: string;
+  role: string;
   sessionId: string;
   timestamp: number;
 }): string {
-  const secret  = process.env.NEXTAUTH_SECRET!;
+  const secret = process.env.NEXTAUTH_SECRET!;
   const payload = `${params.userId}${params.email}${params.role}${params.sessionId}${params.timestamp}`;
   return crypto.createHmac('sha256', secret).update(payload).digest('hex');
+}
+
+/**
+ * Clear test CSRF tokens (for cleanup between tests)
+ */
+export function clearTestCsrfTokens(): void {
+  if (global._testCsrfTokens) {
+    global._testCsrfTokens.clear();
+  }
 }

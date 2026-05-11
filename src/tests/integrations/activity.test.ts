@@ -1,6 +1,6 @@
 // Tests Activity system: query, access control, deletion, clearing
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import request from 'supertest';
 import app from '../../app.js';
 import { prisma } from '../../lib/prisma.js';
@@ -15,7 +15,7 @@ import {
   assignUserToTask,
 } from '../factories/index.js';
 
-import { authHeaders } from '../helpers/auth.js';
+import { authHeaders, authWithCsrfHeaders } from '../helpers/auth.js';
 
 // ─────────────────────────────────────────────────────────────
 // Setup
@@ -35,6 +35,10 @@ beforeEach(async () => {
   task = await createTask(workspace.id, user.id, {
     projectId: project.id,
   });
+  process.env.ENFORCE_CSRF_IN_TESTS = 'true';
+});
+afterEach(() => {
+  delete process.env.ENFORCE_CSRF_IN_TESTS;
 });
 
 // ─────────────────────────────────────────────────────────────
@@ -143,7 +147,7 @@ describe('DELETE /api/activities/clear', () => {
 
     const res = await request(app)
       .delete('/api/activities/clear')
-      .set(authHeaders(user));
+      .set(await authWithCsrfHeaders(user));
 
     expect(res.status).toBe(200);
     expect(res.body.data.deletedCount).toBeGreaterThanOrEqual(1);
@@ -159,7 +163,7 @@ describe('DELETE /api/activities/clear', () => {
     const res = await request(app)
       .delete('/api/activities/clear')
       .query({ workspaceId: workspace.id })
-      .set(authHeaders(user));
+      .set(await authWithCsrfHeaders(user));
 
     expect(res.status).toBe(200);
 
@@ -181,7 +185,7 @@ describe('DELETE /api/activities/:activityId', () => {
 
     const res = await request(app)
       .delete(`/api/activities/${activity.id}`)
-      .set(authHeaders(user));
+      .set(await authWithCsrfHeaders(user));
 
     expect(res.status).toBe(200);
   });
@@ -194,7 +198,7 @@ describe('DELETE /api/activities/:activityId', () => {
 
     const res = await request(app)
       .delete(`/api/activities/${activity.id}`)
-      .set(authHeaders(other));
+      .set(await authWithCsrfHeaders(other));
 
     expect(res.status).toBe(403);
   });
@@ -207,7 +211,7 @@ describe('DELETE /api/activities/:activityId', () => {
 
     const res = await request(app)
       .delete(`/api/activities/${activity.id}`)
-      .set(authHeaders(admin));
+      .set(await authWithCsrfHeaders(admin));
 
     expect(res.status).toBe(200);
   });
@@ -215,7 +219,7 @@ describe('DELETE /api/activities/:activityId', () => {
   it('404 — activity not found', async () => {
     const res = await request(app)
       .delete('/api/activities/fake-id-123')
-      .set(authHeaders(user));
+      .set(await authWithCsrfHeaders(user));
 
     expect(res.status).toBe(404);
   });

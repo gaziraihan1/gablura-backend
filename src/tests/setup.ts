@@ -36,22 +36,38 @@ vi.mock('ioredis', () => ({
   Redis:   RedisMock,   // import { Redis } from 'ioredis'
 }));
 
+const redisStore = new Map<string, string>();
+
+const createInMemoryRedisMock = () => ({
+  get: vi.fn(async (key: string) => redisStore.get(key) ?? null),
+  set: vi.fn(async (key: string, value: string) => {
+    redisStore.set(key, value);
+    return 'OK';
+  }),
+  setex: vi.fn(async (key: string, _ttl: number, value: string) => {
+    redisStore.set(key, value);
+    return 'OK';
+  }),
+  del: vi.fn(async (...keys: string[]) => {
+    let deleted = 0;
+    for (const key of keys) {
+      if (redisStore.delete(key)) deleted += 1;
+    }
+    return deleted;
+  }),
+  keys: vi.fn(async (pattern: string) => {
+    if (!pattern.includes('*')) return redisStore.has(pattern) ? [pattern] : [];
+    const regex = new RegExp(`^${pattern.replaceAll('*', '.*')}$`);
+    return [...redisStore.keys()].filter((key) => regex.test(key));
+  }),
+});
+
 // ── MOCK: @upstash/redis ──────────────────────────────────────────────────────
 vi.mock('@upstash/redis', () => ({
-  Redis: vi.fn().mockImplementation(() => ({
-    get:   vi.fn().mockResolvedValue(null),
-    set:   vi.fn().mockResolvedValue('OK'),
-    setex: vi.fn().mockResolvedValue('OK'),
-    del:   vi.fn().mockResolvedValue(1),
-  })),
+  Redis: vi.fn().mockImplementation(() => createInMemoryRedisMock()),
 }));
 
-const noopRedisClient = {
-  get:    vi.fn().mockResolvedValue(null),
-  set:    vi.fn().mockResolvedValue('OK'),
-  setex:  vi.fn().mockResolvedValue('OK'),
-  del:    vi.fn().mockResolvedValue(1),
-};
+const noopRedisClient = createInMemoryRedisMock();
 
 vi.mock('../redis/redis.client.js', () => ({
   BILLING_CACHE: {
@@ -65,15 +81,12 @@ vi.mock('../redis/redis.client.js', () => ({
     invoiceKey:          vi.fn().mockReturnValue('invoice:test'),
     INVOICE_TTL:         300,
   },
-  getRedisClient: vi.fn().mockResolvedValue(noopRedisClient),
+  getRedisClient: vi.fn().mockReturnValue(noopRedisClient),
   redis:          null,
 }));
 
 const mockRedisForLib = {
-  get:    vi.fn().mockResolvedValue(null),
-  set:    vi.fn().mockResolvedValue('OK'),
-  setex:  vi.fn().mockResolvedValue('OK'),
-  del:    vi.fn().mockResolvedValue(1),
+  ...createInMemoryRedisMock(),
   decr:   vi.fn().mockResolvedValue(0),
   incr:   vi.fn().mockResolvedValue(1),
   zrem:   vi.fn().mockResolvedValue(1),
@@ -195,6 +208,7 @@ const TRUNCATE_ORDER = [
 ] as const;
 
 afterEach(async () => {
+  redisStore.clear();
   for (const table of TRUNCATE_ORDER) {
     try {
       await prisma.$executeRawUnsafe(

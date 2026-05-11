@@ -32,7 +32,7 @@
 //   removeLabelFromTask → 200 { success: true, message }
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterAll } from 'vitest';
 import request   from 'supertest';
 import app        from '../../app.js';
 import { prisma } from '../../lib/prisma.js';
@@ -43,8 +43,15 @@ import {
   createLabel,
   createTask,
 } from '../factories/index.js';
-import { authHeaders } from '../helpers/auth.js';
+import { authHeaders, authWithCsrfHeaders } from '../helpers/auth.js';
 import { WorkspaceRole } from '@prisma/client';
+
+beforeEach(() => {
+  process.env.ENFORCE_CSRF_IN_TESTS = 'true';
+});
+afterAll(() => {
+  delete process.env.ENFORCE_CSRF_IN_TESTS;
+});
 
 const BASE = '/api/labels';
 
@@ -57,7 +64,7 @@ describe('POST /api/labels', () => {
 
     const res = await request(app)
       .post(BASE)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ name: 'Bug', color: '#ff0000', workspaceId: workspace.id });
 
     expect(res.status).toBe(201);
@@ -79,7 +86,7 @@ describe('POST /api/labels', () => {
 
     const res = await request(app)
       .post(BASE)
-      .set(authHeaders(admin))
+      .set(await authWithCsrfHeaders(admin))
       .send({ name: 'Admin Label', color: '#00ff00', workspaceId: workspace.id });
 
     expect(res.status).toBe(201);
@@ -93,7 +100,7 @@ describe('POST /api/labels', () => {
 
     const res = await request(app)
       .post(BASE)
-      .set(authHeaders(u2))
+      .set(await authWithCsrfHeaders(u2))
       .send({ name: 'Urgent', color: '#ff0000', workspaceId: ws2.id });
 
     expect(res.status).toBe(201);
@@ -104,7 +111,7 @@ describe('POST /api/labels', () => {
 
     const res = await request(app)
       .post(BASE)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ name: 'Personal', color: '#aabbcc' });
 
     expect(res.status).toBe(201);
@@ -117,7 +124,7 @@ describe('POST /api/labels', () => {
 
     const res = await request(app)
       .post(BASE)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ name: 'Feature', color: '#0000ff', workspaceId: workspace.id });
 
     expect(res.status).toBe(409);
@@ -130,7 +137,7 @@ describe('POST /api/labels', () => {
 
     const res = await request(app)
       .post(BASE)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ name: 'BUG', color: '#ff0000', workspaceId: workspace.id });
 
     // assertNoDuplicateName uses mode: 'insensitive'
@@ -142,7 +149,7 @@ describe('POST /api/labels', () => {
 
     const res = await request(app)
       .post(BASE)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ color: '#ff0000', workspaceId: workspace.id });
 
     // handleError catches ZodError → 400 (NOT 422)
@@ -157,7 +164,7 @@ describe('POST /api/labels', () => {
 
     const res = await request(app)
       .post(BASE)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ name: 'Test', color: '#fff', workspaceId: workspace.id }); // 3-char fails
 
     expect(res.status).toBe(400);
@@ -169,7 +176,7 @@ describe('POST /api/labels', () => {
 
     const res = await request(app)
       .post(BASE)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ name: 'Test', color: 'red', workspaceId: workspace.id });
 
     expect(res.status).toBe(400);
@@ -180,7 +187,7 @@ describe('POST /api/labels', () => {
 
     const res = await request(app)
       .post(BASE)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ name: 'A'.repeat(51), color: '#ff0000', workspaceId: workspace.id });
 
     expect(res.status).toBe(400);
@@ -192,7 +199,7 @@ describe('POST /api/labels', () => {
 
     const res = await request(app)
       .post(BASE)
-      .set(authHeaders(outsider))
+      .set(await authWithCsrfHeaders(outsider))
       .send({ name: 'Sneaky Label', color: '#ff0000', workspaceId: workspace.id });
 
     expect(res.status).toBe(403);
@@ -408,7 +415,7 @@ describe('PATCH /api/labels/:id', () => {
 
     const res = await request(app)
       .patch(`${BASE}/${label.id}`)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ name: 'New Name' });
 
     expect(res.status).toBe(200);
@@ -426,7 +433,7 @@ describe('PATCH /api/labels/:id', () => {
 
     const res = await request(app)
       .patch(`${BASE}/${label.id}`)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ color: '#ffffff' });
 
     expect(res.status).toBe(200);
@@ -442,7 +449,7 @@ describe('PATCH /api/labels/:id', () => {
 
     const res = await request(app)
       .patch(`${BASE}/${label.id}`)
-      .set(authHeaders(owner))
+      .set(await authWithCsrfHeaders(owner))
       .send({ name: 'Owner Renamed' });
 
     // canEditLabel: workspace.ownerId === userId → true
@@ -458,7 +465,7 @@ describe('PATCH /api/labels/:id', () => {
 
     const res = await request(app)
       .patch(`${BASE}/${label.id}`)
-      .set(authHeaders(admin))
+      .set(await authWithCsrfHeaders(admin))
       .send({ name: 'Admin Renamed' });
 
     // canEditLabel: adminMember with role ADMIN → true
@@ -474,7 +481,7 @@ describe('PATCH /api/labels/:id', () => {
 
     const res = await request(app)
       .patch(`${BASE}/${label.id}`)
-      .set(authHeaders(member))
+      .set(await authWithCsrfHeaders(member))
       .send({ name: 'Stolen' });
 
     // canEditLabel: not creator, not owner, not admin → false → UnauthorizedError
@@ -489,7 +496,7 @@ describe('PATCH /api/labels/:id', () => {
 
     const res = await request(app)
       .patch(`${BASE}/${label.id}`)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ name: 'Existing' });
 
     expect(res.status).toBe(409);
@@ -503,7 +510,7 @@ describe('PATCH /api/labels/:id', () => {
     // updateLabel: if (data.name && data.name !== existingLabel.name) → skips duplicate check
     const res = await request(app)
       .patch(`${BASE}/${label.id}`)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ name: 'Same Name' });
 
     expect(res.status).toBe(200);
@@ -515,7 +522,7 @@ describe('PATCH /api/labels/:id', () => {
 
     const res = await request(app)
       .patch(`${BASE}/${label.id}`)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ color: 'blue' }); // not #RRGGBB
 
     expect(res.status).toBe(400);
@@ -527,7 +534,7 @@ describe('PATCH /api/labels/:id', () => {
 
     const res = await request(app)
       .patch(`${BASE}/clxxxxxxxxxxxxxxxxxxxxxxxxx`)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ name: 'Ghost' });
 
     expect(res.status).toBe(404);
@@ -556,7 +563,7 @@ describe('DELETE /api/labels/:id', () => {
 
     const res = await request(app)
       .delete(`${BASE}/${label.id}`)
-      .set(authHeaders(user));
+      .set(await authWithCsrfHeaders(user));
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
@@ -580,7 +587,7 @@ describe('DELETE /api/labels/:id', () => {
 
     const res = await request(app)
       .delete(`${BASE}/${label.id}`)
-      .set(authHeaders(user));
+      .set(await authWithCsrfHeaders(user));
 
     expect(res.status).toBe(200);
     expect(res.body.data.tasksAffected).toBe(0);
@@ -594,7 +601,7 @@ describe('DELETE /api/labels/:id', () => {
 
     const res = await request(app)
       .delete(`${BASE}/${label.id}`)
-      .set(authHeaders(owner));
+      .set(await authWithCsrfHeaders(owner));
 
     expect(res.status).toBe(200);
 
@@ -610,7 +617,7 @@ describe('DELETE /api/labels/:id', () => {
 
     const res = await request(app)
       .delete(`${BASE}/${label.id}`)
-      .set(authHeaders(member));
+      .set(await authWithCsrfHeaders(member));
 
     expect(res.status).toBe(403);
     expect(res.body.success).toBe(false);
@@ -621,7 +628,7 @@ describe('DELETE /api/labels/:id', () => {
 
     const res = await request(app)
       .delete(`${BASE}/clxxxxxxxxxxxxxxxxxxxxxxxxx`)
-      .set(authHeaders(user));
+      .set(await authWithCsrfHeaders(user));
 
     expect(res.status).toBe(404);
   });
@@ -644,7 +651,7 @@ describe('POST /api/labels/:labelId/tasks/:taskId — addLabelToTask', () => {
 
     const res = await request(app)
       .post(`${BASE}/${label.id}/tasks/${task.id}`)
-      .set(authHeaders(user));
+      .set(await authWithCsrfHeaders(user));
 
     expect(res.status).toBe(201);
     expect(res.body.success).toBe(true);
@@ -665,12 +672,12 @@ describe('POST /api/labels/:labelId/tasks/:taskId — addLabelToTask', () => {
     // First assignment
     await request(app)
       .post(`${BASE}/${label.id}/tasks/${task.id}`)
-      .set(authHeaders(user));
+      .set(await authWithCsrfHeaders(user));
 
     // Second assignment — ConflictError('Label already added to task')
     const res = await request(app)
       .post(`${BASE}/${label.id}/tasks/${task.id}`)
-      .set(authHeaders(user));
+      .set(await authWithCsrfHeaders(user));
 
     expect(res.status).toBe(409);
     expect(res.body.success).toBe(false);
@@ -682,7 +689,7 @@ describe('POST /api/labels/:labelId/tasks/:taskId — addLabelToTask', () => {
 
     const res = await request(app)
       .post(`${BASE}/${label.id}/tasks/clxxxxxxxxxxxxxxxxxxxxxxxxx`)
-      .set(authHeaders(user));
+      .set(await authWithCsrfHeaders(user));
 
     // assertTaskAccess throws NotFoundError → 404
     expect(res.status).toBe(404);
@@ -694,7 +701,7 @@ describe('POST /api/labels/:labelId/tasks/:taskId — addLabelToTask', () => {
 
     const res = await request(app)
       .post(`${BASE}/clxxxxxxxxxxxxxxxxxxxxxxxxx/tasks/${task.id}`)
-      .set(authHeaders(user));
+      .set(await authWithCsrfHeaders(user));
 
     expect(res.status).toBe(404);
   });
@@ -707,7 +714,7 @@ describe('POST /api/labels/:labelId/tasks/:taskId — addLabelToTask', () => {
 
     const res = await request(app)
       .post(`${BASE}/${label.id}/tasks/${task.id}`)
-      .set(authHeaders(outsider));
+      .set(await authWithCsrfHeaders(outsider));
 
     // assertTaskAccess throws NotFoundError('Task not found or access denied')
     expect(res.status).toBe(404);
@@ -735,7 +742,7 @@ describe('DELETE /api/labels/:labelId/tasks/:taskId — removeLabelFromTask', ()
 
     const res = await request(app)
       .delete(`${BASE}/${label.id}/tasks/${task.id}`)
-      .set(authHeaders(user));
+      .set(await authWithCsrfHeaders(user));
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
@@ -755,7 +762,7 @@ describe('DELETE /api/labels/:labelId/tasks/:taskId — removeLabelFromTask', ()
 
     const res = await request(app)
       .delete(`${BASE}/${label.id}/tasks/${task.id}`)
-      .set(authHeaders(user));
+      .set(await authWithCsrfHeaders(user));
 
     // NotFoundError('Label not found on task') → 404
     expect(res.status).toBe(404);
@@ -771,7 +778,7 @@ describe('DELETE /api/labels/:labelId/tasks/:taskId — removeLabelFromTask', ()
 
     const res = await request(app)
       .delete(`${BASE}/${label.id}/tasks/${task.id}`)
-      .set(authHeaders(outsider));
+      .set(await authWithCsrfHeaders(outsider));
 
     expect(res.status).toBe(404);
   });

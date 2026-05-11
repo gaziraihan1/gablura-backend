@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
 import request from 'supertest';
 import app from '../../app.js';
 import { prisma } from '../../lib/prisma.js';
@@ -8,8 +8,15 @@ import {
   addMemberToWorkspace,
   createMeeting,
 } from '../factories/index.js';
-import { authHeaders } from '../helpers/auth.js';
+import { authHeaders, authWithCsrfHeaders } from '../helpers/auth.js';
 import { WorkspaceRole, MeetingStatus, MeetingVisibility } from '@prisma/client';
+
+beforeEach(() => {
+  process.env.ENFORCE_CSRF_IN_TESTS = 'true';
+});
+afterAll(() => {
+  delete process.env.ENFORCE_CSRF_IN_TESTS;
+});
 
 vi.mock('../../modules/billing/billing.service.js', () => ({
   BillingService: {
@@ -36,7 +43,7 @@ describe('POST /api/meetings/:workspaceId/meetings', () => {
 
     const res = await request(app)
       .post(`/api/meetings/${workspace.id}/meetings`)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({
         title: 'Sprint Planning',
         startTime: startTime.toISOString(),
@@ -64,7 +71,7 @@ describe('POST /api/meetings/:workspaceId/meetings', () => {
 
     const res = await request(app)
       .post(`/api/meetings/${workspace.id}/meetings`)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({
         title: 'Private Sync',
         startTime: startTime.toISOString(),
@@ -82,7 +89,7 @@ describe('POST /api/meetings/:workspaceId/meetings', () => {
 
     const res = await request(app)
       .post(`/api/meetings/${workspace.id}/meetings`)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({
         startTime: new Date(Date.now() + 3600000).toISOString(),
         endTime: new Date(Date.now() + 7200000).toISOString(),
@@ -97,7 +104,7 @@ describe('POST /api/meetings/:workspaceId/meetings', () => {
 
     const res = await request(app)
       .post(`/api/meetings/${workspace.id}/meetings`)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({
         title: 'No time',
         endTime: new Date(Date.now() + 3600000).toISOString(),
@@ -112,7 +119,7 @@ describe('POST /api/meetings/:workspaceId/meetings', () => {
 
     const res = await request(app)
       .post(`/api/meetings/${workspace.id}/meetings`)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({
         title: 'Invalid times',
         startTime: new Date(Date.now() + 7200000).toISOString(),
@@ -139,7 +146,7 @@ describe('POST /api/meetings/:workspaceId/meetings', () => {
 
     const res = await request(app)
       .post(`/api/meetings/${workspace.id}/meetings`)
-      .set(authHeaders(outsider))
+      .set( await authWithCsrfHeaders(outsider))
       .send({
         title: 'Sneaky meeting',
         startTime: new Date(Date.now() + 3600000).toISOString(),
@@ -216,7 +223,7 @@ describe('PATCH /api/meetings/:workspaceId/meetings/:meetingId', () => {
 
     const res = await request(app)
       .patch(`/api/meetings/${workspace.id}/meetings/${meeting.id}`)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ title: 'Updated Title' });
 
     expect(res.status).toBe(200);
@@ -233,7 +240,7 @@ describe('DELETE /api/meetings/:workspaceId/meetings/:meetingId', () => {
 
     const res = await request(app)
       .delete(`/api/meetings/${workspace.id}/meetings/${meeting.id}`)
-      .set(authHeaders(user));
+      .set(await authWithCsrfHeaders(user));
 
     expect(res.status).toBe(200);
 

@@ -1,11 +1,11 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterAll } from 'vitest';
 import request from 'supertest';
 import app from '../../app.js';
 import { prisma } from '../../lib/prisma.js';
 import {
   createWorkspaceWithOwner,
 } from '../factories/index.js';
-import { authHeaders } from '../helpers/auth.js';
+import { authHeaders, authWithCsrfHeaders } from '../helpers/auth.js';
 
 // Helper: valid query params
 function validRange(workspaceId?: string) {
@@ -15,6 +15,12 @@ function validRange(workspaceId?: string) {
     endDate: new Date().toISOString(),
   };
 }
+beforeEach(() => {
+  process.env.ENFORCE_CSRF_IN_TESTS = 'true';
+});
+afterAll(() => {
+  delete process.env.ENFORCE_CSRF_IN_TESTS;
+})
 
 // ─────────────────────────────────────────────────────────────
 // GET /api/calendar/aggregates
@@ -135,7 +141,7 @@ describe('POST /api/calendar/goals', () => {
 
     const res = await request(app)
       .post('/api/calendar/goals')
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send(payload);
 
     expect(res.status).toBe(201);
@@ -155,7 +161,7 @@ describe('POST /api/calendar/goals', () => {
 
     const res = await request(app)
       .post('/api/calendar/goals')
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ title: '' }); // invalid
 
     expect(res.status).toBe(400);
@@ -179,7 +185,7 @@ describe('POST /api/calendar/recalculate', () => {
 
     const res = await request(app)
       .post('/api/calendar/recalculate')
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({
         workspaceId: workspace.id,
         date: new Date().toISOString(),
@@ -194,7 +200,7 @@ describe('POST /api/calendar/recalculate', () => {
 
     const res = await request(app)
       .post('/api/calendar/recalculate')
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({});
 
     expect(res.status).toBe(400);
@@ -210,7 +216,7 @@ describe('POST /api/calendar/initialize', () => {
 
     const res = await request(app)
       .post('/api/calendar/initialize')
-      .set(authHeaders(user));
+      .set(await authWithCsrfHeaders(user));
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);

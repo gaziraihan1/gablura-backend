@@ -37,6 +37,8 @@ export async function setup() {
 
   // These env vars ARE passed to workers (set before Vitest forks)
   process.env.TEST_JWT_PRIVATE_KEY_PATH = PRIVATE_KEY_PATH;
+  process.env.JWT_PRIVATE_KEY_PATH = PRIVATE_KEY_PATH;
+  process.env.JWT_PRIVATE_KEY = Buffer.from(privateKey).toString('base64');
   // base64-encoded — matches how auth.ts reads JWT_PUBLIC_KEY from env
   process.env.JWT_PUBLIC_KEY = Buffer.from(publicKey).toString('base64');
 

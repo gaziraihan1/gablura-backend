@@ -1,6 +1,6 @@
 // src/tests/integration/announcement/announcement.test.ts
 
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import request from 'supertest';
 import app from '../../app.js';
 import { prisma } from '../../lib/prisma.js';
@@ -11,7 +11,7 @@ import {
   createProject,
   createAnnouncement,
 } from '../factories/index.js';
-import { authHeaders } from '../helpers/auth.js';
+import { authHeaders, authWithCsrfHeaders } from '../helpers/auth.js';
 import { WorkspaceRole, AnnouncementVisibility } from '@prisma/client';
 
 const wsAnnouncementsUrl = (wsId: string) =>
@@ -25,9 +25,13 @@ const announcementUrl = (id: string) =>
 // ─────────────────────────────────────────────────────────────
 // cleanup (IMPORTANT for stability)
 // ─────────────────────────────────────────────────────────────
+beforeEach(async () => {
+  process.env.ENFORCE_CSRF_IN_TESTS = 'true';
+});
 afterEach(async () => {
   await prisma.announcementTarget.deleteMany({});
   await prisma.announcement.deleteMany({});
+  delete process.env.ENFORCE_CSRF_IN_TESTS;
 });
 
 // ─────────────────────────────────────────────────────────────
@@ -39,7 +43,7 @@ describe('POST workspace announcements', () => {
 
     const res = await request(app)
       .post(wsAnnouncementsUrl(workspace.id))
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({
         title: 'Q2 Planning Update',
         content: 'We are kicking off Q2 planning next Monday.',
@@ -68,7 +72,7 @@ describe('POST workspace announcements', () => {
 
     const res = await request(app)
       .post(wsAnnouncementsUrl(workspace.id))
-      .set(authHeaders(admin))
+      .set(await authWithCsrfHeaders(admin))
       .send({
         title: 'Admin Notice',
         content: 'Please review the new policy.',
@@ -84,7 +88,7 @@ describe('POST workspace announcements', () => {
 
     const res = await request(app)
       .post(wsAnnouncementsUrl(workspace.id))
-      .set(authHeaders(member))
+      .set(await authWithCsrfHeaders(member))
       .send({
         title: 'Member Notice',
         content: 'Can I post this?',
@@ -99,7 +103,7 @@ describe('POST workspace announcements', () => {
 
     const res = await request(app)
       .post(wsAnnouncementsUrl(workspace.id))
-      .set(authHeaders(outsider))
+      .set(await authWithCsrfHeaders(outsider))
       .send({ title: 'Sneaky', content: 'Hacking in.' });
 
     expect(res.status).toBe(403);
@@ -110,7 +114,7 @@ describe('POST workspace announcements', () => {
 
     const res = await request(app)
       .post(wsAnnouncementsUrl(workspace.id))
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ content: 'Content without title' });
 
     expect(res.status).toBe(400);
@@ -121,7 +125,7 @@ describe('POST workspace announcements', () => {
 
     const res = await request(app)
       .post(wsAnnouncementsUrl(workspace.id))
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ title: 'Title without content' });
 
     expect(res.status).toBe(400);
@@ -232,7 +236,7 @@ describe('PATCH announcement — pin/unpin', () => {
 
     const res = await request(app)
       .patch(`${announcementUrl(ann.id)}/pin`) // ✅ FIXED
-      .set(authHeaders(user));
+      .set(await authWithCsrfHeaders(user));
 
     expect(res.status).toBe(200);
 
@@ -249,7 +253,7 @@ describe('PATCH announcement — pin/unpin', () => {
 
     const res = await request(app)
       .patch(`${announcementUrl(ann.id)}/pin`) // ✅ FIXED
-      .set(authHeaders(member));
+      .set(await authWithCsrfHeaders(member));
 
     expect(res.status).toBe(403);
   });
@@ -265,7 +269,7 @@ describe('DELETE workspace announcement', () => {
 
     const res = await request(app)
       .delete(announcementUrl(ann.id)) // ✅ FIXED
-      .set(authHeaders(user));
+      .set(await authWithCsrfHeaders(user));
 
     expect(res.status).toBe(200);
 
@@ -285,7 +289,7 @@ describe('DELETE workspace announcement', () => {
 
     const res = await request(app)
       .delete(announcementUrl(ann.id)) // ✅ FIXED
-      .set(authHeaders(member));
+      .set(await authWithCsrfHeaders(member));
 
     expect(res.status).toBe(403);
   });

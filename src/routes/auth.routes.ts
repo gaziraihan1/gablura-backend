@@ -20,11 +20,12 @@ import { redis } from "../lib/redis.js";
 const router = Router();
 const devRefreshResponseCache = new Map<string, string>();
 const REFRESH_DEDUPE_TTL_SECONDS = 30;
+
 import {
   acquireRefreshLock,
   releaseRefreshLock,
-  isRefreshLocked,
 } from "../lib/auth/refreshLock.js";
+
 const getIp = (req: any) =>
   (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() ||
   req.socket.remoteAddress ||
@@ -35,15 +36,29 @@ function sleep(ms: number): Promise<void> {
 }
 
 async function getCachedRefreshResponse(cacheKey: string) {
-  if (redis) return await redis.get<string>(cacheKey);
+  if (redis && process.env.UPSTASH_REDIS_REST_URL) {
+    try {
+      return await redis.get<string>(cacheKey);
+    } catch (error) {
+      console.error('Redis get error:', error);
+      return devRefreshResponseCache.get(cacheKey) ?? null;
+    }
+  }
   return devRefreshResponseCache.get(cacheKey) ?? null;
 }
 
 async function cacheRefreshResponse(cacheKey: string, payload: string) {
-  if (redis) {
-    await redis.setex(cacheKey, REFRESH_DEDUPE_TTL_SECONDS, payload);
-    return;
+  if (redis && process.env.UPSTASH_REDIS_REST_URL) {
+    try {
+      await redis.setex(cacheKey, REFRESH_DEDUPE_TTL_SECONDS, payload);
+      return;
+    } catch (error) {
+      console.error('Redis setex error:', error);
+      // Fallback to in-memory
+    }
   }
+  
+  // In-memory fallback
   devRefreshResponseCache.set(cacheKey, payload);
   setTimeout(
     () => devRefreshResponseCache.delete(cacheKey),
@@ -145,17 +160,24 @@ router.post("/exchange", async (req, res) => {
     }
 
     const idempotencyKey = `focura:exchange:lock:${sessionId}`;
-    if (redis) {
-      const cached = await redis.get<string>(idempotencyKey);
-      if (cached) {
-        auditLog("EXCHANGE_SUCCESS", {
-          userId: user.id,
-          email: user.email,
-          ip,
-          sessionId,
-          meta: { idempotencyKey: true },
-        });
-        return res.json({ success: true, ...JSON.parse(cached) });
+    
+    // Only use Redis if properly configured
+    if (redis && process.env.UPSTASH_REDIS_REST_URL) {
+      try {
+        const cached = await redis.get<string>(idempotencyKey);
+        if (cached) {
+          auditLog("EXCHANGE_SUCCESS", {
+            userId: user.id,
+            email: user.email,
+            ip,
+            sessionId,
+            meta: { idempotencyKey: true },
+          });
+          return res.json({ success: true, ...JSON.parse(cached) });
+        }
+      } catch (error) {
+        console.error('Redis idempotency check error:', error);
+        // Continue without idempotency check
       }
     }
 
@@ -178,17 +200,24 @@ router.post("/exchange", async (req, res) => {
       extractJti(tokens.refreshToken),
       parseExpiry(REFRESH_TOKEN_EXPIRY) / 1000,
     );
-    if (redis) {
-      await redis.setex(
-        idempotencyKey,
-        90,
-        JSON.stringify({
-          accessToken: tokens.accessToken,
-          refreshToken: tokens.refreshToken,
-          accessTokenExpiry: tokens.accessTokenExpiry,
-          refreshTokenExpiry: tokens.refreshTokenExpiry,
-        }),
-      );
+    
+    // Store idempotency cache if Redis available
+    if (redis && process.env.UPSTASH_REDIS_REST_URL) {
+      try {
+        await redis.setex(
+          idempotencyKey,
+          90,
+          JSON.stringify({
+            accessToken: tokens.accessToken,
+            refreshToken: tokens.refreshToken,
+            accessTokenExpiry: tokens.accessTokenExpiry,
+            refreshTokenExpiry: tokens.refreshTokenExpiry,
+          }),
+        );
+      } catch (error) {
+        console.error('Redis idempotency set error:', error);
+        // Continue without caching
+      }
     }
 
     auditLog("EXCHANGE_SUCCESS", {
@@ -229,6 +258,7 @@ router.post("/refresh", async (req, res) => {
     const decoded = verifyToken(refreshToken, "refresh");
     const sessionId = decoded.sessionId!;
     const refreshReplayCacheKey = `focura:refresh:result:${decoded.id}:${decoded.jti}`;
+    
     const acquired = await acquireRefreshLock(sessionId);
     if (!acquired) {
       // In-flight refresh: extended cache check
@@ -244,21 +274,23 @@ router.post("/refresh", async (req, res) => {
         retryAfter: 1,
       });
     }
+    
     const cachedResponse = await getCachedRefreshResponse(
       refreshReplayCacheKey,
     );
     if (cachedResponse) {
+      await releaseRefreshLock(sessionId);
       return res.json(JSON.parse(cachedResponse));
     }
 
     try {
-
       const tokens = createTokenPair({
         id: decoded.id,
         email: decoded.email,
         role: decoded.role,
         sessionId: decoded.sessionId,
       });
+      
       const rotated = await rotateRefreshToken(
         decoded.id,
         decoded.jti,
@@ -273,6 +305,7 @@ router.post("/refresh", async (req, res) => {
             refreshReplayCacheKey,
           );
           if (duplicateResponse) {
+            await releaseRefreshLock(sessionId);
             return res.json(JSON.parse(duplicateResponse));
           }
         }
@@ -283,6 +316,8 @@ router.post("/refresh", async (req, res) => {
           ip,
           reason: "Refresh token already used or revoked",
         });
+        
+        await releaseRefreshLock(sessionId);
         return res.status(401).json({
           success: false,
           message: "Refresh token invalid or already used",
@@ -297,6 +332,7 @@ router.post("/refresh", async (req, res) => {
         accessTokenExpiry: tokens.accessTokenExpiry,
         refreshTokenExpiry: tokens.refreshTokenExpiry,
       };
+      
       await cacheRefreshResponse(
         refreshReplayCacheKey,
         JSON.stringify(responsePayload),
@@ -307,9 +343,10 @@ router.post("/refresh", async (req, res) => {
         ip,
         sessionId: decoded.sessionId,
       });
+      
       return res.json(responsePayload);
     } finally {
-      await releaseRefreshLock(sessionId)
+      await releaseRefreshLock(sessionId);
     }
 
   } catch (err: any) {
@@ -349,9 +386,14 @@ router.post("/logout", async (req, res) => {
   }
 
   try {
-    if (process.env.UPSTASH_REDIS_REST_URL) {
-      if (tokenJti) await revokeAccessToken(tokenJti, 900);
-      if (logoutAll && userId) await revokeAllRefreshTokens(userId);
+    if (process.env.UPSTASH_REDIS_REST_URL && redis) {
+      try {
+        if (tokenJti) await revokeAccessToken(tokenJti, 900);
+        if (logoutAll && userId) await revokeAllRefreshTokens(userId);
+      } catch (error) {
+        console.error('Redis revocation error:', error);
+        // Continue with logout
+      }
     }
 
     auditLog(logoutAll ? "LOGOUT_ALL_DEVICES" : "LOGOUT", {

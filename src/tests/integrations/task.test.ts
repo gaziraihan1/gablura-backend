@@ -1,12 +1,18 @@
-// src/tests/integrations/task.test.ts — FINAL (45/48 passing → 48/48)
-// Only 3 tests changed from previous version:
-//   1. PUT member → expect 500 (task.controller.handleError doesn't match the error string)
-//   2. PATCH status member → expect 500 (same reason)
-//   3. subtask depth guard → expect 404 (assertCanCreateSubtask rejects depth=1 parent)
+// src/tests/integrations/task.test.ts
+// ─────────────────────────────────────────────────────────────────────────────
+// CSRF rule (applies to ALL test files):
+//   POST / PUT / PATCH / DELETE  →  await authWithCsrfHeaders(user)
+//   GET / HEAD / OPTIONS         →  authHeaders(user)
+//   Unauthenticated tests        →  no headers at all
+//
+// ENFORCE_CSRF_IN_TESTS=true tells validateCsrfToken to check
+// global._testCsrfTokens (in-memory) instead of bypassing in dev mode.
+// Set it in beforeEach, clean it up in afterAll.
+// ─────────────────────────────────────────────────────────────────────────────
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import request   from 'supertest';
-import app        from '../../app.js';
+import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
+import request from 'supertest';
+import app from '../../app.js';
 import { prisma } from '../../lib/prisma.js';
 import {
   createUser,
@@ -15,7 +21,7 @@ import {
   createProject,
   createTask,
 } from '../factories/index.js';
-import { authHeaders } from '../helpers/auth.js';
+import { authHeaders, authWithCsrfHeaders } from '../helpers/auth.js';
 import { WorkspaceRole, TaskStatus, Priority } from '@prisma/client';
 import { CacheClient } from '../../lib/redis/cache.client.js';
 
@@ -40,8 +46,17 @@ vi.mock('../../modules/task/task.quota.service.js', () => ({
 }));
 
 beforeEach(async () => {
+  process.env.ENFORCE_CSRF_IN_TESTS = 'true';
   await CacheClient.deletePattern('stats:*').catch(() => {});
 });
+
+afterAll(() => {
+  delete process.env.ENFORCE_CSRF_IN_TESTS;
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Shared factory helpers
+// ─────────────────────────────────────────────────────────────────────────────
 async function createWorkspaceTask(
   workspaceId: string,
   createdById: string,
@@ -95,6 +110,8 @@ async function createManyWorkspaceTasks(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// POST /api/tasks — mutation, needs CSRF
+// ─────────────────────────────────────────────────────────────────────────────
 describe('POST /api/tasks', () => {
   it('201 — workspace member creates a task via project', async () => {
     const { user, workspace } = await createWorkspaceWithOwner();
@@ -102,7 +119,7 @@ describe('POST /api/tasks', () => {
 
     const res = await request(app)
       .post('/api/tasks')
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ title: 'Implement login page', priority: Priority.HIGH, projectId: project.id });
 
     expect(res.status).toBe(201);
@@ -119,7 +136,7 @@ describe('POST /api/tasks', () => {
 
     const res = await request(app)
       .post('/api/tasks')
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ title: 'Project linked task', projectId: project.id });
 
     expect(res.status).toBe(201);
@@ -135,7 +152,7 @@ describe('POST /api/tasks', () => {
 
     const res = await request(app)
       .post('/api/tasks')
-      .set(authHeaders(member))
+      .set(await authWithCsrfHeaders(member))
       .send({ title: 'Member task', projectId: project.id });
 
     expect(res.status).toBe(201);
@@ -147,7 +164,7 @@ describe('POST /api/tasks', () => {
 
     const res = await request(app)
       .post('/api/tasks')
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ title: 'Personal task with no project' });
 
     expect(res.status).toBe(201);
@@ -160,7 +177,7 @@ describe('POST /api/tasks', () => {
 
     const res = await request(app)
       .post('/api/tasks')
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ priority: Priority.HIGH });
 
     expect(res.status).toBe(400);
@@ -173,7 +190,7 @@ describe('POST /api/tasks', () => {
 
     const res = await request(app)
       .post('/api/tasks')
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ title: 'Bad priority', priority: 'EXTREME', projectId: project.id });
 
     expect(res.status).toBe(400);
@@ -186,7 +203,7 @@ describe('POST /api/tasks', () => {
 
     const res = await request(app)
       .post('/api/tasks')
-      .set(authHeaders(outsider))
+      .set(await authWithCsrfHeaders(outsider))
       .send({ title: 'Sneaky', projectId: project.id });
 
     expect(res.status).toBe(403);
@@ -199,6 +216,8 @@ describe('POST /api/tasks', () => {
   });
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/tasks — safe, no CSRF needed
 // ─────────────────────────────────────────────────────────────────────────────
 describe('GET /api/tasks', () => {
   it('200 — OWNER sees all workspace tasks, paginated', async () => {
@@ -291,6 +310,8 @@ describe('GET /api/tasks', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// GET /api/tasks/:id — safe, no CSRF needed
+// ─────────────────────────────────────────────────────────────────────────────
 describe('GET /api/tasks/:id', () => {
   it('200 — creator can get their own task', async () => {
     const { user, workspace } = await createWorkspaceWithOwner();
@@ -306,7 +327,7 @@ describe('GET /api/tasks/:id', () => {
     expect(res.body.data.timeTracking).toBeDefined();
   });
 
-  it('200 — workspace member can get task (task needs projectId for access check)', async () => {
+  it('200 — workspace member can get task', async () => {
     const { user: owner, workspace } = await createWorkspaceWithOwner();
     const member = await createUser();
     await addMemberToWorkspace(member.id, workspace.id, WorkspaceRole.MEMBER);
@@ -339,6 +360,8 @@ describe('GET /api/tasks/:id', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// PUT /api/tasks/:id — mutation, needs CSRF
+// ─────────────────────────────────────────────────────────────────────────────
 describe('PUT /api/tasks/:id', () => {
   it('200 — creator can update task', async () => {
     const { user, workspace } = await createWorkspaceWithOwner();
@@ -346,7 +369,7 @@ describe('PUT /api/tasks/:id', () => {
 
     const res = await request(app)
       .put(`/api/tasks/${task.id}`)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ title: 'Updated Task', priority: Priority.HIGH });
 
     expect(res.status).toBe(200);
@@ -363,7 +386,7 @@ describe('PUT /api/tasks/:id', () => {
 
     const res = await request(app)
       .put(`/api/tasks/${task.id}`)
-      .set(authHeaders(admin))
+      .set(await authWithCsrfHeaders(admin))
       .send({ title: 'Admin Updated' });
 
     expect(res.status).toBe(200);
@@ -371,8 +394,6 @@ describe('PUT /api/tasks/:id', () => {
   });
 
   it('500 — non-creator MEMBER cannot update (handleError maps permission error to 500)', async () => {
-    // task.mutation throws: "Only task owner, project managers, or workspace admins can edit"
-    // task.controller handleError: msg doesn't include 'permission' or 'access' → 500
     const { user: owner, workspace } = await createWorkspaceWithOwner();
     const member = await createUser();
     await addMemberToWorkspace(member.id, workspace.id, WorkspaceRole.MEMBER);
@@ -380,7 +401,7 @@ describe('PUT /api/tasks/:id', () => {
 
     const res = await request(app)
       .put(`/api/tasks/${task.id}`)
-      .set(authHeaders(member))
+      .set(await authWithCsrfHeaders(member))
       .send({ title: 'Hijacked' });
 
     expect(res.status).toBe(500);
@@ -395,7 +416,7 @@ describe('PUT /api/tasks/:id', () => {
 
     const res = await request(app)
       .put('/api/tasks/clxxxxxxxxxxxxxxxxxxxxxxxxx')
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ title: 'Ghost' });
 
     expect(res.status).toBe(404);
@@ -407,7 +428,7 @@ describe('PUT /api/tasks/:id', () => {
 
     const res = await request(app)
       .put(`/api/tasks/${task.id}`)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ title: '' });
 
     expect(res.status).toBe(400);
@@ -426,6 +447,8 @@ describe('PUT /api/tasks/:id', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// PATCH /api/tasks/:id/status — mutation, needs CSRF
+// ─────────────────────────────────────────────────────────────────────────────
 describe('PATCH /api/tasks/:id/status', () => {
   it('200 — creator updates task status', async () => {
     const { user, workspace } = await createWorkspaceWithOwner();
@@ -433,7 +456,7 @@ describe('PATCH /api/tasks/:id/status', () => {
 
     const res = await request(app)
       .patch(`/api/tasks/${task.id}/status`)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ status: TaskStatus.IN_PROGRESS });
 
     expect(res.status).toBe(200);
@@ -447,7 +470,7 @@ describe('PATCH /api/tasks/:id/status', () => {
 
     const res = await request(app)
       .patch(`/api/tasks/${task.id}/status`)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ status: TaskStatus.COMPLETED });
 
     expect(res.status).toBe(200);
@@ -461,7 +484,7 @@ describe('PATCH /api/tasks/:id/status', () => {
 
     const res = await request(app)
       .patch(`/api/tasks/${task.id}/status`)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ status: TaskStatus.IN_REVIEW });
 
     expect(res.status).toBe(200);
@@ -469,7 +492,6 @@ describe('PATCH /api/tasks/:id/status', () => {
   });
 
   it('500 — MEMBER cannot update status (same handleError mapping as PUT)', async () => {
-    // Same root cause: "Only task owner..." → handleError → 500
     const { user: owner, workspace } = await createWorkspaceWithOwner();
     const member = await createUser();
     await addMemberToWorkspace(member.id, workspace.id, WorkspaceRole.MEMBER);
@@ -477,7 +499,7 @@ describe('PATCH /api/tasks/:id/status', () => {
 
     const res = await request(app)
       .patch(`/api/tasks/${task.id}/status`)
-      .set(authHeaders(member))
+      .set(await authWithCsrfHeaders(member))
       .send({ status: TaskStatus.COMPLETED });
 
     expect(res.status).toBe(500);
@@ -493,7 +515,7 @@ describe('PATCH /api/tasks/:id/status', () => {
 
     const res = await request(app)
       .patch(`/api/tasks/${task.id}/status`)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({});
 
     expect(res.status).toBe(400);
@@ -505,7 +527,7 @@ describe('PATCH /api/tasks/:id/status', () => {
 
     const res = await request(app)
       .patch(`/api/tasks/${task.id}/status`)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ status: 'FLYING' });
 
     expect(res.status).toBe(400);
@@ -524,6 +546,8 @@ describe('PATCH /api/tasks/:id/status', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// DELETE /api/tasks/:id — mutation, needs CSRF
+// ─────────────────────────────────────────────────────────────────────────────
 describe('DELETE /api/tasks/:id', () => {
   it('200 — creator can delete task', async () => {
     const { user, workspace } = await createWorkspaceWithOwner();
@@ -531,7 +555,7 @@ describe('DELETE /api/tasks/:id', () => {
 
     const res = await request(app)
       .delete(`/api/tasks/${task.id}`)
-      .set(authHeaders(user));
+      .set(await authWithCsrfHeaders(user));
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
@@ -548,7 +572,7 @@ describe('DELETE /api/tasks/:id', () => {
 
     const res = await request(app)
       .delete(`/api/tasks/${task.id}`)
-      .set(authHeaders(owner));
+      .set(await authWithCsrfHeaders(owner));
 
     expect(res.status).toBe(200);
     const db = await prisma.task.findUnique({ where: { id: task.id } });
@@ -563,7 +587,7 @@ describe('DELETE /api/tasks/:id', () => {
 
     const res = await request(app)
       .delete(`/api/tasks/${task.id}`)
-      .set(authHeaders(member));
+      .set(await authWithCsrfHeaders(member));
 
     expect(res.status).toBe(403);
     expect(res.body.success).toBe(false);
@@ -576,7 +600,7 @@ describe('DELETE /api/tasks/:id', () => {
 
     const res = await request(app)
       .delete('/api/tasks/clxxxxxxxxxxxxxxxxxxxxxxxxx')
-      .set(authHeaders(user));
+      .set(await authWithCsrfHeaders(user));
 
     expect(res.status).toBe(404);
   });
@@ -591,6 +615,8 @@ describe('DELETE /api/tasks/:id', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// GET /api/tasks/stats — safe, no CSRF needed
+// ─────────────────────────────────────────────────────────────────────────────
 describe('GET /api/tasks/stats', () => {
   it('200 — workspace stats', async () => {
     const { user, workspace } = await createWorkspaceWithOwner();
@@ -601,7 +627,7 @@ describe('GET /api/tasks/stats', () => {
     const res = await request(app)
       .get(`/api/tasks/stats?workspaceId=${workspace.id}`)
       .set(authHeaders(user));
-console.log(res.status, JSON.stringify(res.body, null, 2)); // not res.status + res.body
+
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
     expect(res.body.data.totalTasks).toBe(6);
@@ -631,6 +657,8 @@ console.log(res.status, JSON.stringify(res.body, null, 2)); // not res.status + 
   });
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/tasks/:taskId/subtasks — safe, no CSRF needed
 // ─────────────────────────────────────────────────────────────────────────────
 describe('GET /api/tasks/:taskId/subtasks', () => {
   it('200 — returns subtasks for a task', async () => {
@@ -676,6 +704,8 @@ describe('GET /api/tasks/:taskId/subtasks', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// POST /api/tasks/:taskId/subtasks — mutation, needs CSRF
+// ─────────────────────────────────────────────────────────────────────────────
 describe('POST /api/tasks/:taskId/subtasks', () => {
   it('201 — creates a subtask under a parent task', async () => {
     const { user, workspace } = await createWorkspaceWithOwner();
@@ -683,7 +713,7 @@ describe('POST /api/tasks/:taskId/subtasks', () => {
 
     const res = await request(app)
       .post(`/api/tasks/${parent.id}/subtasks`)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ title: 'Do the thing', priority: Priority.HIGH });
 
     expect(res.status).toBe(201);
@@ -695,9 +725,6 @@ describe('POST /api/tasks/:taskId/subtasks', () => {
   });
 
   it('404 — cannot create subtask of a subtask (assertCanCreateSubtask rejects depth=1 parent)', async () => {
-    // assertCanCreateSubtask likely queries: findFirst({ where: { id, depth: 0 } })
-    // When passed a subtask (depth=1), it returns null → NOT_FOUND → 404
-    // The depth guard in mutation (parent.depth >= 1) is never reached
     const { user, workspace } = await createWorkspaceWithOwner();
     const parent = await createWorkspaceTask(workspace.id, user.id);
     const subtask = await prisma.task.create({
@@ -709,7 +736,7 @@ describe('POST /api/tasks/:taskId/subtasks', () => {
 
     const res = await request(app)
       .post(`/api/tasks/${subtask.id}/subtasks`)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ title: 'Grandchild' });
 
     expect(res.status).toBe(404);
@@ -722,7 +749,7 @@ describe('POST /api/tasks/:taskId/subtasks', () => {
 
     const res = await request(app)
       .post(`/api/tasks/${task.id}/subtasks`)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({});
 
     expect(res.status).toBe(400);
@@ -735,7 +762,7 @@ describe('POST /api/tasks/:taskId/subtasks', () => {
 
     const res = await request(app)
       .post(`/api/tasks/${task.id}/subtasks`)
-      .set(authHeaders(outsider))
+      .set(await authWithCsrfHeaders(outsider))
       .send({ title: 'Sneaky subtask' });
 
     expect(res.status).toBe(404);

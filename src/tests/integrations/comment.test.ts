@@ -1,18 +1,4 @@
-// src/tests/integrations/comment/comment.test.ts
-// ─────────────────────────────────────────────────────────────────────────────
-// FIXES vs previous version:
-//
-// 1. MEMBER test: both users in SAME workspace — no second workspace pair
-// 2. Non-member → 404 not 403:
-//    handleError first branch:
-//      if (msg === 'Comment not found' || msg === 'Task not found or access denied')
-//        → res.status(404)   ← this fires first, 403 branch never reached
-// 3. Non-existent task → 404 (same path, corrected expectation)
-// 4. Cascade test: schema has SET NULL not CASCADE on Comment.parent relation
-//    → reply survives deletion with parentId = null
-// ─────────────────────────────────────────────────────────────────────────────
-
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterAll } from 'vitest';
 import request   from 'supertest';
 import app        from '../../app.js';
 import { prisma } from '../../lib/prisma.js';
@@ -22,8 +8,15 @@ import {
   addMemberToWorkspace,
   createTask,
 } from '../factories/index.js';
-import { authHeaders } from '../helpers/auth.js';
+import { authHeaders, authWithCsrfHeaders } from '../helpers/auth.js';
 import { WorkspaceRole } from '@prisma/client';
+
+beforeEach(() => {
+  process.env.ENFORCE_CSRF_IN_TESTS = 'true';
+});
+afterAll(() => {
+  delete process.env.ENFORCE_CSRF_IN_TESTS;
+})
 
 const url = (taskId: string, commentId?: string) =>
   commentId
@@ -40,7 +33,7 @@ describe('POST /api/tasks/:taskId/comments', () => {
 
     const res = await request(app)
       .post(url(task.id))
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ content: 'Looks good, merging.' });
       const data = res.body.data;
 
@@ -64,7 +57,7 @@ describe('POST /api/tasks/:taskId/comments', () => {
 
   const res = await request(app)
     .post(url(task.id))
-    .set(authHeaders(member))
+    .set(await authWithCsrfHeaders(member))
     .send({ content: 'Member comment here' });
 
   expect(res.status).toBe(404);
@@ -82,7 +75,7 @@ describe('POST /api/tasks/:taskId/comments', () => {
 
     const res = await request(app)
       .post(url(task.id))
-      .set(authHeaders(assignee))
+      .set(await authWithCsrfHeaders(assignee))
       .send({ content: 'Assignee comment' });
 
     expect(res.status).toBe(201);
@@ -94,14 +87,14 @@ describe('POST /api/tasks/:taskId/comments', () => {
 
     const parentRes = await request(app)
       .post(url(task.id))
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ content: 'Parent comment' });
     expect(parentRes.status).toBe(201);
     const parentId = parentRes.body.data.id;
 
     const replyRes = await request(app)
       .post(url(task.id))
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ content: 'Reply', parentId });
 
     expect(replyRes.status).toBe(201);
@@ -124,7 +117,7 @@ describe('POST /api/tasks/:taskId/comments', () => {
 
     const res = await request(app)
       .post(url(task.id))
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ content: 'Grandchild', parentId: p2.id });
 
     expect(res.status).toBe(201);
@@ -140,7 +133,7 @@ describe('POST /api/tasks/:taskId/comments', () => {
 
     const res = await request(app)
       .post(url(task.id))
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ content: `Hey @[${mentioned.name}](${mentioned.id}), review this?` });
 
     expect(res.status).toBe(201);
@@ -167,7 +160,7 @@ describe('POST /api/tasks/:taskId/comments', () => {
 
     const res = await request(app)
       .post(url(task.id))
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ content });
 
     expect(res.status).toBe(201);
@@ -184,7 +177,7 @@ describe('POST /api/tasks/:taskId/comments', () => {
 
     const res = await request(app)
       .post(url(task.id))
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ content: 'No mentions here' });
 
     expect(res.status).toBe(201);
@@ -201,7 +194,7 @@ describe('POST /api/tasks/:taskId/comments', () => {
 
     const res = await request(app)
       .post(url(task.id))
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ content: '' });
 
     expect(res.status).toBe(400);
@@ -216,7 +209,7 @@ describe('POST /api/tasks/:taskId/comments', () => {
 
     const res = await request(app)
       .post(url(task.id))
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({});
 
     expect(res.status).toBe(400);
@@ -229,7 +222,7 @@ describe('POST /api/tasks/:taskId/comments', () => {
 
     const res = await request(app)
       .post(url(task.id))
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ content: 'a'.repeat(5001) });
 
     expect(res.status).toBe(400);
@@ -242,7 +235,7 @@ describe('POST /api/tasks/:taskId/comments', () => {
 
     const res = await request(app)
       .post(url(task.id))
-      .set(authHeaders(outsider))
+      .set( await authWithCsrfHeaders(outsider))
       .send({ content: 'Sneaky' });
 
     // handleError: first branch checks exact string match → 404
@@ -256,7 +249,7 @@ describe('POST /api/tasks/:taskId/comments', () => {
 
     const res = await request(app)
       .post(url('clxxxxxxxxxxxxxxxxxxxxxxxxx'))
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ content: 'Ghost task' });
 
     expect(res.status).toBe(404);
@@ -364,7 +357,7 @@ describe('PUT /api/tasks/:taskId/comments/:commentId', () => {
 
     const res = await request(app)
       .put(url(task.id, comment.id))
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ content: 'Edited' });
 
     expect(res.status).toBe(200);
@@ -388,7 +381,7 @@ describe('PUT /api/tasks/:taskId/comments/:commentId', () => {
 
     const res = await request(app)
       .put(url(task.id, comment.id))
-      .set(authHeaders(member))
+      .set(await authWithCsrfHeaders(member))
       .send({ content: 'Stolen edit' });
 
     expect(res.status).toBe(403);
@@ -404,7 +397,7 @@ describe('PUT /api/tasks/:taskId/comments/:commentId', () => {
 
     const res = await request(app)
       .put(url(task.id, comment.id))
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ content: '' });
 
     expect(res.status).toBe(400);
@@ -420,7 +413,7 @@ describe('PUT /api/tasks/:taskId/comments/:commentId', () => {
 
     const res = await request(app)
       .put(url(task.id, comment.id))
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({});
 
     expect(res.status).toBe(400);
@@ -432,7 +425,7 @@ describe('PUT /api/tasks/:taskId/comments/:commentId', () => {
 
     const res = await request(app)
       .put(url(task.id, 'clxxxxxxxxxxxxxxxxxxxxxxxxx'))
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ content: 'Ghost edit' });
 
     expect(res.status).toBe(404);
@@ -466,7 +459,7 @@ describe('DELETE /api/tasks/:taskId/comments/:commentId', () => {
 
     const res = await request(app)
       .delete(url(task.id, comment.id))
-      .set(authHeaders(user));
+      .set(await authWithCsrfHeaders(user));
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
@@ -488,7 +481,7 @@ describe('DELETE /api/tasks/:taskId/comments/:commentId', () => {
 
     const res = await request(app)
       .delete(url(task.id, parent.id))
-      .set(authHeaders(user));
+      .set(await authWithCsrfHeaders(user));
 
     expect(res.status).toBe(200);
 
@@ -514,7 +507,7 @@ describe('DELETE /api/tasks/:taskId/comments/:commentId', () => {
 
     const res = await request(app)
       .delete(url(task.id, comment.id))
-      .set(authHeaders(member));
+      .set(await authWithCsrfHeaders(member));
 
     expect(res.status).toBe(403);
     expect(res.body.success).toBe(false);
@@ -529,7 +522,7 @@ describe('DELETE /api/tasks/:taskId/comments/:commentId', () => {
 
     const res = await request(app)
       .delete(url(task.id, 'clxxxxxxxxxxxxxxxxxxxxxxxxx'))
-      .set(authHeaders(user));
+      .set(await authWithCsrfHeaders(user));
 
     expect(res.status).toBe(404);
     expect(res.body.success).toBe(false);

@@ -3,6 +3,10 @@ import jwt from "jsonwebtoken";
 import fs from "fs";
 import path from "path";
 import { prisma } from "../lib/prisma.js";
+import { redis } from "../lib/redis.js";
+import { getClientIp, SessionMetadata, validateSessionBinding } from "../lib/auth/sessionBinding.js";
+import { revokeAllRefreshTokens } from "../lib/auth/tokenRevocation.js";
+import { auditLog } from "../lib/auth/auditLog.js";
 
 export interface AuthRequest extends Request {
   user?: {
@@ -11,6 +15,7 @@ export interface AuthRequest extends Request {
     role: string;
     name?: string | null;
     tokenJti?: string;
+    sessionId?: string;
   };
 }
 
@@ -105,6 +110,8 @@ export const authenticate = async (
       });
     }
 
+    
+
     // CRITICAL: Check if token was revoked (logout or refresh rotation)
     if (decoded.jti && process.env.UPSTASH_REDIS_REST_URL) {
       const { isAccessTokenRevoked } = await import("../lib/auth/tokenRevocation.js");
@@ -119,7 +126,37 @@ export const authenticate = async (
       }
     }
 
-    // Fetch user from database
+    if (decoded.sessionId && redis) {
+      const metadataKey = `session:metadata:${decoded.sessionId}`;
+      const storedMetadata = await redis.get<string>(metadataKey);
+
+      if (storedMetadata) {
+        const metadata: SessionMetadata = JSON.parse(storedMetadata);
+        const bindingValidation = validateSessionBinding(req, metadata);
+
+        if (!bindingValidation.valid) {
+          await revokeAllRefreshTokens(decoded.sub);
+
+          auditLog('SESSION_HIJACK_DETECTED', {
+            userId: decoded.sub,
+            sessionId: decoded.sessionId,
+            reason: bindingValidation.reason,
+            ip: getClientIp(req),
+            userAgent: req.headers['user-agent'],
+          });
+
+          return res.status(401).json({
+            success: false,
+            message: 'Session validation failed. Please login again.',
+            code: 'SESSION_HIJACK_DETECTED',
+            reason: bindingValidation.reason,
+          });
+        }
+
+        metadata.lastActivity = Date.now();
+        await redis.setex(metadataKey, 7 * 24 * 60 * 60, JSON.stringify(metadata));
+      }
+    }
     const user = await prisma.user.findUnique({
       where: { id: decoded.sub },
       select: { 
@@ -169,6 +206,7 @@ export const authenticate = async (
       name: user.name,
       role: user.role,
       tokenJti: decoded.jti,
+      sessionId: decoded.sessionId,
     };
 
     next();

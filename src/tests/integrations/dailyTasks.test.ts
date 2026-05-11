@@ -1,12 +1,19 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterAll } from 'vitest';
 import request from 'supertest';
 import app from '../../app.js';
 import { prisma } from '../../lib/prisma.js';
 import { createWorkspaceWithOwner } from '../factories/index.js';
-import { authHeaders } from '../helpers/auth.js';
+import { authHeaders, authWithCsrfHeaders } from '../helpers/auth.js';
 
 // Helper: valid date
 const todayISO = () => new Date().toISOString();
+
+beforeEach(() => {
+  process.env.ENFORCE_CSRF_IN_TESTS = 'true';
+});
+afterAll(() => {
+  delete process.env.ENFORCE_CSRF_IN_TESTS;
+})
 
 // ─────────────────────────────────────────────────────────────
 // GET /api/daily-tasks
@@ -60,7 +67,7 @@ describe('POST /api/daily-tasks', () => {
 
     const res = await request(app)
       .post('/api/daily-tasks')
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({
         taskId: task.id,
         type: 'PRIMARY', // assuming enum allows PRIMARY/SECONDARY
@@ -85,7 +92,7 @@ describe('POST /api/daily-tasks', () => {
 
     await request(app)
       .post('/api/daily-tasks')
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({
         taskId: task1.id,
         type: 'PRIMARY',
@@ -94,7 +101,7 @@ describe('POST /api/daily-tasks', () => {
 
     const res = await request(app)
       .post('/api/daily-tasks')
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({
         taskId: task2.id,
         type: 'PRIMARY',
@@ -109,7 +116,7 @@ describe('POST /api/daily-tasks', () => {
 
     const res = await request(app)
       .post('/api/daily-tasks')
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({}); // invalid
 
     expect(res.status).toBe(400);
@@ -149,7 +156,7 @@ describe('DELETE /api/daily-tasks/:taskId', () => {
 
     const res = await request(app)
       .delete(`/api/daily-tasks/${task.id}`)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .query({ date: todayISO() });
 
     expect(res.status).toBe(200);
@@ -161,7 +168,7 @@ describe('DELETE /api/daily-tasks/:taskId', () => {
 
     const res = await request(app)
       .delete('/api/daily-tasks/non-existing-id')
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .query({ date: todayISO() });
 
     expect(res.status).toBe(404);
@@ -184,7 +191,7 @@ describe('POST /api/daily-tasks/clear-expired', () => {
 
     const res = await request(app)
       .post('/api/daily-tasks/clear-expired')
-      .set(authHeaders(user));
+      .set(await authWithCsrfHeaders(user));
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);

@@ -1,35 +1,6 @@
-// src/tests/integrations/user/user.test.ts
-// ─────────────────────────────────────────────────────────────────────────────
-// Written from actual source files.
-//
-// ROUTES (routes/user.routes.ts):
-//   GET /api/user/profile            → getUserProfile
-//   PUT /api/user/profile            → updateUserProfile
-//   GET /api/user/workspace-members  → inline handler
-//
-// RESPONSE SHAPES:
-//   GET /profile → { success: true, data: { user: { id, name, email, image,
-//                    bio, timezone, role, createdAt, updatedAt, ownedWorkspaces } } }
-//   PUT /profile → { success: true, data: { user: {...} }, message: 'Profile updated successfully' }
-//   GET /workspace-members → { success: true, data: User[] }
-//
-// VALIDATION (updateUserProfile):
-//   name, bio, timezone → typeof check → 400 if not string (NOT 422)
-//   Empty string is VALID — no min length check in controller
-//   Invalid timezone → saved as-is (no timezone validation)
-//   Fields NOT accepted: theme, notifications (ignored silently if sent)
-//   Fields that DO NOT EXIST on this router: /me, /capacity, /work-schedule, password
-//
-// ERROR CODES:
-//   Missing auth → authenticate middleware → 401
-//   User not found (DB) → 404
-//   Type errors → 400
-//   Everything else → 500
-// ─────────────────────────────────────────────────────────────────────────────
-
-import { describe, it, expect } from 'vitest';
-import request   from 'supertest';
-import app        from '../../app.js';
+import { describe, it, expect, beforeEach, afterAll } from 'vitest';
+import request from 'supertest';
+import app from '../../app.js';
 import { prisma } from '../../lib/prisma.js';
 import {
   createUser,
@@ -37,13 +8,22 @@ import {
   createWorkspaceWithOwner,
   addMemberToWorkspace,
 } from '../factories/index.js';
-import { authHeaders } from '../helpers/auth.js';
+import { authHeaders, authWithCsrfHeaders } from '../helpers/auth.js';
 import { WorkspaceRole } from '@prisma/client';
 
 const BASE = '/api/user';
 
+beforeEach(() => {
+  process.env.ENFORCE_CSRF_IN_TESTS = 'true';
+});
+
+afterAll(() => {
+  delete process.env.ENFORCE_CSRF_IN_TESTS;
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/user/profile
+// Safe method — authHeaders only, no CSRF needed
 // ─────────────────────────────────────────────────────────────────────────────
 describe('GET /api/user/profile', () => {
   it('200 — returns own profile wrapped in data.user, no password', async () => {
@@ -55,11 +35,9 @@ describe('GET /api/user/profile', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
-    // Response is nested: { success, data: { user: {...} } }
     expect(res.body.data.user.id).toBe(user.id);
     expect(res.body.data.user.email).toBe('testme@focura.test');
     expect(res.body.data.user.name).toBe('Test Person');
-    // Password must never appear
     expect(res.body.data.user.password).toBeUndefined();
   });
 
@@ -72,7 +50,6 @@ describe('GET /api/user/profile', () => {
 
     expect(res.status).toBe(200);
     const u = res.body.data.user;
-    // Fields from controller select
     expect(u).toHaveProperty('id');
     expect(u).toHaveProperty('name');
     expect(u).toHaveProperty('email');
@@ -83,7 +60,6 @@ describe('GET /api/user/profile', () => {
     expect(u).toHaveProperty('createdAt');
     expect(u).toHaveProperty('updatedAt');
     expect(u).toHaveProperty('ownedWorkspaces');
-    // Fields NOT in select
     expect(u).not.toHaveProperty('password');
     expect(u).not.toHaveProperty('notifications');
   });
@@ -123,7 +99,8 @@ describe('GET /api/user/profile', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PUT /api/user/profile  —  updateUserProfile
+// PUT /api/user/profile — updateUserProfile
+// State-changing — authWithCsrfHeaders required
 // ─────────────────────────────────────────────────────────────────────────────
 describe('PUT /api/user/profile', () => {
   it('200 — updates name, response wrapped in data.user', async () => {
@@ -131,7 +108,7 @@ describe('PUT /api/user/profile', () => {
 
     const res = await request(app)
       .put(`${BASE}/profile`)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ name: 'New Name' });
 
     expect(res.status).toBe(200);
@@ -141,7 +118,6 @@ describe('PUT /api/user/profile', () => {
 
     const db = await prisma.user.findUnique({ where: { id: user.id } });
     expect(db?.name).toBe('New Name');
-    // NOTE: controller does NOT set lastProfileUpdateAt — it's not in updateData
   });
 
   it('200 — updates bio', async () => {
@@ -149,7 +125,7 @@ describe('PUT /api/user/profile', () => {
 
     const res = await request(app)
       .put(`${BASE}/profile`)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ bio: 'Full-stack dev building Focura.' });
 
     expect(res.status).toBe(200);
@@ -164,7 +140,7 @@ describe('PUT /api/user/profile', () => {
 
     const res = await request(app)
       .put(`${BASE}/profile`)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ timezone: 'Asia/Dhaka' });
 
     expect(res.status).toBe(200);
@@ -172,12 +148,11 @@ describe('PUT /api/user/profile', () => {
   });
 
   it('200 — invalid timezone string is accepted (controller does no timezone validation)', async () => {
-    // Controller just checks typeof timezone === 'string' — any string passes
     const user = await createUser();
 
     const res = await request(app)
       .put(`${BASE}/profile`)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ timezone: 'Not/A/Real/Timezone' });
 
     expect(res.status).toBe(200);
@@ -189,7 +164,7 @@ describe('PUT /api/user/profile', () => {
 
     const res = await request(app)
       .put(`${BASE}/profile`)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ image: 'https://cdn.focura.com/avatar.png' });
 
     expect(res.status).toBe(200);
@@ -197,13 +172,11 @@ describe('PUT /api/user/profile', () => {
   });
 
   it('200 — empty string name is accepted (controller has no min-length check)', async () => {
-    // Controller only checks: if (name !== undefined && typeof name !== 'string')
-    // Empty string IS a string → passes
     const user = await createUser({ name: 'Real Name' });
 
     const res = await request(app)
       .put(`${BASE}/profile`)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ name: '' });
 
     expect(res.status).toBe(200);
@@ -214,7 +187,7 @@ describe('PUT /api/user/profile', () => {
 
     const res = await request(app)
       .put(`${BASE}/profile`)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({});
 
     expect(res.status).toBe(200);
@@ -222,17 +195,15 @@ describe('PUT /api/user/profile', () => {
   });
 
   it('200 — theme and notifications fields are silently ignored (not in controller)', async () => {
-    // Controller only picks: name, bio, image, timezone — others are ignored
     const user = await createUser();
 
     const res = await request(app)
       .put(`${BASE}/profile`)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ theme: 'dark', notifications: false, name: 'Valid Name' });
 
     expect(res.status).toBe(200);
     expect(res.body.data.user.name).toBe('Valid Name');
-    // theme and notifications are not in the response select
     expect(res.body.data.user.theme).toBeUndefined();
   });
 
@@ -241,10 +212,9 @@ describe('PUT /api/user/profile', () => {
 
     const res = await request(app)
       .put(`${BASE}/profile`)
-      .set(authHeaders(user))
-      .send({ name: 12345 }); // number, not string
+      .set(await authWithCsrfHeaders(user))
+      .send({ name: 12345 });
 
-    // Controller: if (name !== undefined && typeof name !== 'string') → 400
     expect(res.status).toBe(400);
     expect(res.body.success).toBe(false);
     expect(res.body.message).toBe('Invalid name format');
@@ -255,7 +225,7 @@ describe('PUT /api/user/profile', () => {
 
     const res = await request(app)
       .put(`${BASE}/profile`)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ bio: ['array', 'not', 'string'] });
 
     expect(res.status).toBe(400);
@@ -267,8 +237,8 @@ describe('PUT /api/user/profile', () => {
 
     const res = await request(app)
       .put(`${BASE}/profile`)
-      .set(authHeaders(user))
-      .send({ timezone: { zone: 'invalid' } }); // object, not string
+      .set(await authWithCsrfHeaders(user))
+      .send({ timezone: { zone: 'invalid' } });
 
     expect(res.status).toBe(400);
     expect(res.body.message).toBe('Invalid timezone format');
@@ -280,10 +250,9 @@ describe('PUT /api/user/profile', () => {
 
     await request(app)
       .put(`${BASE}/profile`)
-      .set(authHeaders(user1))
+      .set(await authWithCsrfHeaders(user1))
       .send({ name: 'User One Updated' });
 
-    // User2 is unchanged
     const db2 = await prisma.user.findUnique({ where: { id: user2.id } });
     expect(db2?.name).toBe('User Two');
   });
@@ -299,6 +268,7 @@ describe('PUT /api/user/profile', () => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/user/workspace-members
+// Safe method — authHeaders only, no CSRF needed
 // ─────────────────────────────────────────────────────────────────────────────
 describe('GET /api/user/workspace-members', () => {
   it('200 — returns members of workspaces the user belongs to', async () => {
@@ -313,7 +283,6 @@ describe('GET /api/user/workspace-members', () => {
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
     expect(Array.isArray(res.body.data)).toBe(true);
-    // Owner and member should both be present
     const ids = res.body.data.map((u: { id: string }) => u.id);
     expect(ids).toContain(owner.id);
     expect(ids).toContain(member.id);
@@ -341,11 +310,10 @@ describe('GET /api/user/workspace-members', () => {
   });
 
   it('200 — results are deduplicated (distinct by id)', async () => {
-    // User in multiple workspaces should only appear once
     const { user: owner1, workspace: ws1 } = await createWorkspaceWithOwner();
     const { workspace: ws2 } = await createWorkspaceWithOwner(
       { email: 'owner2@focura.test' },
-      { slug: 'ws-second' }
+      { slug: 'ws-second' },
     );
     const sharedMember = await createUser();
     await addMemberToWorkspace(sharedMember.id, ws1.id, WorkspaceRole.MEMBER);
@@ -358,7 +326,6 @@ describe('GET /api/user/workspace-members', () => {
 
     expect(res.status).toBe(200);
     const ids = res.body.data.map((u: { id: string }) => u.id);
-    // sharedMember appears in multiple workspaces but should only show once
     const sharedMemberCount = ids.filter((id: string) => id === sharedMember.id).length;
     expect(sharedMemberCount).toBe(1);
   });

@@ -1,18 +1,4 @@
-// src/tests/integration/focusSession/focusSession.test.ts
-// ─────────────────────────────────────────────────────────────────────────────
-// Schema facts:
-//   FocusSession: userId, taskId?, duration, type (FocusType), completed, startedAt, endedAt
-//   FocusType: POMODORO | SHORT_BREAK | LONG_BREAK | DEEP_WORK | CUSTOM
-//   Route: /api/focus-sessions
-//
-// Critical business rules to test:
-//   1. Only one active session (endedAt=null) per user at a time
-//   2. Completing a session sets endedAt + completed=true
-//   3. Session can optionally link to a Task
-//   4. Stats aggregate correctly (total minutes, sessions per type)
-// ─────────────────────────────────────────────────────────────────────────────
-
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterAll } from 'vitest';
 import request from 'supertest';
 import app from '../../app.js';
 import { prisma } from '../../lib/prisma.js';
@@ -21,10 +7,16 @@ import {
   createWorkspaceWithOwner,
   createTask,
 } from '../factories/index.js';
-import { authHeaders } from '../helpers/auth.js';
+import { authHeaders, authWithCsrfHeaders } from '../helpers/auth.js';
 import { FocusType } from '@prisma/client';
 
 const BASE = '/api/focus-sessions';
+beforeEach(() => {
+  process.env.ENFORCE_CSRF_IN_TESTS = 'true';
+});
+afterAll(() => {
+  delete process.env.ENFORCE_CSRF_IN_TESTS;
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/focus-sessions  —  Start a session
@@ -35,7 +27,7 @@ describe('POST /api/focus-sessions/start — start', () => {
 
     const res = await request(app)
       .post(`${BASE}/start`)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ duration: 25, type: FocusType.POMODORO });
       const data = res.body.data
 
@@ -54,7 +46,7 @@ describe('POST /api/focus-sessions/start — start', () => {
 
     const res = await request(app)
       .post(`${BASE}/start`)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ duration: 90, type: FocusType.DEEP_WORK, taskId: task.id });
 
     expect(res.status).toBe(201);
@@ -67,7 +59,7 @@ describe('POST /api/focus-sessions/start — start', () => {
 
     const res = await request(app)
       .post(`${BASE}/start`)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ duration: 45, type: FocusType.CUSTOM });
 
     expect(res.status).toBe(201);
@@ -80,13 +72,13 @@ describe('POST /api/focus-sessions/start — start', () => {
     // Start first session
     await request(app)
       .post(`${BASE}/start`)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ duration: 25, type: FocusType.POMODORO });
 
     // Try to start another
     const res = await request(app)
       .post(`${BASE}/start`)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ duration: 25, type: FocusType.SHORT_BREAK });
 
     expect(res.status).toBe(400);
@@ -97,7 +89,7 @@ describe('POST /api/focus-sessions/start — start', () => {
 
     const res = await request(app)
       .post(`${BASE}/start`)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ type: FocusType.POMODORO });
 
     expect(res.status).toBe(400);
@@ -108,7 +100,7 @@ describe('POST /api/focus-sessions/start — start', () => {
 
     const res = await request(app)
       .post(`${BASE}/start`)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ duration: 25, type: 'MARATHON' });
 
     expect(res.status).toBe(400);
@@ -119,7 +111,7 @@ describe('POST /api/focus-sessions/start — start', () => {
 
     const res = await request(app)
       .post(`${BASE}/start`)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ duration: -5, type: FocusType.POMODORO });
 
     expect(res.status).toBe(400);
@@ -143,14 +135,14 @@ describe('POST /api/focus-sessions/:id/complete', () => {
 
     const startRes = await request(app)
       .post(`${BASE}/start`)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ duration: 25, type: FocusType.POMODORO });
 
     const sessionId = startRes.body.data.id;
 
     const res = await request(app)
       .post(`${BASE}/${sessionId}/complete`)
-      .set(authHeaders(user));
+      .set(await authWithCsrfHeaders(user));
 
     expect(res.status).toBe(200);
     expect(res.body.data.completed).toBe(true);
@@ -166,17 +158,17 @@ describe('POST /api/focus-sessions/:id/complete', () => {
 
     const startRes = await request(app)
       .post(`${BASE}/start`)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ duration: 25, type: FocusType.POMODORO });
 
     await request(app)
       .post(`${BASE}/${startRes.body.data.id}/complete`)
-      .set(authHeaders(user));
+      .set(await authWithCsrfHeaders(user));
 
     // Now can start another
     const res = await request(app)
       .post(`${BASE}/start`)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ duration: 5, type: FocusType.SHORT_BREAK });
 
     expect(res.status).toBe(201);
@@ -187,7 +179,7 @@ describe('POST /api/focus-sessions/:id/complete', () => {
 
     const res = await request(app)
       .post(`${BASE}/clxxxxxxxxxxxxxxxxxxxxxxxxx/complete`)
-      .set(authHeaders(user));
+      .set(await authWithCsrfHeaders(user));
 
     expect(res.status).toBe(404);
   });
@@ -198,12 +190,12 @@ describe('POST /api/focus-sessions/:id/complete', () => {
 
     const startRes = await request(app)
       .post(`${BASE}/start`)
-      .set(authHeaders(user1))
+      .set(await authWithCsrfHeaders(user1))
       .send({ duration: 25, type: FocusType.POMODORO });
 
     const res = await request(app)
       .post(`${BASE}/${startRes.body.data.id}/complete`)
-      .set(authHeaders(user2));
+      .set(await authWithCsrfHeaders(user2));
 
     expect(res.status).toBe(404);
   });
@@ -213,17 +205,17 @@ describe('POST /api/focus-sessions/:id/complete', () => {
 
     const startRes = await request(app)
       .post(`${BASE}/start`)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ duration: 25, type: FocusType.POMODORO });
 
     await request(app)
       .post(`${BASE}/${startRes.body.data.id}/complete`)
-      .set(authHeaders(user));
+      .set(await authWithCsrfHeaders(user));
 
     // Try to complete again
     const res = await request(app)
       .post(`${BASE}/${startRes.body.data.id}/complete`)
-      .set(authHeaders(user));
+      .set(await authWithCsrfHeaders(user));
 
     expect(res.status).toBe(400);
   });
@@ -238,19 +230,19 @@ describe('POST /api/focus-sessions/:id — abandon', () => {
 
     const startRes = await request(app)
       .post(`${BASE}/start`)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ duration: 25, type: FocusType.POMODORO });
 
     const res = await request(app)
       .post(`${BASE}/${startRes.body.data.id}/cancel`)
-      .set(authHeaders(user));
+      .set(await authWithCsrfHeaders(user));
 
     expect(res.status).toBe(200);
 
     // After abandoning, should be able to start fresh
     const newRes = await request(app)
       .post(`${BASE}/start`)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ duration: 25, type: FocusType.POMODORO });
 
     expect(newRes.status).toBe(201);
@@ -262,12 +254,12 @@ describe('POST /api/focus-sessions/:id — abandon', () => {
 
     const startRes = await request(app)
       .post(`${BASE}/start`)
-      .set(authHeaders(user1))
+      .set(await authWithCsrfHeaders(user1))
       .send({ duration: 25, type: FocusType.POMODORO });
 
     const res = await request(app)
       .post(`${BASE}/${startRes.body.data.id}`)
-      .set(authHeaders(user2));
+      .set(await authWithCsrfHeaders(user2));
 
     expect(res.status).toBe(404);
   });
@@ -305,7 +297,7 @@ describe('GET /api/focus-sessions/history — history', () => {
 
     await request(app)
       .post(BASE + '/start')
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ duration: 25, type: FocusType.POMODORO });
 
     const res = await request(app)

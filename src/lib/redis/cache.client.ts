@@ -68,7 +68,14 @@ export const CacheClient = {
   async set(key: string, value: unknown, ttl: number): Promise<void> {
     try {
       const redis = getRedisClient();
-      await redis.setex(key, ttl, JSON.stringify(value));
+      const payload = JSON.stringify(value);
+      if (typeof (redis as any).setex === "function") {
+        await (redis as any).setex(key, ttl, payload);
+        return;
+      }
+      if (typeof (redis as any).set === "function") {
+        await (redis as any).set(key, payload, "EX", ttl);
+      }
     } catch (error) {
       console.error(`[Cache] Failed to set key "${key}":`, error);
     }
@@ -93,7 +100,10 @@ export const CacheClient = {
   async deletePattern(pattern: string): Promise<void> {
     try {
       const redis = getRedisClient();
-      const keys = await redis.keys(pattern);
+      if (typeof (redis as any).keys !== "function") {
+        return;
+      }
+      const keys = await (redis as any).keys(pattern);
       if (keys.length > 0) {
         await redis.del(...keys);
       }

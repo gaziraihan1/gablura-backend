@@ -1,18 +1,20 @@
 // src/tests/unit/middleware/authenticate.test.ts
-// ─────────────────────────────────────────────────────────────────────────────
-// FIXES vs previous version:
-//   1. JWT_PRIVATE_KEY_TEST does not exist. globalSetup sets TEST_JWT_PRIVATE_KEY_PATH.
-//      Tests that need raw private key now read from TEST_JWT_PRIVATE_KEY_PATH.
-//   2. readFileSync import added.
-//   3. All branches tested match what authenticate() actually does.
-// ─────────────────────────────────────────────────────────────────────────────
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { readFileSync } from "fs";
 import type { Response, NextFunction } from "express";
 import type { AuthRequest } from "../../../middleware/auth.js";
 
-// ── Mock prisma BEFORE importing authenticate ─────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Mocks — must be declared before any imports that pull in the real modules.
+//
+// 1. prisma  — avoid real DB calls
+// 2. redis   — avoid Upstash calls; keeps token-revocation path a no-op so
+//              authenticate() reaches the DB check every time
+// 3. sessionBinding — validateSessionBinding always returns valid so the
+//              session-hijack branch never fires in unit tests
+// ─────────────────────────────────────────────────────────────────────────────
+
 vi.mock("../../../lib/prisma.js", () => ({
   prisma: {
     user: {
@@ -21,6 +23,36 @@ vi.mock("../../../lib/prisma.js", () => ({
   },
 }));
 
+// redis is mocked as a controllable object.
+// By default its methods return null/undefined so no branch fires.
+// Individual tests override specific methods via vi.mocked().
+vi.mock("../../../lib/redis.js", () => ({
+  redis: {
+    get: vi.fn(async () => null),
+    setex: vi.fn(async () => "OK"),
+    del: vi.fn(async () => 1),
+    exists: vi.fn(async () => 0),
+  },
+}));
+
+vi.mock("../../../lib/auth/sessionBinding.js", () => ({
+  getClientIp: vi.fn(() => "127.0.0.1"),
+  validateSessionBinding: vi.fn(() => ({ valid: true })),
+}));
+
+// tokenRevocation is dynamically imported inside authenticate(); mock it too
+vi.mock("../../../lib/auth/tokenRevocation.js", () => ({
+  isAccessTokenRevoked: vi.fn(async () => false),
+  revokeAllRefreshTokens: vi.fn(async () => {}),
+}));
+
+vi.mock("../../../lib/auth/auditLog.js", () => ({
+  auditLog: vi.fn(),
+}));
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Real imports (after mocks are wired up)
+// ─────────────────────────────────────────────────────────────────────────────
 import { authenticate } from "../../../middleware/auth.js";
 import { prisma } from "../../../lib/prisma.js";
 import {
@@ -43,16 +75,21 @@ const mockUser = {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Helpers
+// Test helpers
 // ─────────────────────────────────────────────────────────────────────────────
 function makeReq(authHeader?: string): AuthRequest {
-  return { headers: { authorization: authHeader } } as AuthRequest;
+  return {
+    headers: { authorization: authHeader },
+    socket: { remoteAddress: "127.0.0.1" },
+    ip: "127.0.0.1",
+  } as unknown as AuthRequest;
 }
 
 function makeRes(): Response {
   const res = {
     status: vi.fn().mockReturnThis(),
     json: vi.fn().mockReturnThis(),
+    setHeader: vi.fn().mockReturnThis(),
   };
   return res as unknown as Response;
 }
@@ -60,8 +97,8 @@ function makeRes(): Response {
 const next: NextFunction = vi.fn();
 
 /**
- * Reads the RSA private key set by globalSetup.
- * globalSetup writes the key to a temp file and sets TEST_JWT_PRIVATE_KEY_PATH.
+ * Read the RSA private key written by globalSetup to a temp file.
+ * TEST_JWT_PRIVATE_KEY_PATH is set by globalSetup.ts — not JWT_PRIVATE_KEY_TEST.
  */
 function getTestPrivateKey(): string {
   const keyPath = process.env.TEST_JWT_PRIVATE_KEY_PATH;
@@ -74,8 +111,17 @@ function getTestPrivateKey(): string {
   return readFileSync(keyPath, "utf-8");
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   vi.clearAllMocks();
+
+  // Default redis behaviour: return null for .get() so neither the revocation
+  // block nor the session-binding block fires unless a test explicitly enables them.
+  const { redis } = await import("../../../lib/redis.js");
+  vi.mocked(redis!.get).mockResolvedValue(null);
+  vi.mocked(redis!.setex).mockResolvedValue("OK" as any);
+
+  // Ensure Redis env var is absent so authenticate() skips revocation check
+  delete process.env.UPSTASH_REDIS_REST_URL;
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -95,12 +141,12 @@ describe("authenticate middleware", () => {
     expect(req.user?.id).toBe(mockUser.id);
     expect(req.user?.email).toBe(mockUser.email);
     expect(req.user?.role).toBe(mockUser.role);
-    // Sensitive fields must NOT be on req.user
+    // Sensitive fields must NOT leak onto req.user
     expect((req.user as any)?.password).toBeUndefined();
     expect((req.user as any)?.bannedAt).toBeUndefined();
   });
 
-  // ── Missing / malformed header ───────────────────────────────────────────────
+  // ── Missing / malformed Authorization header ─────────────────────────────
   it("returns 401 NO_TOKEN when Authorization header is absent", async () => {
     const req = makeReq(undefined);
     const res = makeRes();
@@ -170,17 +216,16 @@ describe("authenticate middleware", () => {
 
   // ── Token payload validation ────────────────────────────────────────────────
   it("returns 401 TOKEN_VERSION_MISMATCH for token with wrong version", async () => {
-    // Read the key written by globalSetup (NOT JWT_PRIVATE_KEY_TEST — that doesn't exist)
     const privateKey = getTestPrivateKey();
-
     const { default: jwt } = await import("jsonwebtoken");
+
     const badVersionToken = jwt.sign(
       {
         sub: mockUser.id,
         email: mockUser.email,
         role: mockUser.role,
         type: "access",
-        version: 99, // wrong version — middleware expects 1
+        version: 99, // middleware expects 1
         jti: "test-jti-bad-version",
         sessionId: "test-session",
       },
@@ -202,14 +247,14 @@ describe("authenticate middleware", () => {
 
   it("returns 401 INVALID_TOKEN_TYPE for refresh token used as access token", async () => {
     const privateKey = getTestPrivateKey();
-
     const { default: jwt } = await import("jsonwebtoken");
+
     const refreshToken = jwt.sign(
       {
         sub: mockUser.id,
         email: mockUser.email,
         role: mockUser.role,
-        type: "refresh", // wrong type — middleware expects 'access'
+        type: "refresh", // middleware expects 'access'
         version: 1,
         jti: "test-jti-refresh",
         sessionId: "test-session",
@@ -228,6 +273,31 @@ describe("authenticate middleware", () => {
       expect.objectContaining({ code: "INVALID_TOKEN_TYPE" }),
     );
     expect(next).not.toHaveBeenCalled();
+  });
+
+  // ── Token revocation (Redis-enabled path) ───────────────────────────────────
+  it("returns 401 TOKEN_REVOKED when isAccessTokenRevoked returns true", async () => {
+    // Enable the Redis URL so authenticate() enters the revocation block
+    process.env.UPSTASH_REDIS_REST_URL = "https://fake-redis.upstash.io";
+
+    const { isAccessTokenRevoked } = await import(
+      "../../../lib/auth/tokenRevocation.js"
+    );
+    vi.mocked(isAccessTokenRevoked).mockResolvedValueOnce(true);
+
+    const token = generateTestToken(mockUser);
+    const req = makeReq(`Bearer ${token}`);
+    const res = makeRes();
+
+    await authenticate(req, res, next);
+
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ code: "TOKEN_REVOKED" }),
+    );
+    expect(next).not.toHaveBeenCalled();
+
+    delete process.env.UPSTASH_REDIS_REST_URL;
   });
 
   // ── DB-level checks ─────────────────────────────────────────────────────────
@@ -284,6 +354,56 @@ describe("authenticate middleware", () => {
       expect.objectContaining({ code: "ACCOUNT_BANNED" }),
     );
     expect(next).not.toHaveBeenCalled();
+  });
+
+  // ── Session-hijack detection ─────────────────────────────────────────────────
+  it("returns 401 SESSION_HIJACK_DETECTED when session binding fails", async () => {
+    // 1. Enable Redis env var so authenticate() enters the session-metadata block.
+    process.env.UPSTASH_REDIS_REST_URL = "https://fake-redis.upstash.io";
+
+    // 2. Make redis.get() return stored session metadata so the binding check runs.
+    const { redis } = await import("../../../lib/redis.js");
+    const fakeMetadata = JSON.stringify({
+      ip: "1.2.3.4",
+      userAgent: "OtherBrowser/1.0",
+      lastActivity: Date.now(),
+    });
+    vi.mocked(redis!.get).mockResolvedValueOnce(fakeMetadata as any);
+
+    // 3. Make the user DB lookup succeed with a fully valid user so we reach
+    //    the session-binding check (it runs before the DB lookup in auth flow).
+    //    Actually the binding check is inside the sessionId block which runs
+    //    before prisma — but prisma still needs to succeed afterward IF the
+    //    binding passed. Here binding FAILS so prisma is never reached.
+    vi.mocked(prisma.user.findUnique).mockResolvedValue(mockUser as any);
+
+    // 4. Force validateSessionBinding to report a hijack.
+    const { validateSessionBinding } = await import(
+      "../../../lib/auth/sessionBinding.js"
+    );
+    vi.mocked(validateSessionBinding).mockReturnValueOnce({
+      valid: false,
+      reason: "IP address changed",
+    });
+
+    const { revokeAllRefreshTokens } = await import(
+      "../../../lib/auth/tokenRevocation.js"
+    );
+
+    const token = generateTestToken(mockUser, { sessionId: "bound-session" });
+    const req = makeReq(`Bearer ${token}`);
+    const res = makeRes();
+
+    await authenticate(req, res, next);
+
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ code: "SESSION_HIJACK_DETECTED" }),
+    );
+    expect(revokeAllRefreshTokens).toHaveBeenCalledWith(mockUser.id);
+    expect(next).not.toHaveBeenCalled();
+
+    delete process.env.UPSTASH_REDIS_REST_URL;
   });
 
   // ── authorize() helper ───────────────────────────────────────────────────────

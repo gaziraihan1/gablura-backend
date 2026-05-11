@@ -2,13 +2,20 @@
 // Tests FeatureRequest CRUD + FeatureVote idempotency
 // Schema: FeatureVote has @@unique([userId, featureRequestId]) — vote twice = upsert
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterAll } from 'vitest';
 import request from 'supertest';
 import app from '../../app.js';
 import { prisma } from '../../lib/prisma.js';
 import { createUser, createFeatureRequest } from '../factories/index.js';
-import { authHeaders } from '../helpers/auth.js';
+import { authHeaders, authWithCsrfHeaders } from '../helpers/auth.js';
 import { VoteType, FeatureStatus } from '@prisma/client';
+
+beforeEach(() => {
+  process.env.ENFORCE_CSRF_IN_TESTS = 'true';
+});
+afterAll(() => {
+  delete process.env.ENFORCE_CSRF_IN_TESTS;
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/features  —  Create feature request
@@ -19,7 +26,7 @@ describe('POST /api/features', () => {
 
     const res = await request(app)
       .post('/api/features')
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({
         title: 'Dark mode support',
         description: 'Please add a dark mode option to the dashboard.',
@@ -38,7 +45,7 @@ describe('POST /api/features', () => {
 
     const res = await request(app)
       .post('/api/features')
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ description: 'No title provided' });
 
     expect(res.status).toBe(400);
@@ -49,7 +56,7 @@ describe('POST /api/features', () => {
 
     const res = await request(app)
       .post('/api/features')
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ title: 'Feature with no description' });
 
     expect(res.status).toBe(400);
@@ -100,7 +107,7 @@ describe('POST /api/features/:featureId/vote', () => {
 
     const res = await request(app)
       .post(`/api/features/${feature.id}/vote`)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ type: VoteType.UP });
 
     expect([200, 201]).toContain(res.status);
@@ -118,13 +125,13 @@ describe('POST /api/features/:featureId/vote', () => {
     // First vote
     await request(app)
       .post(`/api/features/${feature.id}/vote`)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ type: VoteType.UP });
 
     // Second vote — should upsert, not throw 500
     const res = await request(app)
       .post(`/api/features/${feature.id}/vote`)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ type: VoteType.UP });
 
     expect([200, 201]).toContain(res.status);
@@ -142,12 +149,12 @@ describe('POST /api/features/:featureId/vote', () => {
 
     await request(app)
       .post(`/api/features/${feature.id}/vote`)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ type: VoteType.UP });
 
     const res = await request(app)
       .post(`/api/features/${feature.id}/vote`)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ type: VoteType.DOWN });
 
     expect([200, 201]).toContain(res.status);
@@ -166,12 +173,12 @@ describe('POST /api/features/:featureId/vote', () => {
 
     await request(app)
       .post(`/api/features/${feature.id}/vote`)
-      .set(authHeaders(voter1))
+      .set(await authWithCsrfHeaders(voter1))
       .send({ type: VoteType.UP });
 
     await request(app)
       .post(`/api/features/${feature.id}/vote`)
-      .set(authHeaders(voter2))
+      .set(await authWithCsrfHeaders(voter2))
       .send({ type: VoteType.UP });
 
     const votes = await prisma.featureVote.findMany({
@@ -185,7 +192,7 @@ describe('POST /api/features/:featureId/vote', () => {
 
     const res = await request(app)
       .post('/api/features/clxxxxxxxxxxxxxxxxxxxxxxxxx/vote')
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ type: VoteType.UP });
 
     expect(res.status).toBe(404);
@@ -197,7 +204,7 @@ describe('POST /api/features/:featureId/vote', () => {
 
     const res = await request(app)
       .post(`/api/features/${feature.id}/vote`)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ type: 'SIDEWAYS' }); // not in VoteType enum
 
     expect(res.status).toBe(400);
@@ -230,7 +237,7 @@ describe('DELETE /api/features/:featureId', () => {
 
     const res = await request(app)
       .delete(`/api/features/${feature.id}/vote`)
-      .set(authHeaders(user));
+      .set(await authWithCsrfHeaders(user));
 
     expect(res.status).toBe(200);
 
@@ -246,7 +253,7 @@ describe('DELETE /api/features/:featureId', () => {
 
     const res = await request(app)
       .delete(`/api/features/${feature.id}/vote`)
-      .set(authHeaders(user));
+      .set(await authWithCsrfHeaders(user));
 
     expect(res.status).toBe(404);
   });
