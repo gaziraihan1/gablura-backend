@@ -208,28 +208,34 @@ export const requireResourceOwnership = (resourceType: 'task' | 'project') => {
     }
 
     if (resourceType === 'task') {
-      const task = await prisma.task.findUnique({
-        where: { id: resourceId },
-        select: { createdById: true, assigneeId: true },
-      });
+  const task = await prisma.task.findUnique({
+    where: { id: resourceId },
+    select: {
+      createdById: true,
+      assignees: { select: { userId: true } }, // ✅ not assigneeId
+    },
+  });
 
-      if (!task) {
-        return res.status(404).json({
-          success: false,
-          message: 'Task not found',
-          code: 'TASK_NOT_FOUND',
-        });
-      }
+  if (!task) {
+    return res.status(404).json({
+      success: false,
+      message: 'Task not found',
+      code: 'TASK_NOT_FOUND',
+    });
+  }
 
-      // Allow creator and assignee
-      if (task.createdById !== req.user.id && task.assigneeId !== req.user.id) {
-        return res.status(403).json({
-          success: false,
-          message: 'You can only modify tasks you created or are assigned to',
-          code: 'NOT_RESOURCE_OWNER',
-        });
-      }
-    } else if (resourceType === 'project') {
+  // Allow creator and assignee
+  if (
+    task.createdById !== req.user.id &&
+    !task.assignees.some((a) => a.userId === req.user?.id) // ✅ not task.assignees.id
+  ) {
+    return res.status(403).json({
+      success: false,
+      message: 'You can only modify tasks you created or are assigned to',
+      code: 'NOT_RESOURCE_OWNER',
+    });
+  }
+}else if (resourceType === 'project') {
       const project = await prisma.project.findUnique({
         where: { id: resourceId },
         select: { createdById: true },
