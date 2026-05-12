@@ -14,26 +14,10 @@ export const CalendarAggregation = {
   ): Promise<CalendarDayAggregate[]> {
     const { userId, workspaceId, startDate, endDate } = filters;
 
-    // 1. Fetch existing aggregates
-    let existing = await prisma.calendarDayAggregate.findMany({
-      where: {
-        userId,
-        date: { gte: startDate, lte: endDate },
-      },
+    const existing = await prisma.calendarDayAggregate.findMany({
+      where: { userId, date: { gte: startDate, lte: endDate } },
       orderBy: { date: "asc" },
     });
-
-    if (existing.length === 0) {
-      await this.computeRange(userId, workspaceId, startDate, endDate);
-
-      return prisma.calendarDayAggregate.findMany({
-        where: {
-          userId,
-          date: { gte: startDate, lte: endDate },
-        },
-        orderBy: { date: "asc" },
-      });
-    }
 
     const existingDates = new Set(
       existing.map((agg) => agg.date.toISOString().split("T")[0]),
@@ -43,23 +27,24 @@ export const CalendarAggregation = {
       (d) => !existingDates.has(d.toISOString().split("T")[0]),
     );
 
-    // 4. Compute only missing dates (sequential to avoid deadlocks)
-    if (missingDates.length > 0) {
-      for (const date of missingDates) {
-        await this.recalculateDay(userId, workspaceId, date);
-      }
+    if (missingDates.length === 0) return existing;
 
-      // Re-fetch once (NO recursion)
-      existing = await prisma.calendarDayAggregate.findMany({
-        where: {
-          userId,
-          date: { gte: startDate, lte: endDate },
-        },
-        orderBy: { date: "asc" },
-      });
-    }
+    const rangeStart = missingDates[0];
+    const rangeEnd = missingDates[missingDates.length - 1];
+    const rangeEndOfDay = endOfDay(rangeEnd);
 
-    return existing;
+    await this.computeRangeBatched(
+      userId,
+      workspaceId,
+      rangeStart,
+      rangeEndOfDay,
+      missingDates,
+    );
+
+    return prisma.calendarDayAggregate.findMany({
+      where: { userId, date: { gte: startDate, lte: endDate } },
+      orderBy: { date: "asc" },
+    });
   },
 
   async computeRange(
@@ -69,156 +54,153 @@ export const CalendarAggregation = {
     endDate: Date,
   ): Promise<void> {
     const dates = generateDateRange(startDate, endDate);
-
-    // Sequential execution → avoids DB deadlocks in tests
-    for (const date of dates) {
-      await this.recalculateDay(userId, workspaceId, date);
-    }
+    await this.computeRangeBatched(userId, workspaceId, startDate, endDate, dates);
   },
 
+  /**
+   * Fetches ALL data for the date range in 5 queries total (instead of 7×N),
+   * then fans out the computation per day in memory.
+   */
+  async computeRangeBatched(
+    userId: string,
+    workspaceId: string | undefined,
+    rangeStart: Date,
+    rangeEnd: Date,
+    dates: Date[],
+  ): Promise<void> {
+    // ── 1. Guard: user must exist ──────────────────────────────────────────
+    const userExists = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true },
+    });
+    if (!userExists) return;
+
+    // ── 2. Fetch everything for the whole range in ONE round-trip ──────────
+    const [capacity, tasks, timeEntries, focusSessions, dailyTasks, milestones] =
+      await Promise.all([
+        prisma.userCapacity.findUnique({ where: { userId } }),
+
+        prisma.task.findMany({
+          where: {
+            createdById: userId,
+            ...(workspaceId ? { workspaceId } : {}),
+            OR: [
+              { dueDate: { gte: rangeStart, lte: rangeEnd } },
+              { startDate: { gte: rangeStart, lte: rangeEnd } },
+            ],
+            status: { notIn: ["COMPLETED", "CANCELLED"] },
+          },
+          include: { assignees: true },
+        }),
+
+        prisma.timeEntry.findMany({
+          where: { userId, startedAt: { gte: rangeStart, lte: rangeEnd } },
+        }),
+
+        prisma.focusSession.findMany({
+          where: {
+            userId,
+            startedAt: { gte: rangeStart, lte: rangeEnd },
+            completed: true,
+          },
+        }),
+
+        prisma.dailyTask.findMany({
+          where: { userId, date: { gte: rangeStart, lte: rangeEnd } },
+        }),
+
+        prisma.projectMilestone.findMany({
+          where: {
+            dueDate: { gte: rangeStart, lte: rangeEnd },
+            project: {
+              ...(workspaceId ? { workspaceId } : {}),
+              members: { some: { userId } },
+            },
+          },
+        }),
+      ]);
+
+    const dailyCapacity = capacity?.dailyCapacityHours ?? 8;
+
+    // ── 3. Build per-day buckets in memory ────────────────────────────────
+    const upserts = dates.map((date) => {
+      const dayStart = normalizeDate(date);
+      const dayEnd = endOfDay(date);
+
+      const dayTasks = tasks.filter(
+        (t) =>
+          (t.dueDate && t.dueDate >= dayStart && t.dueDate <= dayEnd) ||
+          (t.startDate && t.startDate >= dayStart && t.startDate <= dayEnd),
+      );
+
+      const dayTimeEntries = timeEntries.filter(
+        (e) => e.startedAt >= dayStart && e.startedAt <= dayEnd,
+      );
+
+      const dayFocusSessions = focusSessions.filter(
+        (s) => s.startedAt >= dayStart && s.startedAt <= dayEnd,
+      );
+
+      const dayDailyTasks = dailyTasks.filter(
+        (dt) => dt.date >= dayStart && dt.date <= dayEnd,
+      );
+
+      const dayMilestones = milestones.filter(
+        (m) => m.dueDate && m.dueDate >= dayStart && m.dueDate <= dayEnd,
+      );
+
+      const totalTasks = dayTasks.length;
+      const dueTasks = dayTasks.filter(
+        (t) => t.dueDate && t.dueDate >= dayStart && t.dueDate <= dayEnd,
+      ).length;
+      const criticalTasks = dayTasks.filter(
+        (t) => t.priority === "URGENT" || t.priority === "HIGH",
+      ).length;
+      const milestoneCount = dayMilestones.length;
+      const plannedHours = dayTasks.reduce((sum, t) => sum + (t.estimatedHours ?? 0), 0);
+      const actualHours = dayTimeEntries.reduce((sum, e) => sum + e.duration / 60, 0);
+      const focusMinutes = dayFocusSessions.reduce((sum, s) => sum + s.duration, 0);
+      const focusRequiredTasks = dayTasks.filter((t) => t.focusRequired).length;
+      const workloadScore =
+        plannedHours / dailyCapacity + criticalTasks * 0.5 + focusRequiredTasks * 0.3;
+      const overCapacity = plannedHours > dailyCapacity;
+      const hasPrimaryFocus = dayDailyTasks.some((dt) => dt.type === "PRIMARY");
+      const reviewDay = isReviewDay(dayStart);
+
+      return {
+        dayStart,
+        totalTasks,
+        dueTasks,
+        criticalTasks,
+        milestoneCount,
+        plannedHours,
+        actualHours,
+        focusMinutes,
+        workloadScore,
+        overCapacity,
+        hasPrimaryFocus,
+        isReviewDay: reviewDay,
+      };
+    });
+
+    // ── 4. Write all days in a single transaction ─────────────────────────
+    await prisma.$transaction(
+      upserts.map(({ dayStart, ...data }) =>
+        prisma.calendarDayAggregate.upsert({
+          where: { userId_date: { userId, date: dayStart } },
+          update: data,
+          create: { userId, date: dayStart, ...data },
+        }),
+      ),
+    );
+  },
+
+  // recalculateDay kept for targeted single-day invalidation (e.g. after task update)
   async recalculateDay(
     userId: string,
     workspaceId: string | undefined,
     date: Date,
   ): Promise<void> {
-    const dayStart = normalizeDate(date);
-    const dayEnd = endOfDay(date);
-
-    const userExists = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { id: true },
-    });
-
-    if (!userExists) {
-      return;
-    }
-
-    const [
-      capacity,
-      tasks,
-      timeEntries,
-      focusSessions,
-      dailyTasks,
-      milestones,
-    ] = await Promise.all([
-      prisma.userCapacity.findUnique({ where: { userId } }),
-
-      prisma.task.findMany({
-        where: {
-          createdById: userId,
-          ...(workspaceId ? { workspaceId } : {}),
-          OR: [
-            { dueDate: { gte: dayStart, lte: dayEnd } },
-            { startDate: { gte: dayStart, lte: dayEnd } },
-          ],
-          status: { notIn: ["COMPLETED", "CANCELLED"] },
-        },
-        include: { assignees: true },
-      }),
-
-      prisma.timeEntry.findMany({
-        where: {
-          userId,
-          startedAt: { gte: dayStart, lte: dayEnd },
-        },
-      }),
-
-      prisma.focusSession.findMany({
-        where: {
-          userId,
-          startedAt: { gte: dayStart, lte: dayEnd },
-          completed: true,
-        },
-      }),
-
-      prisma.dailyTask.findMany({
-        where: {
-          userId,
-          date: { gte: dayStart, lte: dayEnd },
-        },
-      }),
-
-      prisma.projectMilestone.findMany({
-        where: {
-          dueDate: { gte: dayStart, lte: dayEnd },
-          project: {
-            ...(workspaceId ? { workspaceId } : {}),
-            members: { some: { userId } },
-          },
-        },
-      }),
-    ]);
-
-    const dailyCapacity = capacity?.dailyCapacityHours ?? 8;
-
-    const totalTasks = tasks.length;
-
-    const dueTasks = tasks.filter(
-      (t) => t.dueDate && t.dueDate >= dayStart && t.dueDate <= dayEnd,
-    ).length;
-
-    const criticalTasks = tasks.filter(
-      (t) => t.priority === "URGENT" || t.priority === "HIGH",
-    ).length;
-
-    const milestoneCount = milestones.length;
-
-    const plannedHours = tasks.reduce(
-      (sum, t) => sum + (t.estimatedHours ?? 0),
-      0,
-    );
-
-    const actualHours = timeEntries.reduce(
-      (sum, e) => sum + e.duration / 60,
-      0,
-    );
-
-    const focusMinutes = focusSessions.reduce(
-      (sum, s) => sum + s.duration,
-      0,
-    );
-
-    const focusRequiredTasks = tasks.filter((t) => t.focusRequired).length;
-
-    const workloadScore =
-      plannedHours / dailyCapacity +
-      criticalTasks * 0.5 +
-      focusRequiredTasks * 0.3;
-
-    const overCapacity = plannedHours > dailyCapacity;
-    const hasPrimaryFocus = dailyTasks.some((dt) => dt.type === "PRIMARY");
-    const reviewDay = isReviewDay(dayStart);
-
-    await prisma.calendarDayAggregate.upsert({
-      where: { userId_date: { userId, date: dayStart } },
-      update: {
-        totalTasks,
-        dueTasks,
-        criticalTasks,
-        milestoneCount,
-        plannedHours,
-        actualHours,
-        focusMinutes,
-        workloadScore,
-        overCapacity,
-        hasPrimaryFocus,
-        isReviewDay: reviewDay,
-      },
-      create: {
-        userId,
-        date: dayStart,
-        totalTasks,
-        dueTasks,
-        criticalTasks,
-        milestoneCount,
-        plannedHours,
-        actualHours,
-        focusMinutes,
-        workloadScore,
-        overCapacity,
-        hasPrimaryFocus,
-        isReviewDay: reviewDay,
-      },
-    });
+    await this.computeRangeBatched(userId, workspaceId, normalizeDate(date), endOfDay(date), [date]);
   },
 };

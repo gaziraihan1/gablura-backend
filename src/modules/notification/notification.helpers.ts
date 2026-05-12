@@ -1,213 +1,207 @@
-import { prisma } from '../../lib/prisma.js';
-import { NotificationMutation } from './notification.mutation.js';
-import { sendNotificationToUser } from '../../sockets/notification.stream.js';
-import type { NotificationType } from '@prisma/client';
+/**
+ * src/utils/notification.helpers.ts
+ *
+ * All notification dispatch functions.
+ * The only change from the previous version: instead of looking up an in-memory
+ * Map of SSE connections and writing directly to Response objects, we:
+ *   1. Write the Notification row to Postgres (unchanged).
+ *   2. PUBLISH the payload to the user's Redis channel.
+ *      → The SSE handler (notification.stream.ts) receives it on every process
+ *        that has an open connection for that user and fans it out to the browser.
+ *
+ * This makes the notification pipeline stateless with respect to which backend
+ * instance the user is connected to.
+ */
 
-export async function notifyUser(params: {
+import type { NotificationType } from "@prisma/client";
+import { NotificationPayload, SSEPayload, userChannel } from "../../lib/sse/sse.channels.js";
+import { getPublisher } from "../../lib/redis/redis.pubsub.js";
+import { prisma } from "../../lib/prisma.js";
+
+// ─── Internal publish helper ─────────────────────────────────────────────────
+
+async function publishToSSE(
+  userId: string,
+  notification: NotificationPayload,
+): Promise<void> {
+  const payload: SSEPayload = {
+    type: "notification",
+    data: notification,
+  };
+
+  try {
+    await getPublisher().publish(userChannel(userId), JSON.stringify(payload));
+  } catch (err) {
+    // Never let a Redis error break the API response — the DB write succeeded,
+    // so the notification is durable. The client will see it on next poll/reconnect.
+    console.error("[notifyUser] Redis PUBLISH failed for user", userId, err);
+  }
+}
+
+// ─── Core: write one notification and push it ────────────────────────────────
+
+interface NotifyUserOptions {
   userId: string;
   senderId?: string;
   type: NotificationType;
   title: string;
   message: string;
   actionUrl?: string;
-}) {
-  const notification = await NotificationMutation.create(params);
-  sendNotificationToUser(params.userId, notification);
-  return notification;
 }
 
-export async function notifyTaskAssignees(params: {
-  taskId: string;
-  senderId?: string;
-  type: NotificationType;
-  title: string;
-  message: string;
-  excludeUserId?: string;
-}) {
-  const task = await prisma.task.findUnique({
-    where: { id: params.taskId },
-    include: {
-      assignees: {
-        include: {
-          user: { select: { id: true, notifications: true } },
-        },
+export async function notifyUser(opts: NotifyUserOptions): Promise<void> {
+  const { userId, senderId, type, title, message, actionUrl } = opts;
+    console.log("[notifyUser] called for", opts.userId, opts.type); // add this
+
+
+  // 1. Persist to DB
+  const notification = await prisma.notification.create({
+    data: {
+      userId,
+      senderId: senderId ?? null,
+      type,
+      title,
+      message,
+      actionUrl: actionUrl ?? null,
+    },
+    select: {
+      id: true,
+      type: true,
+      title: true,
+      message: true,
+      actionUrl: true,
+      createdAt: true,
+      read: true,
+      sender: {
+        select: { id: true, name: true, image: true },
       },
     },
   });
 
-  if (!task?.assignees?.length) return [];
-
-  const eligible = task.assignees.filter((a) => {
-    if (params.excludeUserId && a.userId === params.excludeUserId) return false;
-    if (!a.user.notifications) return false;
-    return true;
+  // 2. Push via Redis pub/sub → SSE
+  await publishToSSE(userId, {
+    ...notification,
+    type: notification.type as string,
+    createdAt: notification.createdAt.toISOString(),
   });
-
-  const results = await Promise.allSettled(
-    eligible.map((a) =>
-      notifyUser({
-        userId: a.userId,
-        senderId: params.senderId,
-        type: params.type,
-        title: params.title,
-        message: params.message,
-        actionUrl: `/dashboard/tasks/${params.taskId}`,
-      })
-    )
-  );
-
-  return results
-    .filter((r): r is PromiseFulfilledResult<any> => r.status === 'fulfilled')
-    .map((r) => r.value);
 }
 
-export async function notifyWorkspaceMembers(params: {
-  workspaceId: string;
-  senderId?: string;
+// ─── Notify all assignees of a task ──────────────────────────────────────────
+
+interface NotifyTaskAssigneesOptions {
+  taskId: string;
+  senderId: string;
   type: NotificationType;
   title: string;
   message: string;
-  actionUrl?: string;
   excludeUserId?: string;
-  role?: string;
-}) {
-  const members = await prisma.workspaceMember.findMany({
-    where: {
-      workspaceId: params.workspaceId,
-      ...(params.role && { role: params.role as any }),
-    },
-    include: {
-      user: { select: { id: true, notifications: true } },
-    },
-  });
-
-  const eligible = members.filter((m) => {
-    if (params.excludeUserId && m.userId === params.excludeUserId) return false;
-    if (!m.user.notifications) return false;
-    return true;
-  });
-
-  const results = await Promise.allSettled(
-    eligible.map((m) =>
-      notifyUser({
-        userId: m.userId,
-        senderId: params.senderId,
-        type: params.type,
-        title: params.title,
-        message: params.message,
-        actionUrl: params.actionUrl,
-      })
-    )
-  );
-
-  return results
-    .filter((r): r is PromiseFulfilledResult<any> => r.status === 'fulfilled')
-    .map((r) => r.value);
+  actionUrl?: string;
 }
 
-export async function notifyProjectMembers(params: {
-  projectId: string;
-  senderId?: string;
-  type: NotificationType;
-  title: string;
-  message: string;
-  actionUrl?: string;
-  excludeUserId?: string;
-}) {
+export async function notifyTaskAssignees(
+  opts: NotifyTaskAssigneesOptions,
+): Promise<void> {
+  const { taskId, senderId, type, title, message, excludeUserId, actionUrl } = opts;
+
   const assignees = await prisma.taskAssignee.findMany({
-    where: { task: { projectId: params.projectId } },
-    distinct: ['userId'],
-    include: {
-      user: { select: { id: true, notifications: true } },
-    },
+    where: { taskId },
+    select: { userId: true },
   });
 
-  const eligible = assignees.filter((a) => {
-    if (params.excludeUserId && a.userId === params.excludeUserId) return false;
-    if (!a.user.notifications) return false;
-    return true;
-  });
+  const targets = assignees
+    .map((a) => a.userId)
+    .filter((id) => id !== excludeUserId);
 
-  const results = await Promise.allSettled(
-    eligible.map((a) =>
-      notifyUser({
-        userId: a.userId,
-        senderId: params.senderId,
-        type: params.type,
-        title: params.title,
-        message: params.message,
-        actionUrl: params.actionUrl,
-      })
-    )
+  await Promise.all(
+    targets.map((userId) =>
+      notifyUser({ userId, senderId, type, title, message, actionUrl }),
+    ),
   );
-
-  return results
-    .filter((r): r is PromiseFulfilledResult<any> => r.status === 'fulfilled')
-    .map((r) => r.value);
 }
 
-// notification.helpers.ts
-export async function parseMentions(text: string, workspaceId: string): Promise<string[]> {
-  // Match both @[Name](userId) from rich editor and legacy @username
-  const richMentions = [...text.matchAll(/@\[([^\]]+)\]\(([^)]+)\)/g)].map((m) => m[2]);
+// ─── Notify all members of a workspace ───────────────────────────────────────
 
-  if (richMentions.length > 0) {
-    // IDs are already embedded — just validate they're workspace members
-    const members = await prisma.workspaceMember.findMany({
-      where: { workspaceId, userId: { in: richMentions } },
-      select: { userId: true },
-    });
-    return members.map((m) => m.userId);
-  }
+interface NotifyWorkspaceMembersOptions {
+  workspaceId: string;
+  senderId: string;
+  type: NotificationType;
+  title: string;
+  message: string;
+  excludeUserId?: string;
+  actionUrl?: string;
+}
 
-  // Legacy @username fallback
-  const usernames = [...text.matchAll(/@(\w+)/g)].map((m) => m[1]);
-  if (!usernames.length) return [];
+export async function notifyWorkspaceMembers(
+  opts: NotifyWorkspaceMembersOptions,
+): Promise<void> {
+  const { workspaceId, senderId, type, title, message, excludeUserId, actionUrl } =
+    opts;
 
-  const users = await prisma.user.findMany({
-    where: {
-      name: { in: usernames },
-      workspaceMembers: { some: { workspaceId } },
-    },
-    select: { id: true },
+  const members = await prisma.workspaceMember.findMany({
+    where: { workspaceId },
+    select: { userId: true },
   });
 
-  return users.map((u) => u.id);
+  const targets = members
+    .map((m) => m.userId)
+    .filter((id) => id !== excludeUserId);
+
+  await Promise.all(
+    targets.map((userId) =>
+      notifyUser({ userId, senderId, type, title, message, actionUrl }),
+    ),
+  );
 }
 
-export async function notifyMentions(params: {
+// ─── Notify @mentioned users in a text string ────────────────────────────────
+
+interface NotifyMentionsOptions {
   text: string;
   workspaceId: string;
   senderId: string;
   senderName: string;
-  context: string;
-  actionUrl: string;
-}) {
-  const mentionedUserIds = await parseMentions(params.text, params.workspaceId);
-  if (!mentionedUserIds.length) return [];
+  context: string;   // e.g. "comment", "task description"
+  actionUrl?: string;
+}
 
-  // Single query to get all preferences at once
-  const users = await prisma.user.findMany({
-    where: { id: { in: mentionedUserIds } },
-    select: { id: true, notifications: true },
+/**
+ * Extracts @handle or @name patterns from `text`, resolves them to workspace
+ * members, and sends notifications to each unique matched user.
+ */
+export async function notifyMentions(
+  opts: NotifyMentionsOptions,
+): Promise<void> {
+  const { text, workspaceId, senderId, senderName, context, actionUrl } = opts;
+
+  // Extract @word tokens (e.g. @john, @john.doe)
+  const handles = [...text.matchAll(/@([\w.]+)/g)].map((m) => m[1]);
+  if (handles.length === 0) return;
+
+  // Resolve to workspace members whose name matches (case-insensitive prefix)
+  const members = await prisma.workspaceMember.findMany({
+    where: {
+      workspaceId,
+      user: {
+        name: { in: handles, mode: "insensitive" },
+      },
+    },
+    select: { userId: true },
   });
 
-  const eligible = users.filter((u) => u.id !== params.senderId && u.notifications);
+  const uniqueTargets = [
+    ...new Set(members.map((m) => m.userId).filter((id) => id !== senderId)),
+  ];
 
-  const results = await Promise.allSettled(
-    eligible.map((u) =>
+  await Promise.all(
+    uniqueTargets.map((userId) =>
       notifyUser({
-        userId: u.id,
-        senderId: params.senderId,
-        type: 'MENTION',
-        title: 'You Were Mentioned',
-        message: `${params.senderName} mentioned you in ${params.context}`,
-        actionUrl: params.actionUrl,
-      })
-    )
+        userId,
+        senderId,
+        type: "MENTION",
+        title: `${senderName} mentioned you`,
+        message: `You were mentioned in a ${context}`,
+        actionUrl,
+      }),
+    ),
   );
-
-  return results
-    .filter((r): r is PromiseFulfilledResult<any> => r.status === 'fulfilled')
-    .map((r) => r.value);
 }

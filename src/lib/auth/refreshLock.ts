@@ -1,22 +1,23 @@
-import { redis } from "../redis.js";
+import { getRedisClient } from "../../redis/redis.client.js";
 
 const REFRESH_LOCK_TTL_SECONDS = 45;
 
 export async function acquireRefreshLock(sessionId: string): Promise<boolean> {
-  if (!redis) return true; // dev bypass
-  // NX: set only if not exists
-  return !!(await redis.set(`focura:refresh:lock:${sessionId}`, "1", {
-    nx: true,
-    ex: REFRESH_LOCK_TTL_SECONDS,
-  }));
+  const result = await getRedisClient().set(
+    `focura:refresh:lock:${sessionId}`,
+    "1",
+    "EX",
+    REFRESH_LOCK_TTL_SECONDS,
+    "NX",
+  );
+  return result === "OK";
 }
 
 export async function releaseRefreshLock(sessionId: string): Promise<void> {
-  await redis?.del(`focura:refresh:lock:${sessionId}`);
+  await getRedisClient().del(`focura:refresh:lock:${sessionId}`);
 }
 
 export async function isRefreshLocked(sessionId: string): Promise<boolean> {
-  if (!redis) return false;
-  const lock = await redis.get(`focura:refresh:lock:${sessionId}`);
-  return !!lock;
+  const val = await getRedisClient().get(`focura:refresh:lock:${sessionId}`);
+  return !!val;
 }

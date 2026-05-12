@@ -15,7 +15,6 @@ import {
   revokeAllRefreshTokens,
 } from "../lib/auth/tokenRevocation.js";
 import { auditLog } from "../lib/auth/auditLog.js";
-import { redis } from "../lib/redis.js";
 
 const router = Router();
 const devRefreshResponseCache = new Map<string, string>();
@@ -25,6 +24,7 @@ import {
   acquireRefreshLock,
   releaseRefreshLock,
 } from "../lib/auth/refreshLock.js";
+import { getRedisClient } from "../redis/redis.client.js";
 
 const getIp = (req: any) =>
   (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() ||
@@ -35,35 +35,29 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function getCachedRefreshResponse(cacheKey: string) {
-  if (redis && process.env.UPSTASH_REDIS_REST_URL) {
-    try {
-      return await redis.get<string>(cacheKey);
-    } catch (error) {
-      console.error('Redis get error:', error);
-      return devRefreshResponseCache.get(cacheKey) ?? null;
-    }
+
+// Remove: import { redis } from "../lib/redis.js";
+
+// Replace the two helper functions:
+
+async function getCachedRefreshResponse(cacheKey: string): Promise<string | null> {
+  try {
+    return await getRedisClient().get(cacheKey);
+  } catch {
+    return devRefreshResponseCache.get(cacheKey) ?? null;
   }
-  return devRefreshResponseCache.get(cacheKey) ?? null;
 }
 
-async function cacheRefreshResponse(cacheKey: string, payload: string) {
-  if (redis && process.env.UPSTASH_REDIS_REST_URL) {
-    try {
-      await redis.setex(cacheKey, REFRESH_DEDUPE_TTL_SECONDS, payload);
-      return;
-    } catch (error) {
-      console.error('Redis setex error:', error);
-      // Fallback to in-memory
-    }
+async function cacheRefreshResponse(cacheKey: string, payload: string): Promise<void> {
+  try {
+    await getRedisClient().setex(cacheKey, REFRESH_DEDUPE_TTL_SECONDS, payload);
+  } catch {
+    devRefreshResponseCache.set(cacheKey, payload);
+    setTimeout(
+      () => devRefreshResponseCache.delete(cacheKey),
+      REFRESH_DEDUPE_TTL_SECONDS * 1000,
+    );
   }
-  
-  // In-memory fallback
-  devRefreshResponseCache.set(cacheKey, payload);
-  setTimeout(
-    () => devRefreshResponseCache.delete(cacheKey),
-    REFRESH_DEDUPE_TTL_SECONDS * 1000,
-  );
 }
 
 function verifyExchangeProof(payload: string, signature: string): boolean {
@@ -162,9 +156,8 @@ router.post("/exchange", async (req, res) => {
     const idempotencyKey = `focura:exchange:lock:${sessionId}`;
     
     // Only use Redis if properly configured
-    if (redis && process.env.UPSTASH_REDIS_REST_URL) {
       try {
-        const cached = await redis.get<string>(idempotencyKey);
+        const cached = await getRedisClient().get(idempotencyKey);;
         if (cached) {
           auditLog("EXCHANGE_SUCCESS", {
             userId: user.id,
@@ -179,7 +172,6 @@ router.post("/exchange", async (req, res) => {
         console.error('Redis idempotency check error:', error);
         // Continue without idempotency check
       }
-    }
 
     if (!user.emailVerified) {
       await prisma.user.update({
@@ -202,23 +194,17 @@ router.post("/exchange", async (req, res) => {
     );
     
     // Store idempotency cache if Redis available
-    if (redis && process.env.UPSTASH_REDIS_REST_URL) {
       try {
-        await redis.setex(
-          idempotencyKey,
-          90,
-          JSON.stringify({
-            accessToken: tokens.accessToken,
-            refreshToken: tokens.refreshToken,
-            accessTokenExpiry: tokens.accessTokenExpiry,
-            refreshTokenExpiry: tokens.refreshTokenExpiry,
-          }),
-        );
+        await getRedisClient().setex(idempotencyKey, 90, JSON.stringify({
+    accessToken: tokens.accessToken,
+    refreshToken: tokens.refreshToken,
+    accessTokenExpiry: tokens.accessTokenExpiry,
+    refreshTokenExpiry: tokens.refreshTokenExpiry,
+  }));
       } catch (error) {
         console.error('Redis idempotency set error:', error);
         // Continue without caching
       }
-    }
 
     auditLog("EXCHANGE_SUCCESS", {
       userId: user.id,
@@ -386,15 +372,12 @@ router.post("/logout", async (req, res) => {
   }
 
   try {
-    if (process.env.UPSTASH_REDIS_REST_URL && redis) {
       try {
-        if (tokenJti) await revokeAccessToken(tokenJti, 900);
-        if (logoutAll && userId) await revokeAllRefreshTokens(userId);
-      } catch (error) {
-        console.error('Redis revocation error:', error);
-        // Continue with logout
-      }
-    }
+  if (tokenJti) await revokeAccessToken(tokenJti, 900);
+  if (logoutAll && userId) await revokeAllRefreshTokens(userId);
+} catch (error) {
+  console.error('Redis revocation error:', error);
+}
 
     auditLog(logoutAll ? "LOGOUT_ALL_DEVICES" : "LOGOUT", {
       userId,

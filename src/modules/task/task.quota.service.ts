@@ -1,55 +1,30 @@
-// ─── Key Builders ─────────────────────────────────────────────────────────────
-// All keys include a date segment so they naturally namespace per day.
-// TTL is always set to 25 hours (slightly over a day) as a safety net.
-
-import { redis } from "../../lib/redis.js";
+import { getRedisClient } from "../../redis/redis.client.js";
 
 function todaySegment(): string {
-  return new Date().toISOString().slice(0, 10); // "2025-01-15"
-}
-
-function secondsUntilMidnight(): number {
-  const now = new Date();
-  const midnight = new Date();
-  midnight.setDate(midnight.getDate() + 1);
-  midnight.setHours(0, 0, 0, 0);
-  return Math.ceil((midnight.getTime() - now.getTime()) / 1000);
+  return new Date().toISOString().slice(0, 10);
 }
 
 const KEYS = {
-  // Daily counter: personal tasks created by a user
   personalDaily: (userId: string) =>
     `quota:personal:${userId}:${todaySegment()}`,
-
-  // Daily counter: total tasks created inside a workspace
   workspaceDaily: (workspaceId: string) =>
     `quota:workspace:${workspaceId}:${todaySegment()}`,
-
-  // Daily counter: tasks a specific user created inside a workspace
   memberDaily: (workspaceId: string, userId: string) =>
     `quota:member:${workspaceId}:${userId}:${todaySegment()}`,
-
-  // Sliding-window rate limit: workspace tasks per minute (sorted set of timestamps)
   workspaceMinuteWindow: (workspaceId: string) =>
     `rl:workspace:${workspaceId}:minute`,
-
-  // Cached plan values (invalidate when plan changes)
   userPlan: (userId: string) => `plan:user:${userId}`,
   workspacePlan: (workspaceId: string) => `plan:workspace:${workspaceId}`,
 };
 
-// ─── Quota Result ─────────────────────────────────────────────────────────────
-
 export interface QuotaCheckResult {
   allowed: boolean;
   reason?: string;
-  remaining: number | null; // null = unlimited
+  remaining: number | null;
   resetAt: Date;
   limit: number | null;
   usedToday: number;
 }
-
-// ─── Plan Types ───────────────────────────────────────────────────────────────
 
 export type UserPlan = "FREE" | "PRO";
 export type WorkspacePlan = "FREE" | "PRO" | "BUSINESS" | "ENTERPRISE";
@@ -115,14 +90,12 @@ if current == 1 then
   redis.call('EXPIREAT', KEYS[1], ARGV[1])
 end
 return current
-` as const;
+`;
 
 async function atomicIncr(key: string, expireAtUnix: number): Promise<number> {
-  const result = await redis.eval(
-    incrWithExpiry,
-    [key],
-    [String(expireAtUnix)],
-  );
+  const redis = getRedisClient();
+  // ioredis eval: (script, numkeys, ...keys, ...args)
+  const result = await redis.eval(incrWithExpiry, 1, key, String(expireAtUnix));
   return result as number;
 }
 
@@ -130,6 +103,7 @@ async function checkAndRecordMinuteWindow(
   workspaceId: string,
   limit: number,
 ): Promise<{ allowed: boolean; retryAfterMs: number }> {
+  const redis = getRedisClient();
   const key = KEYS.workspaceMinuteWindow(workspaceId);
   const now = Date.now();
   const windowStart = now - 60_000;
@@ -138,11 +112,12 @@ async function checkAndRecordMinuteWindow(
   const pipe = redis.pipeline();
   pipe.zremrangebyscore(key, 0, windowStart);
   pipe.zcard(key);
-  pipe.zadd(key, { score: now, member });
-  pipe.expire(key, 65); // 65 s safety margin
+  pipe.zadd(key, now, member); // ioredis: zadd(key, score, member)
+  pipe.expire(key, 65);
   const results = await pipe.exec();
 
-  const countBefore = results[1] as number;
+  // results[i] is [error, value]
+  const countBefore = (results?.[1]?.[1] as number) ?? 0;
 
   if (countBefore >= limit) {
     await redis.zrem(key, member);
@@ -163,6 +138,7 @@ export async function checkAndConsumePersonalQuota(
   userId: string,
   plan: UserPlan,
 ): Promise<QuotaCheckResult> {
+  const redis = getRedisClient();
   const limits = personalLimits(plan);
   const key = KEYS.personalDaily(userId);
   const expireAt = midnightUnix();
@@ -197,25 +173,17 @@ export async function checkAndConsumeWorkspaceQuota(
   plan: WorkspacePlan,
   memberCount: number,
 ): Promise<QuotaCheckResult> {
+  const redis = getRedisClient();
   const limits = workspaceLimits(plan, memberCount);
   const expireAt = midnightUnix();
   const resetAt = new Date(expireAt * 1000);
 
   if (limits.isUnlimited) {
-    return {
-      allowed: true,
-      remaining: null,
-      resetAt,
-      limit: null,
-      usedToday: 0,
-    };
+    return { allowed: true, remaining: null, resetAt, limit: null, usedToday: 0 };
   }
 
   if (limits.perMinute !== null) {
-    const rateCheck = await checkAndRecordMinuteWindow(
-      workspaceId,
-      limits.perMinute,
-    );
+    const rateCheck = await checkAndRecordMinuteWindow(workspaceId, limits.perMinute);
     if (!rateCheck.allowed) {
       return {
         allowed: false,
@@ -231,10 +199,7 @@ export async function checkAndConsumeWorkspaceQuota(
   const wsKey = KEYS.workspaceDaily(workspaceId);
   const wsNewCount = await atomicIncr(wsKey, expireAt);
 
-  if (
-    limits.dailyWorkspaceTotal !== null &&
-    wsNewCount > limits.dailyWorkspaceTotal
-  ) {
+  if (limits.dailyWorkspaceTotal !== null && wsNewCount > limits.dailyWorkspaceTotal) {
     await redis.decr(wsKey);
     return {
       allowed: false,
@@ -249,10 +214,7 @@ export async function checkAndConsumeWorkspaceQuota(
   const memberKey = KEYS.memberDaily(workspaceId, userId);
   const memberNewCount = await atomicIncr(memberKey, expireAt);
 
-  if (
-    limits.dailyPerMember !== null &&
-    memberNewCount > limits.dailyPerMember
-  ) {
+  if (limits.dailyPerMember !== null && memberNewCount > limits.dailyPerMember) {
     await Promise.all([redis.decr(wsKey), redis.decr(memberKey)]);
     return {
       allowed: false,
@@ -265,13 +227,9 @@ export async function checkAndConsumeWorkspaceQuota(
   }
 
   const wsRemaining =
-    limits.dailyWorkspaceTotal !== null
-      ? limits.dailyWorkspaceTotal - wsNewCount
-      : null;
+    limits.dailyWorkspaceTotal !== null ? limits.dailyWorkspaceTotal - wsNewCount : null;
   const memberRemaining =
-    limits.dailyPerMember !== null
-      ? limits.dailyPerMember - memberNewCount
-      : null;
+    limits.dailyPerMember !== null ? limits.dailyPerMember - memberNewCount : null;
   const remaining =
     wsRemaining !== null && memberRemaining !== null
       ? Math.min(wsRemaining, memberRemaining)
@@ -288,7 +246,7 @@ export async function checkAndConsumeWorkspaceQuota(
 
 export async function rollbackPersonalQuota(userId: string): Promise<void> {
   try {
-    await redis.decr(KEYS.personalDaily(userId));
+    await getRedisClient().decr(KEYS.personalDaily(userId));
   } catch {}
 }
 
@@ -297,6 +255,7 @@ export async function rollbackWorkspaceQuota(
   workspaceId: string,
 ): Promise<void> {
   try {
+    const redis = getRedisClient();
     await Promise.all([
       redis.decr(KEYS.workspaceDaily(workspaceId)),
       redis.decr(KEYS.memberDaily(workspaceId, userId)),
@@ -307,14 +266,9 @@ export async function rollbackWorkspaceQuota(
 export async function getPersonalQuotaUsage(
   userId: string,
   plan: UserPlan,
-): Promise<{
-  usedToday: number;
-  limit: number;
-  remaining: number;
-  resetAt: Date;
-}> {
+): Promise<{ usedToday: number; limit: number; remaining: number; resetAt: Date }> {
   const limits = personalLimits(plan);
-  const raw = await redis.get<string>(KEYS.personalDaily(userId));
+  const raw = await getRedisClient().get(KEYS.personalDaily(userId));
   const used = raw ? parseInt(raw, 10) : 0;
 
   return {
@@ -338,15 +292,11 @@ export async function getWorkspaceQuotaUsage(
   memberRemaining: number | null;
   isUnlimited: boolean;
   resetAt: Date;
-  perMemberBreakdown: Array<{
-    userId: string;
-    usedToday: number;
-    remaining: number | null;
-  }>;
+  perMemberBreakdown: Array<{ userId: string; usedToday: number; remaining: number | null }>;
 }> {
+  const redis = getRedisClient();
   const limits = workspaceLimits(plan, memberCount);
-  const expireAt = midnightUnix();
-  const resetAt = new Date(expireAt * 1000);
+  const resetAt = new Date(midnightUnix() * 1000);
 
   if (limits.isUnlimited) {
     return {
@@ -365,16 +315,17 @@ export async function getWorkspaceQuotaUsage(
   for (const mid of allMemberIds) {
     pipe.get(KEYS.memberDaily(workspaceId, mid));
   }
-  const results = await pipe.exec();
+  const results = await pipe.exec(); // [[err, val], [err, val], ...]
 
-  const wsUsed = results[0] ? parseInt(results[0] as string, 10) : 0;
+  const wsUsed = results?.[0]?.[1] ? parseInt(results[0][1] as string, 10) : 0;
   const wsRemaining =
     limits.dailyWorkspaceTotal !== null
       ? Math.max(0, limits.dailyWorkspaceTotal - wsUsed)
       : null;
 
   const perMemberBreakdown = allMemberIds.map((mid, i) => {
-    const used = results[i + 1] ? parseInt(results[i + 1] as string, 10) : 0;
+    const raw = results?.[i + 1]?.[1];
+    const used = raw ? parseInt(raw as string, 10) : 0;
     return {
       userId: mid,
       usedToday: used,
@@ -386,14 +337,12 @@ export async function getWorkspaceQuotaUsage(
   });
 
   const myUsage = perMemberBreakdown.find((m) => m.userId === userId);
-  const myUsed = myUsage?.usedToday ?? 0;
-  const myRemaining = myUsage?.remaining ?? null;
 
   return {
     workspaceUsedToday: wsUsed,
     workspaceRemaining: wsRemaining,
-    memberUsedToday: myUsed,
-    memberRemaining: myRemaining,
+    memberUsedToday: myUsage?.usedToday ?? 0,
+    memberRemaining: myUsage?.remaining ?? null,
     isUnlimited: false,
     resetAt,
     perMemberBreakdown,

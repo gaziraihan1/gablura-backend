@@ -1,15 +1,4 @@
-
-import { Redis } from "@upstash/redis";
-
-const redis: Redis | null =
-  process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN
-    ? new Redis({
-        url: process.env.UPSTASH_REDIS_REST_URL,
-        token: process.env.UPSTASH_REDIS_REST_TOKEN,
-      })
-    : null;
-
-const devFailures = new Map<string, { count: number; lockedUntil?: number }>();
+import { getRedisClient } from "../../redis/redis.client.js";
 
 const MAX_FAILURES    = 10;
 const LOCKOUT_SECONDS = 15 * 60;
@@ -17,86 +6,45 @@ const WINDOW_SECONDS  = 60 * 60;
 const PREFIX          = "focura:lockout";
 
 export async function recordFailedAttempt(
-  identifier: string
+  identifier: string,
 ): Promise<{ locked: boolean; unlocksAt?: Date; attempts: number }> {
-  if (redis) {
-    return recordFailedRedis(identifier);
-  }
-  return recordFailedDev(identifier);
-}
+  const redis = getRedisClient();
+  const failKey = `${PREFIX}:failures:${identifier}`;
+  const lockKey = `${PREFIX}:locked:${identifier}`;
 
-export async function clearFailedAttempts(identifier: string): Promise<void> {
-  if (redis) {
-    await redis.del(`${PREFIX}:failures:${identifier}`);
-    await redis.del(`${PREFIX}:locked:${identifier}`);
-  } else {
-    devFailures.delete(identifier);
-  }
-}
-
-export async function isAccountLocked(
-  identifier: string
-): Promise<{ locked: boolean; unlocksAt?: Date }> {
-  if (redis) {
-    const lockedUntil = await redis.get<number>(`${PREFIX}:locked:${identifier}`);
-    if (!lockedUntil) return { locked: false };
-    return { locked: true, unlocksAt: new Date(lockedUntil) };
-  }
-
-  const entry = devFailures.get(identifier);
-  if (!entry?.lockedUntil) return { locked: false };
-  if (Date.now() > entry.lockedUntil) {
-    devFailures.delete(identifier);
-    return { locked: false };
-  }
-  return { locked: true, unlocksAt: new Date(entry.lockedUntil) };
-}
-
-async function recordFailedRedis(
-  identifier: string
-): Promise<{ locked: boolean; unlocksAt?: Date; attempts: number }> {
-  const failKey  = `${PREFIX}:failures:${identifier}`;
-  const lockKey  = `${PREFIX}:locked:${identifier}`;
-
-  const existingLock = await redis!.get<number>(lockKey);
+  const existingLock = await redis.get(lockKey);
   if (existingLock) {
-    return { locked: true, unlocksAt: new Date(existingLock), attempts: MAX_FAILURES };
+    return { locked: true, unlocksAt: new Date(Number(existingLock)), attempts: MAX_FAILURES };
   }
 
-  const pipeline = redis!.pipeline();
-  pipeline.incr(failKey);
-  pipeline.expire(failKey, WINDOW_SECONDS);
-  const results = await pipeline.exec();
-  const attempts = (results[0] as number) || 1;
+  const pipe = redis.pipeline();
+  pipe.incr(failKey);
+  pipe.expire(failKey, WINDOW_SECONDS);
+  const results = await pipe.exec();
+  const attempts = (results?.[0]?.[1] as number) ?? 1;
 
   if (attempts >= MAX_FAILURES) {
     const unlocksAt = Date.now() + LOCKOUT_SECONDS * 1000;
-    await redis!.setex(lockKey, LOCKOUT_SECONDS, unlocksAt);
+    await redis.setex(lockKey, LOCKOUT_SECONDS, String(unlocksAt));
     return { locked: true, unlocksAt: new Date(unlocksAt), attempts };
   }
 
   return { locked: false, attempts };
 }
 
-function recordFailedDev(
-  identifier: string
-): { locked: boolean; unlocksAt?: Date; attempts: number } {
-  const now   = Date.now();
-  const entry = devFailures.get(identifier) || { count: 0 };
+export async function clearFailedAttempts(identifier: string): Promise<void> {
+  const redis = getRedisClient();
+  await redis.del(
+    `${PREFIX}:failures:${identifier}`,
+    `${PREFIX}:locked:${identifier}`,
+  );
+}
 
-  if (entry.lockedUntil && now > entry.lockedUntil) {
-    devFailures.delete(identifier);
-    return { locked: false, attempts: 0 };
-  }
-
-  entry.count++;
-  devFailures.set(identifier, entry);
-
-  if (entry.count >= MAX_FAILURES) {
-    const unlocksAt = now + LOCKOUT_SECONDS * 1000;
-    entry.lockedUntil = unlocksAt;
-    return { locked: true, unlocksAt: new Date(unlocksAt), attempts: entry.count };
-  }
-
-  return { locked: false, attempts: entry.count };
+export async function isAccountLocked(
+  identifier: string,
+): Promise<{ locked: boolean; unlocksAt?: Date }> {
+  const redis = getRedisClient();
+  const lockedUntil = await redis.get(`${PREFIX}:locked:${identifier}`);
+  if (!lockedUntil) return { locked: false };
+  return { locked: true, unlocksAt: new Date(Number(lockedUntil)) };
 }

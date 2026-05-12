@@ -9,17 +9,18 @@ import {
   rollbackPersonalQuota,
   rollbackWorkspaceQuota,
 } from "./task.quota.service.js";
-import { redis } from "../../lib/redis.js";
 import { AnalyticsCache, WorkspaceCache } from "../../lib/redis/cache.client.js";
+import { getRedisClient } from "../../redis/redis.client.js";
 
 // ─── Plan resolution ──────────────────────────────────────────────────────────
 // Adapt these two functions to match however your DB stores plan info.
 
 async function resolveUserPlan(userId: string): Promise<"FREE" | "PRO"> {
   const cacheKey = `plan:user:${userId}`;
-  
-  const cached = await redis.get<string>(cacheKey);
-  if (cached) return cached === 'PRO' ? 'PRO' : 'FREE';
+  const redis = getRedisClient();
+
+  const cached = await redis.get(cacheKey);
+  if (cached) return (cached === 'PRO' ? 'PRO' : 'FREE') as "FREE" | "PRO";
 
   const bestSub = await prisma.subscription.findFirst({
     where: {
@@ -27,24 +28,22 @@ async function resolveUserPlan(userId: string): Promise<"FREE" | "PRO"> {
       status: { in: ['ACTIVE', 'TRIALING'] },
     },
     orderBy: { createdAt: 'desc' },
-    select: {
-      plan: { select: { name: true } },
-    },
+    select: { plan: { select: { name: true } } },
   });
 
   const planName = bestSub?.plan.name ?? 'FREE';
-  // Cache for 10 minutes — invalidate on plan change webhook
-  await redis.set(cacheKey, planName, { ex: 600 });
+  await redis.setex(cacheKey, 600, planName);
 
-  return planName === 'PRO' ? 'PRO' : 'FREE';
+  return (planName === 'PRO' ? 'PRO' : 'FREE') as "FREE" | "PRO";
 }
 
 async function resolveWorkspacePlan(
   workspaceId: string,
 ): Promise<"FREE" | "PRO" | "BUSINESS" | "ENTERPRISE"> {
   const cacheKey = `plan:workspace:${workspaceId}`;
+  const redis = getRedisClient();
 
-  const cached = await redis.get<string>(cacheKey);
+  const cached = await redis.get(cacheKey);
   if (cached) {
     if (cached === 'ENTERPRISE') return 'ENTERPRISE';
     if (cached === 'BUSINESS')   return 'BUSINESS';
@@ -52,23 +51,19 @@ async function resolveWorkspacePlan(
     return 'FREE';
   }
 
-  // Read from Workspace.plan enum directly — no relation needed
   const ws = await prisma.workspace.findUnique({
     where:  { id: workspaceId },
     select: { plan: true },
   });
 
-  const planName = ws?.plan ?? 'FREE';
-
-  // Cache for 10 minutes — invalidated by Stripe webhook on plan change
-  await redis.set(cacheKey, planName, { ex: 600 });
+  const planName = (ws?.plan ?? 'FREE') as string;
+  await redis.setex(cacheKey, 600, planName);
 
   if (planName === 'ENTERPRISE') return 'ENTERPRISE';
   if (planName === 'BUSINESS')   return 'BUSINESS';
   if (planName === 'PRO')        return 'PRO';
   return 'FREE';
 }
-
 // ─── Callback types ───────────────────────────────────────────────────────────
 
 type OnTaskCreated = (data: {
@@ -226,12 +221,12 @@ export const TaskMutation = {
 
     console.log(`✨ Task created: "${task.title}" (ID: ${task.id})`);
 
-    // Invalidate analytics and workspace stats cache
+    // Invalidate analytics and workspace stats cache (non-blocking)
     if (finalWorkspaceId) {
-      await Promise.all([
+      Promise.all([
         AnalyticsCache.invalidateWorkspace(finalWorkspaceId),
         WorkspaceCache.invalidateWorkspace(finalWorkspaceId),
-      ]);
+      ]).catch((err) => console.error("[Cache] Failed to invalidate after task creation:", err));
     }
 
     if (onCreated) {
@@ -296,10 +291,10 @@ export const TaskMutation = {
     console.log(`✏️  Task updated: "${task.title}" (ID: ${task.id})`);
 
     if (existingTask.workspaceId) {
-      await Promise.all([
+      Promise.all([
         AnalyticsCache.invalidateWorkspace(existingTask.workspaceId),
         WorkspaceCache.invalidateWorkspace(existingTask.workspaceId),
-      ]);
+      ]).catch((err) => console.error("[Cache] Failed to invalidate after task update:", err));
     }
 
     let addedAssigneeIds: string[] = [];
@@ -373,11 +368,12 @@ export const TaskMutation = {
 
     console.log(`🔄 Task status updated: "${existingTask.title}" → ${status}`);
 
+    // Invalidate analytics and workspace stats cache (non-blocking)
     if (existingTask.workspaceId) {
-      await Promise.all([
+      Promise.all([
         AnalyticsCache.invalidateWorkspace(existingTask.workspaceId),
         WorkspaceCache.invalidateWorkspace(existingTask.workspaceId),
-      ]);
+      ]).catch((err) => console.error("[Cache] Failed to invalidate after status update:", err));
     }
 
     if (onUpdated) {
@@ -396,9 +392,21 @@ export const TaskMutation = {
 
   async deleteTask(taskId: string, userId: string, onDeleted?: OnTaskDeleted) {
     const task = await TaskAccess.assertDeletePermission(taskId, userId);
+    
+    // Store workspaceId before deletion
+    const workspaceId = task.workspaceId;
+    
     await prisma.task.delete({ where: { id: taskId } });
 
     console.log(`🗑️  Task deleted: "${task.title}" (ID: ${task.id})`);
+
+    // Invalidate analytics and workspace stats cache (non-blocking)
+    if (workspaceId) {
+      Promise.all([
+        AnalyticsCache.invalidateWorkspace(workspaceId),
+        WorkspaceCache.invalidateWorkspace(workspaceId),
+      ]).catch((err) => console.error("[Cache] Failed to invalidate after task deletion:", err));
+    }
 
     if (onDeleted) {
       onDeleted({ task }).catch((err) =>

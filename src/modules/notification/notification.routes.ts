@@ -1,7 +1,6 @@
 
 import { Router } from "express";
 import { authenticate } from "../../middleware/auth.js";
-import { notificationStream } from "../../sockets/notification.stream.js";
 import {
   getNotifications,
   getUnreadCount,
@@ -10,10 +9,11 @@ import {
   deleteNotification,
   deleteAllRead,
 } from "./notification.controller.js";
+import { notificationStreamHandler } from "../../sockets/notification.stream.js";
 
 const router = Router();
 
-router.get("/stream", notificationStream);
+router.get("/stream", notificationStreamHandler);
 
 router.use(authenticate);
 

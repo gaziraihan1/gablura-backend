@@ -129,7 +129,7 @@ app.get("/health", async (req: Request, res: Response) => {
       environment: process.env.NODE_ENV,
       database: "connected",
       authMethod: "Authorization Header",
-      csrfEnabled: !!process.env.UPSTASH_REDIS_REST_URL,
+      csrfEnabled: true,
     });
   } catch (error) {
     res.status(503).json({
@@ -161,7 +161,7 @@ app.get("/api/debug/auth", (req: Request, res: Response) => {
     origin: req.headers.origin,
     method: req.method,
     hasCsrfToken: !!req.headers["x-csrf-token"],
-    redisConfigured: !!process.env.UPSTASH_REDIS_REST_URL,
+    redisConfigured: !!process.env.REDIS_URL,
   });
 });
 
@@ -261,7 +261,7 @@ const server = app
     console.log(`🔒 HTTPS Required: ${isProd}`);
     console.log(`🔑 Auth Method: Authorization Header (Bearer Token)`);
     console.log(
-      `🛡️  CSRF Protection: ${process.env.UPSTASH_REDIS_REST_URL ? "ENABLED" : "DISABLED (dev mode)"}`,
+      `🛡️  CSRF Protection: ENABLED (ioredis @ ${process.env.REDIS_URL ?? "redis://localhost:6379"})`,
     );
     console.log(`📡 SSE: /api/notifications/stream/:userId?token=`);
     console.log(

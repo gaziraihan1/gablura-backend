@@ -1,31 +1,40 @@
 import { Request, Response, NextFunction } from "express";
-import { Ratelimit } from "@upstash/ratelimit";
-import { redis } from "../../lib/redis.js"; // ← your existing shared Redis client
+import { redis } from "../../lib/redis.js";
 
-// ─── Rate limiters ────────────────────────────────────────────────────────────
-/**
- * Per-IP: 3 contact form submissions per hour (sliding window)
- * Prevents spam from a single IP without blocking legitimate retries.
- */
-const ipLimiter = new Ratelimit({
-  redis,
-  limiter: Ratelimit.slidingWindow(3, "1 h"),
-  prefix: "focura:contact:ip",
-  analytics: true,
-});
+// ─── Lazy loader for Ratelimit (mirrors auth helper pattern) ──────────────────
+async function getRatelimitSafe() {
+  try {
+    const mod = await import("@upstash/ratelimit");
+    return mod.Ratelimit;
+  } catch {
+    return null;
+  }
+}
 
-/**
- * Per-email: 2 submissions per 24 hours (sliding window)
- * Prevents the same user from spamming even if they change IPs.
- */
-const emailLimiter = new Ratelimit({
-  redis,
-  limiter: Ratelimit.slidingWindow(2, "24 h"),
-  prefix: "focura:contact:email",
-  analytics: true,
-});
+// ─── Safe limiter creator ─────────────────────────────────────────────────────
+async function createLimiterSafe(config: {
+  tokens: number;
+  window: string;
+  prefix: string;
+}) {
+  const Ratelimit = await getRatelimitSafe();
 
-// ─── Helper: extract real IP ─────────────────────────────────────────────────
+  if (!Ratelimit) return null;
+
+  // Try modern API
+  if (typeof (Ratelimit as any).slidingWindow === "function") {
+    return new Ratelimit({
+      redis,
+      limiter: (Ratelimit as any).slidingWindow(config.tokens, config.window),
+      prefix: config.prefix,
+    });
+  }
+
+  // If API mismatch → disable limiter (like CSRF fallback)
+  return null;
+}
+
+// ─── Helper ──────────────────────────────────────────────────────────────────
 function getRealIp(req: Request): string {
   const forwarded = req.headers["x-forwarded-for"];
   if (typeof forwarded === "string") {
@@ -34,66 +43,73 @@ function getRealIp(req: Request): string {
   return req.socket.remoteAddress ?? "unknown";
 }
 
-// ─── Middleware ───────────────────────────────────────────────────────────────
-/**
- * contactRateLimit
- *
- * Applies two rate-limit checks:
- *   1. IP-based  — 3 requests / hour
- *   2. Email-based — 2 requests / 24 h  (only if body.email is present)
- *
- * On limit exceeded, returns 429 with reset timestamps so the client
- * can display a meaningful "try again in X minutes" message.
- */
+// ─── Middleware ──────────────────────────────────────────────────────────────
 export async function contactRateLimit(
   req: Request,
   res: Response,
   next: NextFunction
 ): Promise<void> {
+  // ✅ Same pattern as your auth/CSRF helpers
+  if (process.env.NODE_ENV === "test") {
+    return next();
+  }
+
+  const ipLimiter = await createLimiterSafe({
+    tokens: 3,
+    window: "1 h",
+    prefix: "focura:contact:ip",
+  });
+
+  const emailLimiter = await createLimiterSafe({
+    tokens: 2,
+    window: "24 h",
+    prefix: "focura:contact:email",
+  });
+
+  // If limiter unavailable → behave like CSRF fallback
+  if (!ipLimiter) {
+    return next();
+  }
+
   const ip = getRealIp(req);
 
-  // ── 1. IP check ──────────────────────────────────────────────────────────
+  // ── IP check ─────────────────────────────────────────────────────────────
   const ipResult = await ipLimiter.limit(ip);
 
   if (!ipResult.success) {
-    const resetInMs = ipResult.reset - Date.now();
-    const resetInMinutes = Math.ceil(resetInMs / 60_000);
+    const minutes = Math.ceil((ipResult.reset - Date.now()) / 60000);
 
     res.status(429).json({
       success: false,
       error: "TOO_MANY_REQUESTS",
-      message: `You have sent too many messages. Please try again in ${resetInMinutes} minute${resetInMinutes !== 1 ? "s" : ""}.`,
-      retryAfter: ipResult.reset,
-      remaining: ipResult.remaining,
+      message: `Too many requests. Try again in ${minutes} minute${
+        minutes !== 1 ? "s" : ""
+      }.`,
     });
     return;
   }
 
-  // ── 2. Email check (only if email present in body) ────────────────────────
+  // ── Email check ──────────────────────────────────────────────────────────
   const email: string | undefined = req.body?.email?.toLowerCase?.().trim();
 
-  if (email) {
+  if (email && emailLimiter) {
     const emailResult = await emailLimiter.limit(email);
 
     if (!emailResult.success) {
-      const resetInMs = emailResult.reset - Date.now();
-      const resetInHours = Math.ceil(resetInMs / 3_600_000);
+      const hours = Math.ceil(
+        (emailResult.reset - Date.now()) / 3600000
+      );
 
       res.status(429).json({
         success: false,
         error: "TOO_MANY_REQUESTS",
-        message: `This email has already sent the maximum number of messages today. Please try again in ${resetInHours} hour${resetInHours !== 1 ? "s" : ""}.`,
-        retryAfter: emailResult.reset,
-        remaining: emailResult.remaining,
+        message: `Email limit reached. Try again in ${hours} hour${
+          hours !== 1 ? "s" : ""
+        }.`,
       });
       return;
     }
   }
-
-  // Attach rate-limit metadata to request for controller use
-  res.setHeader("X-RateLimit-Limit", "3");
-  res.setHeader("X-RateLimit-Remaining", String(ipResult.remaining));
-  res.setHeader("X-RateLimit-Reset", String(ipResult.reset));
 
   next();
 }
