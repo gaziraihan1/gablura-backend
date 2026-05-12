@@ -11,12 +11,17 @@
     "dev": "nodemon --watch src --ext ts,json --exec tsx src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
+    
     "prisma:generate": "prisma generate",
-    "prisma:migrate:dev": "prisma migrate dev",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:migrate:create": "prisma migrate dev --create-only",
     "prisma:migrate:deploy": "prisma migrate deploy",
+    "prisma:push": "prisma db push",
     "prisma:studio": "prisma studio",
+    
     "postinstall": "prisma generate",
     "deploy": "npm run build && prisma migrate deploy && npm start",
+    
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
@@ -24,7 +29,10 @@
     "test:integration": "vitest run src/tests/integrations",
     "test:verbose": "vitest run --reporter=verbose",
     "test:ui": "vitest --ui",
-    "test:file": "vitest run"
+    "test:file": "vitest run",
+    
+    "db:setup": "prisma generate && prisma db push --force-reset",
+    "db:seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
     "@ngrok/ngrok": "^1.7.0",
