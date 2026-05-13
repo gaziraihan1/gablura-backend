@@ -14,7 +14,7 @@ import { WorkspacePlan } from "../attachment/attachment.quota.types.js";
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
+  api_key:    process.env.CLOUDINARY_API_KEY,
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
@@ -23,7 +23,7 @@ cloudinary.config({
 async function ensureStorageSeeded(workspaceId: string): Promise<void> {
   const agg = await prisma.file.aggregate({
     where: { workspaceId },
-    _sum: { size: true },
+    _sum:  { size: true },
   });
   await seedWorkspaceStorageFromDb(workspaceId, agg._sum.size ?? 0);
 }
@@ -32,43 +32,30 @@ async function ensureStorageSeeded(workspaceId: string): Promise<void> {
 
 export const StorageMutation = {
   async bulkDeleteFiles(
-    fileIds: string[],
+    fileIds:     string[],
     workspaceId: string,
-    userId: string,
+    userId:      string,
   ): Promise<BulkDeleteResult & { success: boolean; message: string }> {
     const isAdmin = await StorageAccess.isAdmin(userId, workspaceId);
 
     const files = await prisma.file.findMany({
-      where: { id: { in: fileIds }, workspaceId },
+      where:  { id: { in: fileIds }, workspaceId },
       select: { id: true, name: true, size: true, uploadedById: true },
     });
 
     if (files.length === 0) {
-      return {
-        success: false,
-        message: "No files found in this workspace",
-        deletedCount: 0,
-        freedMB: 0,
-      };
+      return { success: false, message: "No files found in this workspace", deletedCount: 0, freedMB: 0 };
     }
 
     const deletable = files.filter((f) => f.uploadedById === userId || isAdmin);
 
     if (deletable.length === 0) {
-      return {
-        success: false,
-        message: "You do not have permission to delete these files",
-        deletedCount: 0,
-        freedMB: 0,
-      };
+      return { success: false, message: "You do not have permission to delete these files", deletedCount: 0, freedMB: 0 };
     }
 
     const totalBytes = deletable.reduce((sum, f) => sum + f.size, 0);
 
-    // DB delete first
-    await prisma.file.deleteMany({
-      where: { id: { in: deletable.map((f) => f.id) } },
-    });
+    await prisma.file.deleteMany({ where: { id: { in: deletable.map((f) => f.id) } } });
 
     // Cloudinary cleanup (best-effort, non-blocking)
     Promise.allSettled(
@@ -81,29 +68,29 @@ export const StorageMutation = {
     );
 
     return {
-      success: true,
-      message: `${deletable.length} file(s) deleted successfully`,
+      success:      true,
+      message:      `${deletable.length} file(s) deleted successfully`,
       deletedCount: deletable.length,
-      freedMB: toMB(totalBytes),
+      freedMB:      toMB(totalBytes),
     };
   },
 
   async deleteFile(
     fileId: string,
     userId: string,
-  ): Promise<{ success: boolean; message: string; freedMB: number }> {
+  ): Promise<{ success: boolean; message: string; freedMB: number; workspaceId?: string }> {
     const file = await prisma.file.findFirst({
-      where: { id: fileId },
+      where:  { id: fileId },
       select: {
-        id: true,
-        name: true,
-        size: true,
+        id:           true,
+        name:         true,
+        size:         true,
         uploadedById: true,
-        workspaceId: true,
+        workspaceId:  true,
         workspace: {
           select: {
             members: {
-              where: { userId },
+              where:  { userId },
               select: { role: true },
             },
           },
@@ -119,11 +106,7 @@ export const StorageMutation = {
       file.workspace?.members[0]?.role === "ADMIN";
 
     if (!isOwner && !isAdmin) {
-      return {
-        success: false,
-        message: "You do not have permission to delete this file",
-        freedMB: 0,
-      };
+      return { success: false, message: "You do not have permission to delete this file", freedMB: 0 };
     }
 
     await prisma.file.delete({ where: { id: fileId } });
@@ -141,47 +124,39 @@ export const StorageMutation = {
     }
 
     return {
-      success: true,
-      message: "File deleted successfully",
-      freedMB: toMB(file.size),
+      success:     true,
+      message:     "File deleted successfully",
+      freedMB:     toMB(file.size),
+      workspaceId: file.workspaceId ?? undefined,
     };
   },
 
   async canUploadFile(
-    workspaceId: string,
-    userId: string,
+    workspaceId:   string,
+    userId:        string,
     fileSizeBytes: number,
-  ): Promise<
-    UploadCheckResult & {
-      usedMB: number;
-      remainingMB: number;
-      totalMB: number;
-      plan: string;
-    }
-  > {
-    // Resolve plan
+  ): Promise<UploadCheckResult & { usedMB: number; remainingMB: number; totalMB: number; plan: string }> {
     const ws = await prisma.workspace.findUnique({
-      where: { id: workspaceId },
+      where:  { id: workspaceId },
       select: { plan: true, maxStorage: true } as any,
     });
-    const plan = ((ws as any)?.plan ?? "FREE") as WorkspacePlan;
+    const plan   = ((ws as any)?.plan   ?? "FREE") as WorkspacePlan;
     const totalMB =
       ((ws as any)?.maxStorage as number) ??
       toMB(getStorageLimits(plan).maxStorageBytes ?? 0);
 
-    // Seed on cache miss then read from Redis — single GET, no table scan
     await ensureStorageSeeded(workspaceId);
-    const usedBytes = await getWorkspaceStorageBytes(workspaceId);
-    const usedMB = toMB(usedBytes);
-    const remainingMB = Math.max(0, totalMB - usedMB);
-    const fileSizeMB = fileSizeBytes / (1024 * 1024);
-    const limits = getStorageLimits(plan);
+    const usedBytes    = await getWorkspaceStorageBytes(workspaceId);
+    const usedMB       = toMB(usedBytes);
+    const remainingMB  = Math.max(0, totalMB - usedMB);
+    const fileSizeMB   = fileSizeBytes / (1024 * 1024);
+    const limits       = getStorageLimits(plan);
     const maxFileSizeMB = limits.maxFileSizeBytes / (1024 * 1024);
 
     if (fileSizeMB > maxFileSizeMB) {
       return {
-        allowed: false,
-        reason: `File size ${fileSizeMB.toFixed(1)} MB exceeds the ${maxFileSizeMB} MB per-file limit on the ${plan} plan.`,
+        allowed:     false,
+        reason:      `File size ${fileSizeMB.toFixed(1)} MB exceeds the ${maxFileSizeMB} MB per-file limit on the ${plan} plan.`,
         usedMB,
         remainingMB,
         totalMB,
@@ -189,13 +164,10 @@ export const StorageMutation = {
       };
     }
 
-    if (
-      limits.maxStorageBytes !== null &&
-      usedBytes + fileSizeBytes > limits.maxStorageBytes
-    ) {
+    if (limits.maxStorageBytes !== null && usedBytes + fileSizeBytes > limits.maxStorageBytes) {
       return {
-        allowed: false,
-        reason: `Storage full. ${remainingMB.toFixed(2)} MB remaining — need ${fileSizeMB.toFixed(2)} MB.`,
+        allowed:     false,
+        reason:      `Storage full. ${remainingMB.toFixed(2)} MB remaining — need ${fileSizeMB.toFixed(2)} MB.`,
         usedMB,
         remainingMB,
         totalMB,
@@ -207,33 +179,33 @@ export const StorageMutation = {
   },
 
   async recordFileUpload(params: {
-    userId: string;
-    workspaceId: string;
-    name: string;
+    userId:       string;
+    workspaceId:  string;
+    name:         string;
     originalName: string;
-    size: number;
-    mimeType: string;
-    url: string;
-    thumbnail?: string;
-    folder?: string;
-    projectId?: string;
-    taskId?: string;
+    size:         number;
+    mimeType:     string;
+    url:          string;
+    thumbnail?:   string;
+    folder?:      string;
+    projectId?:   string;
+    taskId?:      string;
   }) {
     await StorageAccess.assertMember(params.userId, params.workspaceId);
 
     const file = await prisma.file.create({
       data: {
-        name: params.name,
+        name:         params.name,
         originalName: params.originalName,
-        size: params.size,
-        mimeType: params.mimeType,
-        url: params.url,
-        thumbnail: params.thumbnail,
-        folder: params.folder,
+        size:         params.size,
+        mimeType:     params.mimeType,
+        url:          params.url,
+        thumbnail:    params.thumbnail,
+        folder:       params.folder,
         uploadedById: params.userId,
-        workspaceId: params.workspaceId,
-        projectId: params.projectId,
-        taskId: params.taskId,
+        workspaceId:  params.workspaceId,
+        projectId:    params.projectId,
+        taskId:       params.taskId,
       },
     });
 

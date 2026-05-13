@@ -1,18 +1,22 @@
-import { redis } from "../../lib/redis.js";
-import { WorkspacePlan, StorageLimits, SlidingWindowResult, UploadCheckResult, StorageInfo } from "./attachment.quota.types.js";
+import { getRedisClient } from "../../redis/redis.client.js";
+import {
+  WorkspacePlan,
+  StorageLimits,
+  SlidingWindowResult,
+  UploadCheckResult,
+  StorageInfo,
+} from "./attachment.quota.types.js";
 
 // ─── Storage Limits per Plan ──────────────────────────────────────────────────
 
 const GB = 1024 * 1024 * 1024;
 const TB = 1024 * GB;
 
-
-
 export function getStorageLimits(plan: WorkspacePlan): StorageLimits {
   switch (plan) {
     case "ENTERPRISE":
       return {
-        maxStorageBytes:        TB,            // 1 TB
+        maxStorageBytes:        TB,
         maxFileSizeBytes:       500 * 1024 * 1024, // 500 MB per file
         maxDailyUploadsPerUser: null,
         uploadsPerMinute:       null,
@@ -21,8 +25,8 @@ export function getStorageLimits(plan: WorkspacePlan): StorageLimits {
 
     case "BUSINESS":
       return {
-        maxStorageBytes:        100 * GB,      // 100 GB
-        maxFileSizeBytes:       100 * 1024 * 1024, // 500 MB per file
+        maxStorageBytes:        100 * GB,
+        maxFileSizeBytes:       100 * 1024 * 1024, // 100 MB per file
         maxDailyUploadsPerUser: null,
         uploadsPerMinute:       30,
         uploadsPerHour:         null,
@@ -30,7 +34,7 @@ export function getStorageLimits(plan: WorkspacePlan): StorageLimits {
 
     case "PRO":
       return {
-        maxStorageBytes:        10 * GB,       // 10 GB
+        maxStorageBytes:        10 * GB,
         maxFileSizeBytes:       25 * 1024 * 1024, // 25 MB per file
         maxDailyUploadsPerUser: 100,
         uploadsPerMinute:       10,
@@ -40,7 +44,7 @@ export function getStorageLimits(plan: WorkspacePlan): StorageLimits {
     case "FREE":
     default:
       return {
-        maxStorageBytes:        1 * GB,        // 1 GB
+        maxStorageBytes:        1 * GB,
         maxFileSizeBytes:       5 * 1024 * 1024, // 5 MB per file
         maxDailyUploadsPerUser: 10,
         uploadsPerMinute:       2,
@@ -63,15 +67,12 @@ function midnightUnix(): number {
 }
 
 const KEYS = {
-  // Total bytes used by a workspace (persistent — updated on upload/delete)
   workspaceStorageBytes: (workspaceId: string) =>
     `storage:workspace:${workspaceId}:bytes`,
 
-  // Daily upload count per user per workspace
   userDailyUploads: (workspaceId: string, userId: string) =>
     `storage:daily:${workspaceId}:${userId}:${todaySegment()}`,
 
-  // Sliding-window sorted sets
   userMinuteWindow: (workspaceId: string, userId: string) =>
     `storage:rl:minute:${workspaceId}:${userId}`,
 
@@ -79,43 +80,52 @@ const KEYS = {
     `storage:rl:hour:${workspaceId}:${userId}`,
 };
 
-// ─── Atomic increment with expiry (Lua — same pattern as task quota) ──────────
+// ─── Atomic increment with expiry (Lua) ──────────────────────────────────────
 
-const incrWithExpiry = `
+const INCR_WITH_EXPIRY_SCRIPT = `
 local current = redis.call('INCR', KEYS[1])
 if current == 1 then
   redis.call('EXPIREAT', KEYS[1], ARGV[1])
 end
 return current
-` as const;
+`;
 
 async function atomicIncr(key: string, expireAtUnix: number): Promise<number> {
-  return (await redis.eval(incrWithExpiry, [key], [String(expireAtUnix)])) as number;
+  const redis = getRedisClient();
+  // ioredis: eval(script, numkeys, ...keys, ...args)
+  return (await redis.eval(
+    INCR_WITH_EXPIRY_SCRIPT,
+    1,
+    key,
+    String(expireAtUnix),
+  )) as number;
 }
 
 // ─── Sliding Window Check ─────────────────────────────────────────────────────
 
 async function slidingWindowCheck(
-  key:           string,
-  limit:         number,
-  windowMs:      number,
-  ttlSeconds:    number,
+  key:        string,
+  limit:      number,
+  windowMs:   number,
+  ttlSeconds: number,
 ): Promise<SlidingWindowResult> {
+  const redis       = getRedisClient();
   const now         = Date.now();
   const windowStart = now - windowMs;
   const member      = `${now}:${Math.random()}`;
 
-  const pipe = redis.pipeline();
-  pipe.zremrangebyscore(key, 0, windowStart);
-  pipe.zcard(key);
-  pipe.zadd(key, { score: now, member });
-  pipe.expire(key, ttlSeconds);
-  const results = await pipe.exec();
+  const pipeline = redis.pipeline();
+  pipeline.zremrangebyscore(key, 0, windowStart);
+  pipeline.zcard(key);
+  pipeline.zadd(key, now, member);          // ioredis: zadd(key, score, member)
+  pipeline.expire(key, ttlSeconds);
 
-  const countBefore = results[1] as number;
+  const results = await pipeline.exec();
+  // results: [[err, reply], [err, reply], ...]
+  const countBefore = (results?.[1]?.[1] ?? 0) as number;
 
   if (countBefore >= limit) {
-    // Rollback the zadd we optimistically did
+    // Rollback the zadd we optimistically wrote
     await redis.zrem(key, member);
     return { allowed: false, count: countBefore, retryAfterMs: windowMs };
   }
@@ -127,53 +137,56 @@ async function slidingWindowCheck(
 
 /**
  * Get current workspace storage usage in bytes from Redis.
- * Falls back to 0 if key doesn't exist yet (first upload).
+ * Returns 0 if the key doesn't exist yet (first upload).
  */
 export async function getWorkspaceStorageBytes(workspaceId: string): Promise<number> {
-  const raw = await redis.get<string>(KEYS.workspaceStorageBytes(workspaceId));
+  const redis = getRedisClient();
+  const raw   = await redis.get(KEYS.workspaceStorageBytes(workspaceId));
   return raw ? parseInt(raw, 10) : 0;
 }
 
 /**
  * Atomically add bytes to the workspace storage counter.
- * Call AFTER successful Cloudinary + DB write.
+ * Call AFTER a successful Cloudinary + DB write.
  */
 export async function incrementWorkspaceStorage(
   workspaceId: string,
   bytes:        number,
 ): Promise<number> {
+  const redis = getRedisClient();
   return (await redis.incrby(KEYS.workspaceStorageBytes(workspaceId), bytes)) as number;
 }
 
 /**
  * Atomically subtract bytes from the workspace storage counter.
- * Call AFTER successful file deletion.
+ * Call AFTER a successful file deletion.
  */
 export async function decrementWorkspaceStorage(
   workspaceId: string,
   bytes:        number,
 ): Promise<void> {
+  const redis   = getRedisClient();
   const current = await getWorkspaceStorageBytes(workspaceId);
   const next    = Math.max(0, current - bytes);
   await redis.set(KEYS.workspaceStorageBytes(workspaceId), String(next));
 }
 
 /**
- * Seed the storage counter from the DB on first use.
- * Call this once during workspace initialisation or on cache miss.
+ * Seed the storage counter from the DB on first use (NX — no-op if already set).
+ * Call once during workspace initialisation or on a cache miss.
  */
 export async function seedWorkspaceStorageFromDb(
-  workspaceId:  string,
-  totalBytes:   number,
+  workspaceId: string,
+  totalBytes:  number,
 ): Promise<void> {
-  // Only set if key doesn't exist yet (NX = not exists)
+  const redis = getRedisClient();
+  // ioredis SET … NX: only set if key doesn't exist
   await redis.set(
     KEYS.workspaceStorageBytes(workspaceId),
     String(totalBytes),
-    { nx: true },
+    "NX",
   );
 }
-
 
 // ─── Main Check + Consume ─────────────────────────────────────────────────────
 
@@ -189,10 +202,10 @@ export async function checkAndConsumeUploadQuota(
   plan:          WorkspacePlan,
   fileSizeBytes: number,
 ): Promise<UploadCheckResult> {
-  const limits        = getStorageLimits(plan);
-  const expireAtUnix  = midnightUnix();
+  const limits       = getStorageLimits(plan);
+  const expireAtUnix = midnightUnix();
 
-  // 1. File size check (no Redis needed — pure arithmetic)
+  // 1. File size check (pure arithmetic — no Redis)
   if (fileSizeBytes > limits.maxFileSizeBytes) {
     const usedBytes = await getWorkspaceStorageBytes(workspaceId);
     return {
@@ -212,7 +225,6 @@ export async function checkAndConsumeUploadQuota(
   if (limits.maxStorageBytes !== null) {
     const afterUpload = usedBytes + fileSizeBytes;
     if (afterUpload > limits.maxStorageBytes) {
-      const remaining = Math.max(0, limits.maxStorageBytes - usedBytes);
       return {
         allowed:          false,
         reason:           `Workspace storage full. Used ${formatBytes(usedBytes)} of ${formatBytes(limits.maxStorageBytes)}. Free up space or upgrade your plan.`,
@@ -220,7 +232,7 @@ export async function checkAndConsumeUploadQuota(
         storageUsedBytes: usedBytes,
         storageMaxBytes:  limits.maxStorageBytes,
         storageUsedPct:   (usedBytes / limits.maxStorageBytes) * 100,
-        remainingBytes:   remaining,
+        remainingBytes:   Math.max(0, limits.maxStorageBytes - usedBytes),
       };
     }
   }
@@ -277,12 +289,13 @@ export async function checkAndConsumeUploadQuota(
     }
   }
 
-  // 5. Daily upload count (atomic INCR)
+  // 5. Daily upload count (atomic INCR via Lua)
   if (limits.maxDailyUploadsPerUser !== null) {
-    const dailyKey  = KEYS.userDailyUploads(workspaceId, userId);
-    const newCount  = await atomicIncr(dailyKey, expireAtUnix);
+    const dailyKey = KEYS.userDailyUploads(workspaceId, userId);
+    const newCount = await atomicIncr(dailyKey, expireAtUnix);
 
     if (newCount > limits.maxDailyUploadsPerUser) {
+      const redis = getRedisClient();
       await redis.decr(dailyKey); // rollback
       return {
         allowed:          false,
@@ -313,6 +326,7 @@ export async function rollbackUploadQuota(
   workspaceId: string,
 ): Promise<void> {
   try {
+    const redis = getRedisClient();
     await redis.decr(KEYS.userDailyUploads(workspaceId, userId));
   } catch {
     // best-effort
@@ -320,7 +334,6 @@ export async function rollbackUploadQuota(
 }
 
 // ─── Storage Info (for frontend display) ─────────────────────────────────────
-
 
 export async function getStorageInfo(
   workspaceId: string,
