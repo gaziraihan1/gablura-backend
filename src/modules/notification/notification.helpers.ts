@@ -1,18 +1,3 @@
-/**
- * src/utils/notification.helpers.ts
- *
- * All notification dispatch functions.
- * The only change from the previous version: instead of looking up an in-memory
- * Map of SSE connections and writing directly to Response objects, we:
- *   1. Write the Notification row to Postgres (unchanged).
- *   2. PUBLISH the payload to the user's Redis channel.
- *      → The SSE handler (notification.stream.ts) receives it on every process
- *        that has an open connection for that user and fans it out to the browser.
- *
- * This makes the notification pipeline stateless with respect to which backend
- * instance the user is connected to.
- */
-
 import type { NotificationType } from "@prisma/client";
 import { NotificationPayload, SSEPayload, userChannel } from "../../lib/sse/sse.channels.js";
 import { getPublisher } from "../../lib/redis/redis.pubsub.js";
@@ -32,13 +17,11 @@ async function publishToSSE(
   try {
     await getPublisher().publish(userChannel(userId), JSON.stringify(payload));
   } catch (err) {
-    // Never let a Redis error break the API response — the DB write succeeded,
-    // so the notification is durable. The client will see it on next poll/reconnect.
     console.error("[notifyUser] Redis PUBLISH failed for user", userId, err);
   }
 }
 
-// ─── Core: write one notification and push it ────────────────────────────────
+// ─── Shared options type ──────────────────────────────────────────────────────
 
 interface NotifyUserOptions {
   userId: string;
@@ -49,12 +32,11 @@ interface NotifyUserOptions {
   actionUrl?: string;
 }
 
+// ─── Core: write one notification and push it ────────────────────────────────
+
 export async function notifyUser(opts: NotifyUserOptions): Promise<void> {
   const { userId, senderId, type, title, message, actionUrl } = opts;
-    console.log("[notifyUser] called for", opts.userId, opts.type); // add this
 
-
-  // 1. Persist to DB
   const notification = await prisma.notification.create({
     data: {
       userId,
@@ -78,12 +60,60 @@ export async function notifyUser(opts: NotifyUserOptions): Promise<void> {
     },
   });
 
-  // 2. Push via Redis pub/sub → SSE
   await publishToSSE(userId, {
     ...notification,
     type: notification.type as string,
     createdAt: notification.createdAt.toISOString(),
   });
+}
+
+// ─── Batch: write N notifications in one INSERT + parallel SSE publishes ─────
+//
+// Always prefer this over Promise.all(targets.map(notifyUser)) — reduces
+// N DB round-trips to 1, regardless of recipient count.
+
+export async function notifyUsers(
+  notifications: NotifyUserOptions[],
+): Promise<void> {
+  if (notifications.length === 0) return;
+
+  // 1. Single bulk INSERT — one round-trip for all recipients
+  const created = await prisma.notification.createManyAndReturn({
+    data: notifications.map(({ userId, senderId, type, title, message, actionUrl }) => ({
+      userId,
+      senderId:  senderId ?? null,
+      type,
+      title,
+      message,
+      actionUrl: actionUrl ?? null,
+    })),
+    select: {
+      id:        true,
+      userId:    true,
+      type:      true,
+      title:     true,
+      message:   true,
+      actionUrl: true,
+      createdAt: true,
+      read:      true,
+    },
+  });
+
+  // 2. Fan out to Redis in parallel — a single publish failure never blocks others
+  await Promise.allSettled(
+    created.map((n) =>
+      publishToSSE(n.userId, {
+        id:        n.id,
+        type:      n.type as string,
+        title:     n.title,
+        message:   n.message,
+        actionUrl: n.actionUrl,
+        createdAt: n.createdAt.toISOString(),
+        read:      n.read,
+        sender:    null,
+      }),
+    ),
+  );
 }
 
 // ─── Notify all assignees of a task ──────────────────────────────────────────
@@ -104,7 +134,7 @@ export async function notifyTaskAssignees(
   const { taskId, senderId, type, title, message, excludeUserId, actionUrl } = opts;
 
   const assignees = await prisma.taskAssignee.findMany({
-    where: { taskId },
+    where:  { taskId },
     select: { userId: true },
   });
 
@@ -112,10 +142,8 @@ export async function notifyTaskAssignees(
     .map((a) => a.userId)
     .filter((id) => id !== excludeUserId);
 
-  await Promise.all(
-    targets.map((userId) =>
-      notifyUser({ userId, senderId, type, title, message, actionUrl }),
-    ),
+  await notifyUsers(
+    targets.map((userId) => ({ userId, senderId, type, title, message, actionUrl })),
   );
 }
 
@@ -134,11 +162,10 @@ interface NotifyWorkspaceMembersOptions {
 export async function notifyWorkspaceMembers(
   opts: NotifyWorkspaceMembersOptions,
 ): Promise<void> {
-  const { workspaceId, senderId, type, title, message, excludeUserId, actionUrl } =
-    opts;
+  const { workspaceId, senderId, type, title, message, excludeUserId, actionUrl } = opts;
 
   const members = await prisma.workspaceMember.findMany({
-    where: { workspaceId },
+    where:  { workspaceId },
     select: { userId: true },
   });
 
@@ -146,10 +173,8 @@ export async function notifyWorkspaceMembers(
     .map((m) => m.userId)
     .filter((id) => id !== excludeUserId);
 
-  await Promise.all(
-    targets.map((userId) =>
-      notifyUser({ userId, senderId, type, title, message, actionUrl }),
-    ),
+  await notifyUsers(
+    targets.map((userId) => ({ userId, senderId, type, title, message, actionUrl })),
   );
 }
 
@@ -160,30 +185,22 @@ interface NotifyMentionsOptions {
   workspaceId: string;
   senderId: string;
   senderName: string;
-  context: string;   // e.g. "comment", "task description"
+  context: string;
   actionUrl?: string;
 }
 
-/**
- * Extracts @handle or @name patterns from `text`, resolves them to workspace
- * members, and sends notifications to each unique matched user.
- */
 export async function notifyMentions(
   opts: NotifyMentionsOptions,
 ): Promise<void> {
   const { text, workspaceId, senderId, senderName, context, actionUrl } = opts;
 
-  // Extract @word tokens (e.g. @john, @john.doe)
   const handles = [...text.matchAll(/@([\w.]+)/g)].map((m) => m[1]);
   if (handles.length === 0) return;
 
-  // Resolve to workspace members whose name matches (case-insensitive prefix)
   const members = await prisma.workspaceMember.findMany({
     where: {
       workspaceId,
-      user: {
-        name: { in: handles, mode: "insensitive" },
-      },
+      user: { name: { in: handles, mode: "insensitive" } },
     },
     select: { userId: true },
   });
@@ -192,16 +209,14 @@ export async function notifyMentions(
     ...new Set(members.map((m) => m.userId).filter((id) => id !== senderId)),
   ];
 
-  await Promise.all(
-    uniqueTargets.map((userId) =>
-      notifyUser({
-        userId,
-        senderId,
-        type: "MENTION",
-        title: `${senderName} mentioned you`,
-        message: `You were mentioned in a ${context}`,
-        actionUrl,
-      }),
-    ),
+  await notifyUsers(
+    uniqueTargets.map((userId) => ({
+      userId,
+      senderId,
+      type:      "MENTION" as NotificationType,
+      title:     `${senderName} mentioned you`,
+      message:   `You were mentioned in a ${context}`,
+      actionUrl,
+    })),
   );
 }
