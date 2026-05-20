@@ -58,9 +58,9 @@ afterAll(() => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// POST /api/projects — billing
+// POST /api/v1/projects — billing
 // ─────────────────────────────────────────────────────────────────────────────
-describe("POST /api/projects — billing", () => {
+describe("POST /api/v1/projects — billing", () => {
   it("403 — blocked when project limit reached", async () => {
     const { user, workspace } = await createWorkspaceWithOwner();
 
@@ -71,7 +71,7 @@ describe("POST /api/projects — billing", () => {
     await createProject(workspace.id, user.id);
 
     const res = await request(app)
-      .post("/api/projects")
+      .post("/api/v1/projects")
       .set(await authWithCsrfHeaders(user))
       .send({
         name: "Blocked Project",
@@ -90,7 +90,7 @@ describe("POST /api/projects — billing", () => {
     } as any);
 
     const res = await request(app)
-      .post("/api/projects")
+      .post("/api/v1/projects")
       .set(await authWithCsrfHeaders(user))
       .send({
         name: "Unlimited Project",
@@ -102,9 +102,9 @@ describe("POST /api/projects — billing", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// POST /api/projects
+// POST /api/v1/projects
 // ─────────────────────────────────────────────────────────────────────────────
-describe("POST /api/projects", () => {
+describe("POST /api/v1/projects", () => {
   it("201 — allowed when under limit", async () => {
     const { user, workspace } = await createWorkspaceWithOwner();
 
@@ -115,7 +115,7 @@ describe("POST /api/projects", () => {
     await createProject(workspace.id, user.id);
 
     const res = await request(app)
-      .post("/api/projects")
+      .post("/api/v1/projects")
       .set(await authWithCsrfHeaders(user))
       .send({ name: "Second Project", workspaceId: workspace.id });
 
@@ -126,7 +126,7 @@ describe("POST /api/projects", () => {
     const { user, workspace } = await createWorkspaceWithOwner();
 
     const res = await request(app)
-      .post("/api/projects")
+      .post("/api/v1/projects")
       .set(await authWithCsrfHeaders(user))
       .send({
         name: "Focura v2",
@@ -155,7 +155,7 @@ describe("POST /api/projects", () => {
     const { user, workspace } = await createWorkspaceWithOwner();
 
     const res = await request(app)
-      .post("/api/projects")
+      .post("/api/v1/projects")
       .set(await authWithCsrfHeaders(user))
       .send({ name: "Auto Slug Project", workspaceId: workspace.id });
 
@@ -170,7 +170,7 @@ describe("POST /api/projects", () => {
     await createProject(workspace.id, user.id, { slug: "taken-slug" });
 
     const res = await request(app)
-      .post("/api/projects")
+      .post("/api/v1/projects")
       .set(await authWithCsrfHeaders(user))
       .send({
         name: "Another Project",
@@ -188,7 +188,7 @@ describe("POST /api/projects", () => {
     await createProject(ws1.id, u1.id, { slug: "shared-slug" });
 
     const res = await request(app)
-      .post("/api/projects")
+      .post("/api/v1/projects")
       .set(await authWithCsrfHeaders(u2))
       .send({
         name: "Same Slug Different WS",
@@ -204,7 +204,7 @@ describe("POST /api/projects", () => {
     const outsider = await createUser();
 
     const res = await request(app)
-      .post("/api/projects")
+      .post("/api/v1/projects")
       .set(await authWithCsrfHeaders(outsider))
       .send({ name: "Sneaky Project", workspaceId: workspace.id });
 
@@ -215,7 +215,7 @@ describe("POST /api/projects", () => {
     const { user, workspace } = await createWorkspaceWithOwner();
 
     const res = await request(app)
-      .post("/api/projects")
+      .post("/api/v1/projects")
       .set(await authWithCsrfHeaders(user))
       .send({ workspaceId: workspace.id });
 
@@ -224,7 +224,7 @@ describe("POST /api/projects", () => {
 
   it("401 — unauthenticated", async () => {
     const res = await request(app)
-      .post("/api/projects")
+      .post("/api/v1/projects")
       .send({ name: "No Auth", workspaceId: "any" });
 
     expect(res.status).toBe(401);
@@ -232,17 +232,17 @@ describe("POST /api/projects", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GET /api/projects/workspace/:workspaceId
+// GET /api/v1/projects/workspace/:workspaceId
 // Safe method — no CSRF token needed
 // ─────────────────────────────────────────────────────────────────────────────
-describe("GET /api/projects/workspace/:workspaceId", () => {
+describe("GET /api/v1/projects/workspace/:workspaceId", () => {
   it("200 — returns projects for workspace member", async () => {
     const { user, workspace } = await createWorkspaceWithOwner();
     await createProject(workspace.id, user.id, { name: "Project Alpha" });
     await createProject(workspace.id, user.id, { name: "Project Beta" });
 
     const res = await request(app)
-      .get(`/api/projects/workspace/${workspace.id}`)
+      .get(`/api/v1/projects/workspace/${workspace.id}`)
       .set(authHeaders(user));
 
     expect(res.status).toBe(200);
@@ -263,14 +263,14 @@ describe("GET /api/projects/workspace/:workspaceId", () => {
     await createProject(ws2.id, u2.id, { name: "Other Project" });
 
     const res = await request(app)
-      .get(`/api/projects/workspace/${workspace.id}`)
+      .get(`/api/v1/projects/workspace/${workspace.id}`)
       .set(authHeaders(user));
 
     expect(res.status).toBe(200);
     const list = res.body.data ?? res.body;
-    expect(
-      list.some((p: { name: string }) => p.name === "Other Project"),
-    ).toBe(false);
+    expect(list.some((p: { name: string }) => p.name === "Other Project")).toBe(
+      false,
+    );
   });
 
   it("403 — non-member cannot list projects", async () => {
@@ -278,23 +278,23 @@ describe("GET /api/projects/workspace/:workspaceId", () => {
     const outsider = await createUser();
 
     const res = await request(app)
-      .get(`/api/projects/workspace/${workspace.id}`)
+      .get(`/api/v1/projects/workspace/${workspace.id}`)
       .set(authHeaders(outsider));
 
     expect(res.status).toBe(403);
   });
 
   it("401 — unauthenticated", async () => {
-    const res = await request(app).get("/api/projects/workspace/some-id");
+    const res = await request(app).get("/api/v1/projects/workspace/some-id");
     expect(res.status).toBe(401);
   });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GET /api/projects/:projectId
+// GET /api/v1/projects/:projectId
 // Safe method — no CSRF token needed
 // ─────────────────────────────────────────────────────────────────────────────
-describe("GET /api/projects/:projectId", () => {
+describe("GET /api/v1/projects/:projectId", () => {
   it("200 — returns project with members", async () => {
     const { user, workspace } = await createWorkspaceWithOwner();
     const project = await createProject(workspace.id, user.id, {
@@ -302,7 +302,7 @@ describe("GET /api/projects/:projectId", () => {
     });
 
     const res = await request(app)
-      .get(`/api/projects/${project.id}`)
+      .get(`/api/v1/projects/${project.id}`)
       .set(authHeaders(user));
 
     expect(res.status).toBe(200);
@@ -317,7 +317,7 @@ describe("GET /api/projects/:projectId", () => {
     const outsider = await createUser();
 
     const res = await request(app)
-      .get(`/api/projects/${project.id}`)
+      .get(`/api/v1/projects/${project.id}`)
       .set(authHeaders(outsider));
 
     expect([403, 404]).toContain(res.status);
@@ -327,7 +327,7 @@ describe("GET /api/projects/:projectId", () => {
     const { user } = await createWorkspaceWithOwner();
 
     const res = await request(app)
-      .get("/api/projects/clxxxxxxxxxxxxxxxxxxxxxxxxx")
+      .get("/api/v1/projects/clxxxxxxxxxxxxxxxxxxxxxxxxx")
       .set(authHeaders(user));
 
     expect(res.status).toBe(404);
@@ -335,9 +335,9 @@ describe("GET /api/projects/:projectId", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PATCH /api/projects/:projectId — state-changing, needs CSRF
+// PATCH /api/v1/projects/:projectId — state-changing, needs CSRF
 // ─────────────────────────────────────────────────────────────────────────────
-describe("PATCH /api/projects/:projectId", () => {
+describe("PATCH /api/v1/projects/:projectId", () => {
   it("200 — MANAGER can update project name", async () => {
     const { user, workspace } = await createWorkspaceWithOwner();
     const project = await createProject(workspace.id, user.id, {
@@ -345,7 +345,7 @@ describe("PATCH /api/projects/:projectId", () => {
     });
 
     const res = await request(app)
-      .patch(`/api/projects/${project.id}`)
+      .patch(`/api/v1/projects/${project.id}`)
       .set(await authWithCsrfHeaders(user))
       .send({ name: "New Name" });
 
@@ -361,7 +361,7 @@ describe("PATCH /api/projects/:projectId", () => {
     });
 
     const res = await request(app)
-      .patch(`/api/projects/${project.id}`)
+      .patch(`/api/v1/projects/${project.id}`)
       .set(await authWithCsrfHeaders(user))
       .send({ status: ProjectStatus.ON_HOLD });
 
@@ -375,7 +375,7 @@ describe("PATCH /api/projects/:projectId", () => {
     const project = await createProject(workspace.id, user.id);
 
     const res = await request(app)
-      .patch(`/api/projects/${project.id}`)
+      .patch(`/api/v1/projects/${project.id}`)
       .set(await authWithCsrfHeaders(user))
       .send({ status: ProjectStatus.COMPLETED });
 
@@ -398,7 +398,7 @@ describe("PATCH /api/projects/:projectId", () => {
     });
 
     const res = await request(app)
-      .patch(`/api/projects/${project.id}`)
+      .patch(`/api/v1/projects/${project.id}`)
       .set(await authWithCsrfHeaders(viewer))
       .send({ name: "Viewer Cannot Edit" });
 
@@ -410,7 +410,7 @@ describe("PATCH /api/projects/:projectId", () => {
     const project = await createProject(workspace.id, user.id);
 
     const res = await request(app)
-      .patch(`/api/projects/${project.id}`)
+      .patch(`/api/v1/projects/${project.id}`)
       .set(await authWithCsrfHeaders(user))
       .send({ priority: "EXTREME" });
 
@@ -419,9 +419,9 @@ describe("PATCH /api/projects/:projectId", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// DELETE /api/projects/:projectId — state-changing, needs CSRF
+// DELETE /api/v1/projects/:projectId — state-changing, needs CSRF
 // ─────────────────────────────────────────────────────────────────────────────
-describe("DELETE /api/projects/:projectId", () => {
+describe("DELETE /api/v1/projects/:projectId", () => {
   it("200 — MANAGER/OWNER deletes project (cascades tasks)", async () => {
     const { user, workspace } = await createWorkspaceWithOwner();
     const project = await createProject(workspace.id, user.id);
@@ -435,7 +435,7 @@ describe("DELETE /api/projects/:projectId", () => {
     });
 
     const res = await request(app)
-      .delete(`/api/projects/${project.id}`)
+      .delete(`/api/v1/projects/${project.id}`)
       .set(await authWithCsrfHeaders(user));
 
     expect(res.status).toBe(200);
@@ -460,7 +460,7 @@ describe("DELETE /api/projects/:projectId", () => {
     });
 
     const res = await request(app)
-      .delete(`/api/projects/${project.id}`)
+      .delete(`/api/v1/projects/${project.id}`)
       .set(await authWithCsrfHeaders(collab));
 
     expect(res.status).toBe(403);
@@ -470,7 +470,7 @@ describe("DELETE /api/projects/:projectId", () => {
     const { user } = await createWorkspaceWithOwner();
 
     const res = await request(app)
-      .delete("/api/projects/clxxxxxxxxxxxxxxxxxxxxxxxxx")
+      .delete("/api/v1/projects/clxxxxxxxxxxxxxxxxxxxxxxxxx")
       .set(await authWithCsrfHeaders(user));
 
     expect([403, 404]).toContain(res.status);
@@ -478,10 +478,10 @@ describe("DELETE /api/projects/:projectId", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GET /api/projects/workspace/:workspaceId — filter by status
+// GET /api/v1/projects/workspace/:workspaceId — filter by status
 // Safe method — no CSRF token needed
 // ─────────────────────────────────────────────────────────────────────────────
-describe("GET /api/projects/workspace/:workspaceId — status filter", () => {
+describe("GET /api/v1/projects/workspace/:workspaceId — status filter", () => {
   it("200 — returns all projects (no filter)", async () => {
     const { user, workspace } = await createWorkspaceWithOwner();
     await createProject(workspace.id, user.id, {
@@ -492,7 +492,7 @@ describe("GET /api/projects/workspace/:workspaceId — status filter", () => {
     });
 
     const res = await request(app)
-      .get(`/api/projects/workspace/${workspace.id}`)
+      .get(`/api/v1/projects/workspace/${workspace.id}`)
       .set(authHeaders(user));
 
     expect(res.status).toBe(200);
@@ -512,7 +512,7 @@ describe("GET /api/projects/workspace/:workspaceId — status filter", () => {
     });
 
     const res = await request(app)
-      .get(`/api/projects/workspace/${workspace.id}`)
+      .get(`/api/v1/projects/workspace/${workspace.id}`)
       .set(authHeaders(user));
 
     expect(res.status).toBe(200);
@@ -524,13 +524,13 @@ describe("GET /api/projects/workspace/:workspaceId — status filter", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GET /api/projects/user/all
+// GET /api/v1/projects/user/all
 // Safe method — no CSRF token needed
 // ─────────────────────────────────────────────────────────────────────────────
-describe("GET /api/projects/user/all", () => {
+describe("GET /api/v1/projects/user/all", () => {
   it("401 — invalid token", async () => {
     const res = await request(app)
-      .get("/api/projects/user/all")
+      .get("/api/v1/projects/user/all")
       .set(invalidAuthHeaders());
 
     expect(res.status).toBe(401);
@@ -542,7 +542,7 @@ describe("GET /api/projects/user/all", () => {
     await createProject(workspace.id, user.id, { name: "User Project 2" });
 
     const res = await request(app)
-      .get("/api/projects/user/all")
+      .get("/api/v1/projects/user/all")
       .set(authHeaders(user));
 
     expect(res.status).toBe(200);
@@ -557,7 +557,7 @@ describe("GET /api/projects/user/all", () => {
     await createProject(ws2.id, u2.id, { name: "Secret Project" });
 
     const res = await request(app)
-      .get("/api/projects/user/all")
+      .get("/api/v1/projects/user/all")
       .set(authHeaders(user));
 
     expect(res.status).toBe(200);
@@ -568,16 +568,16 @@ describe("GET /api/projects/user/all", () => {
   });
 
   it("401 — unauthenticated", async () => {
-    const res = await request(app).get("/api/projects/user/all");
+    const res = await request(app).get("/api/v1/projects/user/all");
     expect(res.status).toBe(401);
   });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GET /api/projects/slug/:slug
+// GET /api/v1/projects/slug/:slug
 // Safe method — no CSRF token needed
 // ─────────────────────────────────────────────────────────────────────────────
-describe("GET /api/projects/slug/:slug", () => {
+describe("GET /api/v1/projects/slug/:slug", () => {
   it("200 — returns project by slug for workspace member", async () => {
     const { user, workspace } = await createWorkspaceWithOwner();
     const project = await createProject(workspace.id, user.id, {
@@ -585,7 +585,7 @@ describe("GET /api/projects/slug/:slug", () => {
     });
 
     const res = await request(app)
-      .get("/api/projects/slug/my-unique-slug")
+      .get("/api/v1/projects/slug/my-unique-slug")
       .set(authHeaders(user));
 
     expect(res.status).toBe(200);
@@ -598,22 +598,22 @@ describe("GET /api/projects/slug/:slug", () => {
     const { user } = await createWorkspaceWithOwner();
 
     const res = await request(app)
-      .get("/api/projects/slug/does-not-exist-ever")
+      .get("/api/v1/projects/slug/does-not-exist-ever")
       .set(authHeaders(user));
 
     expect(res.status).toBe(404);
   });
 
   it("401 — unauthenticated", async () => {
-    const res = await request(app).get("/api/projects/slug/some-slug");
+    const res = await request(app).get("/api/v1/projects/slug/some-slug");
     expect(res.status).toBe(401);
   });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// POST /api/projects/:projectId/members — state-changing, needs CSRF
+// POST /api/v1/projects/:projectId/members — state-changing, needs CSRF
 // ─────────────────────────────────────────────────────────────────────────────
-describe("POST /api/projects/:projectId/members", () => {
+describe("POST /api/v1/projects/:projectId/members", () => {
   it("201 — MANAGER can add a workspace member to project", async () => {
     const { user: owner, workspace } = await createWorkspaceWithOwner();
     const project = await createProject(workspace.id, owner.id);
@@ -625,7 +625,7 @@ describe("POST /api/projects/:projectId/members", () => {
     );
 
     const res = await request(app)
-      .post(`/api/projects/${project.id}/members`)
+      .post(`/api/v1/projects/${project.id}/members`)
       .set(await authWithCsrfHeaders(owner))
       .send({ userId: newMember.id, role: ProjectRole.COLLABORATOR });
 
@@ -640,7 +640,7 @@ describe("POST /api/projects/:projectId/members", () => {
     const outsider = await createUser();
 
     const res = await request(app)
-      .post(`/api/projects/${project.id}/members`)
+      .post(`/api/v1/projects/${project.id}/members`)
       .set(await authWithCsrfHeaders(owner))
       .send({ userId: outsider.id, role: ProjectRole.COLLABORATOR });
 
@@ -655,14 +655,14 @@ describe("POST /api/projects/:projectId/members", () => {
 
     // First add — needs its own CSRF headers
     await request(app)
-      .post(`/api/projects/${project.id}/members`)
+      .post(`/api/v1/projects/${project.id}/members`)
       .set(await authWithCsrfHeaders(owner))
       .send({ userId: member.id });
 
     // Duplicate — authWithCsrfHeaders generates a fresh token each time,
     // both are valid for the same session so second call still passes CSRF
     const res = await request(app)
-      .post(`/api/projects/${project.id}/members`)
+      .post(`/api/v1/projects/${project.id}/members`)
       .set(await authWithCsrfHeaders(owner))
       .send({ userId: member.id });
 
@@ -685,7 +685,7 @@ describe("POST /api/projects/:projectId/members", () => {
     await addMemberToWorkspace(target.id, workspace.id, WorkspaceRole.MEMBER);
 
     const res = await request(app)
-      .post(`/api/projects/${project.id}/members`)
+      .post(`/api/v1/projects/${project.id}/members`)
       .set(await authWithCsrfHeaders(viewer))
       .send({ userId: target.id });
 

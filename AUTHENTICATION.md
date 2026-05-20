@@ -17,7 +17,7 @@ Browser                  Next.js (NextAuth)           Express Backend
    |                           |     refreshToken }           |
    |<── session cookie ───────|   stored in HTTP-only JWT    |
    |                           |                              |
-   |── GET /api/data ─────────────────────────────────────>|
+   |── GET /api/version/data ─────────────────────────────────────>|
    |   Authorization: Bearer <accessToken>                    |── verifyToken()
    |<── data ────────────────────────────────────────────────|   (public key only)
 ```
@@ -89,7 +89,7 @@ The frontend proves the request came from the Next.js server by sending an HMAC-
 ### Exchange request
 
 ```
-POST /api/auth/exchange
+POST /api/v1/auth/exchange
 Content-Type: application/json
 
 {
@@ -135,7 +135,7 @@ jwt callback fires (on every request)
         ├── refreshLock exists for this sessionId?
         │     └── wait for in-flight promise (prevents duplicate rotation)
         │
-        └── call POST /api/auth/refresh
+        └── call POST /api/v1/auth/refresh
               │
               ├── success → update token pair in JWT cookie
               ├── duplicate in-flight refresh with same old JTI
@@ -149,7 +149,7 @@ jwt callback fires (on every request)
 ### Refresh endpoint
 
 ```
-POST /api/auth/refresh
+POST /api/v1/auth/refresh
 Content-Type: application/json
 
 { "refreshToken": "..." }
@@ -175,7 +175,7 @@ The SSE stream is **authenticated** — the access token is passed as a query pa
 ### Endpoint
 
 ```
-GET /api/notifications/stream?token=<accessToken>
+GET /api/v1/notifications/stream?token=<accessToken>
 ```
 
 ### Security model
@@ -246,7 +246,7 @@ The `useNotifications` hook uses the shared `api` wrapper from `@/lib/axios`. Th
 
 ```ts
 // api.get<NotificationsResponse>() returns ApiResponse<NotificationsResponse>
-const response = await api.get<NotificationsResponse>("/api/notifications");
+const response = await api.get<NotificationsResponse>("/api/v1/notifications");
 return response?.data ?? EMPTY_PAGE;  // .data is NotificationsResponse
 ```
 
@@ -277,7 +277,7 @@ await notifyMentions({ text: comment.content, workspaceId, senderId: req.user.id
 ### Single device
 
 ```
-POST /api/auth/logout
+POST /api/v1/auth/logout
 Authorization: Bearer <accessToken>   (optional — logout succeeds even if expired)
 
 { "logoutAll": false }

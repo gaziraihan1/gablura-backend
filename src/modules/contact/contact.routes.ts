@@ -11,7 +11,7 @@ const router = Router();
 // ─── Public routes ────────────────────────────────────────────────────────────
 
 /**
- * POST /api/contact
+ * POST /api/v1/contact
  * Submit a contact form message.
  * Public — no auth required.
  * Rate-limited: 3 requests / IP / hour + 2 requests / email / 24 h
@@ -25,7 +25,7 @@ router.post(
 // ─── Admin-only routes ────────────────────────────────────────────────────────
 
 /**
- * GET /api/contact
+ * GET /api/v1/contact
  * List contact messages with filtering and pagination.
  * Requires ADMIN or SUPER_ADMIN role.
  */

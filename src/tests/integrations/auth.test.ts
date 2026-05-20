@@ -1,9 +1,9 @@
 // src/tests/integrations/auth/auth.test.ts
 // ─────────────────────────────────────────────────────────────────────────────
 // Your auth flow (from auth.routes.ts):
-//   POST /api/auth/exchange  ← NextAuth sends HMAC-signed proof → gets RS256 tokens
-//   POST /api/auth/refresh   ← Rotates refresh token
-//   POST /api/auth/logout    ← Revokes tokens (graceful even without Redis)
+//   POST /api/v1/auth/exchange  ← NextAuth sends HMAC-signed proof → gets RS256 tokens
+//   POST /api/v1/auth/refresh   ← Rotates refresh token
+//   POST /api/v1/auth/logout    ← Revokes tokens (graceful even without Redis)
 //
 // There is NO /register or /login endpoint — NextAuth handles that.
 // Tests use: factory createUser() + buildExchangeProof() + authHeaders()
@@ -24,9 +24,9 @@ import {
 } from "../helpers/auth.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// POST /api/auth/exchange
+// POST /api/v1/auth/exchange
 // ─────────────────────────────────────────────────────────────────────────────
-describe("POST /api/auth/exchange", () => {
+describe("POST /api/v1/auth/exchange", () => {
   it("200 — valid HMAC proof issues access + refresh tokens", async () => {
     const user = await createUser();
     const sessionId = randomUUID();
@@ -39,16 +39,14 @@ describe("POST /api/auth/exchange", () => {
       timestamp,
     });
 
-    const res = await request(app)
-      .post("/api/auth/exchange")
-      .send({
-        userId: user.id,
-        email: user.email,
-        role: user.role,
-        sessionId,
-        timestamp,
-        signature,
-      });
+    const res = await request(app).post("/api/v1/auth/exchange").send({
+      userId: user.id,
+      email: user.email,
+      role: user.role,
+      sessionId,
+      timestamp,
+      signature,
+    });
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
@@ -69,16 +67,14 @@ describe("POST /api/auth/exchange", () => {
       timestamp,
     });
 
-    const res = await request(app)
-      .post("/api/auth/exchange")
-      .send({
-        userId: user.id,
-        email: user.email,
-        role: user.role,
-        sessionId,
-        timestamp,
-        signature,
-      });
+    const res = await request(app).post("/api/v1/auth/exchange").send({
+      userId: user.id,
+      email: user.email,
+      role: user.role,
+      sessionId,
+      timestamp,
+      signature,
+    });
 
     // Exchange allows unverified if email matches — then sets emailVerified
     expect(res.status).toBe(200);
@@ -89,7 +85,7 @@ describe("POST /api/auth/exchange", () => {
 
   it("400 — missing required fields", async () => {
     const res = await request(app)
-      .post("/api/auth/exchange")
+      .post("/api/v1/auth/exchange")
       .send({ userId: "abc" }); // missing email, role, sessionId, timestamp, signature
 
     expect(res.status).toBe(400);
@@ -108,16 +104,14 @@ describe("POST /api/auth/exchange", () => {
       timestamp,
     });
 
-    const res = await request(app)
-      .post("/api/auth/exchange")
-      .send({
-        userId: user.id,
-        email: user.email,
-        role: user.role,
-        sessionId,
-        timestamp,
-        signature,
-      });
+    const res = await request(app).post("/api/v1/auth/exchange").send({
+      userId: user.id,
+      email: user.email,
+      role: user.role,
+      sessionId,
+      timestamp,
+      signature,
+    });
 
     expect(res.status).toBe(401);
     expect(res.body.code).toBe("PROOF_EXPIRED");
@@ -128,7 +122,7 @@ describe("POST /api/auth/exchange", () => {
     const sessionId = randomUUID();
     const timestamp = Date.now();
 
-    const res = await request(app).post("/api/auth/exchange").send({
+    const res = await request(app).post("/api/v1/auth/exchange").send({
       userId: user.id,
       email: user.email,
       role: user.role,
@@ -154,16 +148,14 @@ describe("POST /api/auth/exchange", () => {
       timestamp,
     });
 
-    const res = await request(app)
-      .post("/api/auth/exchange")
-      .send({
-        userId: fakeId,
-        email: "ghost@test.com",
-        role: "USER",
-        sessionId,
-        timestamp,
-        signature,
-      });
+    const res = await request(app).post("/api/v1/auth/exchange").send({
+      userId: fakeId,
+      email: "ghost@test.com",
+      role: "USER",
+      sessionId,
+      timestamp,
+      signature,
+    });
 
     expect(res.status).toBe(401);
     expect(res.body.code).toBe("USER_NOT_FOUND");
@@ -190,8 +182,8 @@ describe("POST /api/auth/exchange", () => {
       signature,
     };
 
-    const res1 = await request(app).post("/api/auth/exchange").send(body);
-    const res2 = await request(app).post("/api/auth/exchange").send(body);
+    const res1 = await request(app).post("/api/v1/auth/exchange").send(body);
+    const res2 = await request(app).post("/api/v1/auth/exchange").send(body);
 
     // Both should succeed — without Redis cache, both issue fresh tokens
     expect(res1.status).toBe(200);
@@ -200,9 +192,9 @@ describe("POST /api/auth/exchange", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// POST /api/auth/refresh
+// POST /api/v1/auth/refresh
 // ─────────────────────────────────────────────────────────────────────────────
-describe("POST /api/auth/refresh", () => {
+describe("POST /api/v1/auth/refresh", () => {
   it("200 — valid refresh token returns new token pair", async () => {
     const user = await createUser();
     const sessionId = randomUUID();
@@ -216,22 +208,20 @@ describe("POST /api/auth/refresh", () => {
     });
 
     // Get a real refresh token via exchange
-    const exchangeRes = await request(app)
-      .post("/api/auth/exchange")
-      .send({
-        userId: user.id,
-        email: user.email,
-        role: user.role,
-        sessionId,
-        timestamp,
-        signature,
-      });
+    const exchangeRes = await request(app).post("/api/v1/auth/exchange").send({
+      userId: user.id,
+      email: user.email,
+      role: user.role,
+      sessionId,
+      timestamp,
+      signature,
+    });
 
     expect(exchangeRes.status).toBe(200);
     const { refreshToken } = exchangeRes.body;
 
     const res = await request(app)
-      .post("/api/auth/refresh")
+      .post("/api/v1/auth/refresh")
       .send({ refreshToken });
 
     expect(res.status).toBe(200);
@@ -242,14 +232,14 @@ describe("POST /api/auth/refresh", () => {
   });
 
   it("400 — missing refreshToken body", async () => {
-    const res = await request(app).post("/api/auth/refresh").send({});
+    const res = await request(app).post("/api/v1/auth/refresh").send({});
 
     expect(res.status).toBe(400);
   });
 
   it("401 — completely invalid token string", async () => {
     const res = await request(app)
-      .post("/api/auth/refresh")
+      .post("/api/v1/auth/refresh")
       .send({ refreshToken: "not.a.real.token" });
 
     expect(res.status).toBe(401);
@@ -272,19 +262,17 @@ describe("POST /api/auth/refresh", () => {
       timestamp,
     });
 
-    const exchangeRes = await request(app)
-      .post("/api/auth/exchange")
-      .send({
-        userId: user.id,
-        email: user.email,
-        role: user.role,
-        sessionId,
-        timestamp,
-        signature,
-      });
+    const exchangeRes = await request(app).post("/api/v1/auth/exchange").send({
+      userId: user.id,
+      email: user.email,
+      role: user.role,
+      sessionId,
+      timestamp,
+      signature,
+    });
 
     const res = await request(app)
-      .post("/api/auth/refresh")
+      .post("/api/v1/auth/refresh")
       .send({ refreshToken: exchangeRes.body.refreshToken });
 
     expect(res.status).toBe(401);
@@ -293,14 +281,14 @@ describe("POST /api/auth/refresh", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// POST /api/auth/logout
+// POST /api/v1/auth/logout
 // ─────────────────────────────────────────────────────────────────────────────
-describe("POST /api/auth/logout", () => {
+describe("POST /api/v1/auth/logout", () => {
   it("200 — authenticated user can logout", async () => {
     const user = await createUser();
 
     const res = await request(app)
-      .post("/api/auth/logout")
+      .post("/api/v1/auth/logout")
       .set(authHeaders(user));
 
     expect(res.status).toBe(200);
@@ -310,7 +298,7 @@ describe("POST /api/auth/logout", () => {
 
   it("200 — logout succeeds even without Authorization header (graceful)", async () => {
     // From auth.routes.ts: logout always returns 200 — it's fire-and-forget
-    const res = await request(app).post("/api/auth/logout").send({});
+    const res = await request(app).post("/api/v1/auth/logout").send({});
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
@@ -320,7 +308,7 @@ describe("POST /api/auth/logout", () => {
     const user = await createUser();
 
     const res = await request(app)
-      .post("/api/auth/logout")
+      .post("/api/v1/auth/logout")
       .set(authHeaders(user))
       .send({ logoutAll: true });
 
@@ -332,7 +320,7 @@ describe("POST /api/auth/logout", () => {
     const user = await createUser();
 
     const res = await request(app)
-      .post("/api/auth/logout")
+      .post("/api/v1/auth/logout")
       .set(expiredAuthHeaders(user));
 
     // logout always succeeds — it catches token errors internally
@@ -341,16 +329,18 @@ describe("POST /api/auth/logout", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GET /api/user/me — uses authenticate middleware
+// GET /api/v1/user/me — uses authenticate middleware
 // ─────────────────────────────────────────────────────────────────────────────
-describe("GET /api/user/profile", () => {
+describe("GET /api/v1/user/profile", () => {
   it("200 — authenticated user gets their profile without password", async () => {
     const user = await createUser({
       name: "Profile Test",
       email: "me@focura.test",
     });
 
-    const res = await request(app).get("/api/user/profile").set(authHeaders(user));
+    const res = await request(app)
+      .get("/api/v1/user/profile")
+      .set(authHeaders(user));
     const data = res.body.data;
     expect(res.status).toBe(200);
     expect(data.user.id).toBe(user.id);
@@ -359,7 +349,7 @@ describe("GET /api/user/profile", () => {
   });
 
   it("401 NO_TOKEN — no Authorization header", async () => {
-    const res = await request(app).get("/api/user/profile");
+    const res = await request(app).get("/api/v1/user/profile");
     expect(res.status).toBe(401);
     expect(res.body.code).toBe("NO_TOKEN");
   });
@@ -367,7 +357,7 @@ describe("GET /api/user/profile", () => {
   it("401 TOKEN_EXPIRED — expired token", async () => {
     const user = await createUser();
     const res = await request(app)
-      .get("/api/user/profile")
+      .get("/api/v1/user/profile")
       .set(expiredAuthHeaders(user));
 
     expect(res.status).toBe(401);
@@ -376,7 +366,7 @@ describe("GET /api/user/profile", () => {
 
   it("401 INVALID_TOKEN — malformed token", async () => {
     const res = await request(app)
-      .get("/api/user/profile")
+      .get("/api/v1/user/profile")
       .set(invalidAuthHeaders());
 
     expect(res.status).toBe(401);
@@ -386,7 +376,9 @@ describe("GET /api/user/profile", () => {
   it("403 EMAIL_NOT_VERIFIED — unverified user cannot access protected routes", async () => {
     const user = await createUnverifiedUser();
 
-    const res = await request(app).get("/api/user/profile").set(authHeaders(user));
+    const res = await request(app)
+      .get("/api/v1/user/profile")
+      .set(authHeaders(user));
 
     expect(res.status).toBe(403);
     expect(res.body.code).toBe("EMAIL_NOT_VERIFIED");
@@ -398,7 +390,9 @@ describe("GET /api/user/profile", () => {
       banReason: "ToS violation",
     });
 
-    const res = await request(app).get("/api/user/profile").set(authHeaders(user));
+    const res = await request(app)
+      .get("/api/v1/user/profile")
+      .set(authHeaders(user));
 
     expect(res.status).toBe(403);
     expect(res.body.code).toBe("ACCOUNT_BANNED");

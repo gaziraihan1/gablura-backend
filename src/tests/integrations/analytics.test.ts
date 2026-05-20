@@ -39,14 +39,14 @@ async function seedBasicWorkspaceData(userId: string, workspaceId: string) {
 // GET /overview
 // ─────────────────────────────────────────────────────────────
 
-describe('GET /api/analytics/:workspaceId/overview', () => {
+describe('GET /api/v1/analytics/:workspaceId/overview', () => {
   it('200 — returns analytics overview for admin/owner', async () => {
     const { user, workspace } = await createWorkspaceWithOwner({}, {plan: "PRO"});
 
     await seedBasicWorkspaceData(user.id, workspace.id);
 
     const res = await request(app)
-      .get(`/api/analytics/${workspace.id}/overview`)
+      .get(`/api/v1/analytics/${workspace.id}/overview`)
       .set(authHeaders(user));
 
     expect(res.status).toBe(200);
@@ -64,7 +64,7 @@ describe('GET /api/analytics/:workspaceId/overview', () => {
     const outsider = await createUser();
 
     const res = await request(app)
-      .get(`/api/analytics/${workspace.id}/overview`)
+      .get(`/api/v1/analytics/${workspace.id}/overview`)
       .set(authHeaders(outsider));
 
     expect(res.status).toBe(403);
@@ -74,7 +74,7 @@ describe('GET /api/analytics/:workspaceId/overview', () => {
     const { workspace } = await createWorkspaceWithOwner({}, {plan: "PRO"});
 
     const res = await request(app)
-      .get(`/api/analytics/${workspace.id}/overview`);
+      .get(`/api/v1/analytics/${workspace.id}/overview`);
 
     expect(res.status).toBe(401);
   });
@@ -84,14 +84,14 @@ describe('GET /api/analytics/:workspaceId/overview', () => {
 // GET /tasks/trends
 // ─────────────────────────────────────────────────────────────
 
-describe('GET /api/analytics/:workspaceId/tasks/trends', () => {
+describe('GET /api/v1/analytics/:workspaceId/tasks/trends', () => {
   it('200 — returns task trends', async () => {
     const { user, workspace } = await createWorkspaceWithOwner({}, {plan: "PRO"});
 
     await seedBasicWorkspaceData(user.id, workspace.id);
 
     const res = await request(app)
-      .get(`/api/analytics/${workspace.id}/tasks/trends`)
+      .get(`/api/v1/analytics/${workspace.id}/tasks/trends`)
       .set(authHeaders(user));
       console.log(res.status, JSON.stringify(res.body))
 
@@ -105,14 +105,14 @@ describe('GET /api/analytics/:workspaceId/tasks/trends', () => {
 // GET /projects/health
 // ─────────────────────────────────────────────────────────────
 
-describe('GET /api/analytics/:workspaceId/projects/health', () => {
+describe('GET /api/v1/analytics/:workspaceId/projects/health', () => {
   it('200 — returns project health metrics', async () => {
     const { user, workspace } = await createWorkspaceWithOwner({}, {plan: "PRO"});
 
     await createProject(workspace.id, user.id);
 
     const res = await request(app)
-      .get(`/api/analytics/${workspace.id}/projects/health`)
+      .get(`/api/v1/analytics/${workspace.id}/projects/health`)
       .set(authHeaders(user));
 
     expect(res.status).toBe(200);
@@ -124,7 +124,7 @@ describe('GET /api/analytics/:workspaceId/projects/health', () => {
 // GET /members/contribution
 // ─────────────────────────────────────────────────────────────
 
-describe('GET /api/analytics/:workspaceId/members/contribution', () => {
+describe('GET /api/v1/analytics/:workspaceId/members/contribution', () => {
   it('200 — returns member contributions', async () => {
     const { user, workspace } = await createWorkspaceWithOwner({}, {plan: "PRO"});
 
@@ -132,7 +132,7 @@ describe('GET /api/analytics/:workspaceId/members/contribution', () => {
     await addMemberToWorkspace(member.id, workspace.id, WorkspaceRole.MEMBER);
 
     const res = await request(app)
-      .get(`/api/analytics/${workspace.id}/members/contribution`)
+      .get(`/api/v1/analytics/${workspace.id}/members/contribution`)
       .set(authHeaders(user));
 
     expect(res.status).toBe(200);
@@ -144,12 +144,12 @@ describe('GET /api/analytics/:workspaceId/members/contribution', () => {
 // GET /time/summary
 // ─────────────────────────────────────────────────────────────
 
-describe('GET /api/analytics/:workspaceId/time/summary', () => {
+describe('GET /api/v1/analytics/:workspaceId/time/summary', () => {
   it('200 — returns time tracking summary', async () => {
     const { user, workspace } = await createWorkspaceWithOwner({}, {plan: "PRO"});
 
     const res = await request(app)
-      .get(`/api/analytics/${workspace.id}/time/summary`)
+      .get(`/api/v1/analytics/${workspace.id}/time/summary`)
       .set(authHeaders(user));
 
     expect(res.status).toBe(200);
@@ -163,12 +163,12 @@ describe('GET /api/analytics/:workspaceId/time/summary', () => {
 // GET /activity/trends
 // ─────────────────────────────────────────────────────────────
 
-describe('GET /api/analytics/:workspaceId/activity/trends', () => {
+describe('GET /api/v1/analytics/:workspaceId/activity/trends', () => {
   it('200 — returns activity trends', async () => {
     const { user, workspace } = await createWorkspaceWithOwner({}, {plan: "PRO"});
 
     const res = await request(app)
-      .get(`/api/analytics/${workspace.id}/activity/trends`)
+      .get(`/api/v1/analytics/${workspace.id}/activity/trends`)
       .set(authHeaders(user));
 
     expect(res.status).toBe(200);
@@ -181,12 +181,12 @@ describe('GET /api/analytics/:workspaceId/activity/trends', () => {
 // GET /workload
 // ─────────────────────────────────────────────────────────────
 
-describe('GET /api/analytics/:workspaceId/workload', () => {
+describe('GET /api/v1/analytics/:workspaceId/workload', () => {
   it('200 — returns workload per member', async () => {
     const { user, workspace } = await createWorkspaceWithOwner({}, {plan: "PRO"});
 
     const res = await request(app)
-      .get(`/api/analytics/${workspace.id}/workload`)
+      .get(`/api/v1/analytics/${workspace.id}/workload`)
       .set(authHeaders(user));
 
     expect(res.status).toBe(200);

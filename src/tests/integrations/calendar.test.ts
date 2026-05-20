@@ -1,11 +1,9 @@
-import { describe, it, expect, beforeEach, afterAll } from 'vitest';
-import request from 'supertest';
-import app from '../../app.js';
-import { prisma } from '../../lib/prisma.js';
-import {
-  createWorkspaceWithOwner,
-} from '../factories/index.js';
-import { authHeaders, authWithCsrfHeaders } from '../helpers/auth.js';
+import { describe, it, expect, beforeEach, afterAll } from "vitest";
+import request from "supertest";
+import app from "../../app.js";
+import { prisma } from "../../lib/prisma.js";
+import { createWorkspaceWithOwner } from "../factories/index.js";
+import { authHeaders, authWithCsrfHeaders } from "../helpers/auth.js";
 
 // Helper: valid query params
 function validRange(workspaceId?: string) {
@@ -16,21 +14,21 @@ function validRange(workspaceId?: string) {
   };
 }
 beforeEach(() => {
-  process.env.ENFORCE_CSRF_IN_TESTS = 'true';
+  process.env.ENFORCE_CSRF_IN_TESTS = "true";
 });
 afterAll(() => {
   delete process.env.ENFORCE_CSRF_IN_TESTS;
-})
+});
 
 // ─────────────────────────────────────────────────────────────
-// GET /api/calendar/aggregates
+// GET /api/v1/calendar/aggregates
 // ─────────────────────────────────────────────────────────────
-describe('GET /api/calendar/aggregates', () => {
-  it('200 — returns aggregates for user', async () => {
+describe("GET /api/v1/calendar/aggregates", () => {
+  it("200 — returns aggregates for user", async () => {
     const { user, workspace } = await createWorkspaceWithOwner();
 
     const res = await request(app)
-      .get('/api/calendar/aggregates')
+      .get("/api/v1/calendar/aggregates")
       .set(authHeaders(user))
       .query(validRange(workspace.id));
 
@@ -39,46 +37,46 @@ describe('GET /api/calendar/aggregates', () => {
     expect(Array.isArray(res.body.data)).toBe(true);
   });
 
-  it('400 — invalid query (missing dates)', async () => {
+  it("400 — invalid query (missing dates)", async () => {
     const { user } = await createWorkspaceWithOwner();
 
     const res = await request(app)
-      .get('/api/calendar/aggregates')
+      .get("/api/v1/calendar/aggregates")
       .set(authHeaders(user))
       .query({}); // invalid
 
     expect(res.status).toBe(400);
   });
 
-  it('401 — unauthenticated', async () => {
-    const res = await request(app).get('/api/calendar/aggregates');
+  it("401 — unauthenticated", async () => {
+    const res = await request(app).get("/api/v1/calendar/aggregates");
     expect(res.status).toBe(401);
   });
 });
 
 // ─────────────────────────────────────────────────────────────
-// GET /api/calendar/insights
+// GET /api/v1/calendar/insights
 // ─────────────────────────────────────────────────────────────
-describe('GET /api/calendar/insights', () => {
-  it('200 — returns insights', async () => {
+describe("GET /api/v1/calendar/insights", () => {
+  it("200 — returns insights", async () => {
     const { user, workspace } = await createWorkspaceWithOwner();
 
     const res = await request(app)
-      .get('/api/calendar/insights')
+      .get("/api/v1/calendar/insights")
       .set(authHeaders(user))
       .query(validRange(workspace.id));
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
-    expect(res.body.data).toHaveProperty('totalPlannedHours');
-    expect(res.body.data).toHaveProperty('burnoutRisk');
+    expect(res.body.data).toHaveProperty("totalPlannedHours");
+    expect(res.body.data).toHaveProperty("burnoutRisk");
   });
 
-  it('400 — invalid query', async () => {
+  it("400 — invalid query", async () => {
     const { user } = await createWorkspaceWithOwner();
 
     const res = await request(app)
-      .get('/api/calendar/insights')
+      .get("/api/v1/calendar/insights")
       .set(authHeaders(user))
       .query({});
 
@@ -87,14 +85,14 @@ describe('GET /api/calendar/insights', () => {
 });
 
 // ─────────────────────────────────────────────────────────────
-// GET /api/calendar/system-events
+// GET /api/v1/calendar/system-events
 // ─────────────────────────────────────────────────────────────
-describe('GET /api/calendar/system-events', () => {
-  it('200 — returns events list', async () => {
+describe("GET /api/v1/calendar/system-events", () => {
+  it("200 — returns events list", async () => {
     const { user, workspace } = await createWorkspaceWithOwner();
 
     const res = await request(app)
-      .get('/api/calendar/system-events')
+      .get("/api/v1/calendar/system-events")
       .set(authHeaders(user))
       .query(validRange(workspace.id));
 
@@ -102,21 +100,21 @@ describe('GET /api/calendar/system-events', () => {
     expect(Array.isArray(res.body.data)).toBe(true);
   });
 
-  it('401 — unauthenticated', async () => {
-    const res = await request(app).get('/api/calendar/system-events');
+  it("401 — unauthenticated", async () => {
+    const res = await request(app).get("/api/v1/calendar/system-events");
     expect(res.status).toBe(401);
   });
 });
 
 // ─────────────────────────────────────────────────────────────
-// GET /api/calendar/goals
+// GET /api/v1/calendar/goals
 // ─────────────────────────────────────────────────────────────
-describe('GET /api/calendar/goals', () => {
-  it('200 — returns goal checkpoints', async () => {
+describe("GET /api/v1/calendar/goals", () => {
+  it("200 — returns goal checkpoints", async () => {
     const { user, workspace } = await createWorkspaceWithOwner();
 
     const res = await request(app)
-      .get('/api/calendar/goals')
+      .get("/api/v1/calendar/goals")
       .set(authHeaders(user))
       .query(validRange(workspace.id));
 
@@ -126,21 +124,21 @@ describe('GET /api/calendar/goals', () => {
 });
 
 // ─────────────────────────────────────────────────────────────
-// POST /api/calendar/goals
+// POST /api/v1/calendar/goals
 // ─────────────────────────────────────────────────────────────
-describe('POST /api/calendar/goals', () => {
-  it('201 — creates goal checkpoint', async () => {
+describe("POST /api/v1/calendar/goals", () => {
+  it("201 — creates goal checkpoint", async () => {
     const { user, workspace } = await createWorkspaceWithOwner();
 
     const payload = {
       workspaceId: workspace.id,
-      title: 'Finish MVP',
-      type: 'WEEKLY',
+      title: "Finish MVP",
+      type: "WEEKLY",
       targetDate: new Date().toISOString(),
     };
 
     const res = await request(app)
-      .post('/api/calendar/goals')
+      .post("/api/v1/calendar/goals")
       .set(await authWithCsrfHeaders(user))
       .send(payload);
 
@@ -156,35 +154,33 @@ describe('POST /api/calendar/goals', () => {
     expect(goal?.userId).toBe(user.id);
   });
 
-  it('400 — validation error', async () => {
+  it("400 — validation error", async () => {
     const { user } = await createWorkspaceWithOwner();
 
     const res = await request(app)
-      .post('/api/calendar/goals')
+      .post("/api/v1/calendar/goals")
       .set(await authWithCsrfHeaders(user))
-      .send({ title: '' }); // invalid
+      .send({ title: "" }); // invalid
 
     expect(res.status).toBe(400);
   });
 
-  it('401 — unauthenticated', async () => {
-    const res = await request(app)
-      .post('/api/calendar/goals')
-      .send({});
+  it("401 — unauthenticated", async () => {
+    const res = await request(app).post("/api/v1/calendar/goals").send({});
 
     expect(res.status).toBe(401);
   });
 });
 
 // ─────────────────────────────────────────────────────────────
-// POST /api/calendar/recalculate
+// POST /api/v1/calendar/recalculate
 // ─────────────────────────────────────────────────────────────
-describe('POST /api/calendar/recalculate', () => {
-  it('200 — recalculates aggregate', async () => {
+describe("POST /api/v1/calendar/recalculate", () => {
+  it("200 — recalculates aggregate", async () => {
     const { user, workspace } = await createWorkspaceWithOwner();
 
     const res = await request(app)
-      .post('/api/calendar/recalculate')
+      .post("/api/v1/calendar/recalculate")
       .set(await authWithCsrfHeaders(user))
       .send({
         workspaceId: workspace.id,
@@ -195,11 +191,11 @@ describe('POST /api/calendar/recalculate', () => {
     expect(res.body.success).toBe(true);
   });
 
-  it('400 — invalid body', async () => {
+  it("400 — invalid body", async () => {
     const { user } = await createWorkspaceWithOwner();
 
     const res = await request(app)
-      .post('/api/calendar/recalculate')
+      .post("/api/v1/calendar/recalculate")
       .set(await authWithCsrfHeaders(user))
       .send({});
 
@@ -208,14 +204,14 @@ describe('POST /api/calendar/recalculate', () => {
 });
 
 // ─────────────────────────────────────────────────────────────
-// POST /api/calendar/initialize
+// POST /api/v1/calendar/initialize
 // ─────────────────────────────────────────────────────────────
-describe('POST /api/calendar/initialize', () => {
-  it('200 — initializes user settings', async () => {
+describe("POST /api/v1/calendar/initialize", () => {
+  it("200 — initializes user settings", async () => {
     const { user } = await createWorkspaceWithOwner();
 
     const res = await request(app)
-      .post('/api/calendar/initialize')
+      .post("/api/v1/calendar/initialize")
       .set(await authWithCsrfHeaders(user));
 
     expect(res.status).toBe(200);
@@ -233,8 +229,8 @@ describe('POST /api/calendar/initialize', () => {
     expect(schedule).not.toBeNull();
   });
 
-  it('401 — unauthenticated', async () => {
-    const res = await request(app).post('/api/calendar/initialize');
+  it("401 — unauthenticated", async () => {
+    const res = await request(app).post("/api/v1/calendar/initialize");
     expect(res.status).toBe(401);
   });
 });

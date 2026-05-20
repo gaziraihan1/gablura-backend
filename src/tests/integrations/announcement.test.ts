@@ -15,13 +15,13 @@ import { authHeaders, authWithCsrfHeaders } from '../helpers/auth.js';
 import { WorkspaceRole, AnnouncementVisibility } from '@prisma/client';
 
 const wsAnnouncementsUrl = (wsId: string) =>
-  `/api/workspaces/${wsId}/announcements`;
+  `/api/v1/workspaces/${wsId}/announcements`;
 
 const projectAnnouncementsUrl = (wsId: string, pId: string) =>
-  `/api/workspaces/${wsId}/projects/${pId}/announcements`;
+  `/api/v1/workspaces/${wsId}/projects/${pId}/announcements`;
 
 const announcementUrl = (id: string) => 
-  `/api/announcements/${id}`
+  `/api/v1/announcements/${id}`
 // ─────────────────────────────────────────────────────────────
 // cleanup (IMPORTANT for stability)
 // ─────────────────────────────────────────────────────────────

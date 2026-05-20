@@ -45,14 +45,14 @@ afterEach(() => {
 // GET /api/activities
 // ─────────────────────────────────────────────────────────────
 
-describe('GET /api/activities', () => {
+describe('GET /api/v1/activities', () => {
   it('200 — returns user activities', async () => {
     await createActivity(user.id, workspace.id, {
       taskId: task.id,
     });
 
     const res = await request(app)
-      .get('/api/activities')
+      .get('/api/v1/activities')
       .set(authHeaders(user));
 
     expect(res.status).toBe(200);
@@ -64,7 +64,7 @@ describe('GET /api/activities', () => {
     await createActivity(user.id, workspace.id);
 
     const res = await request(app)
-      .get('/api/activities')
+      .get('/api/v1/activities')
       .query({ workspaceId: workspace.id })
       .set(authHeaders(user));
 
@@ -73,7 +73,7 @@ describe('GET /api/activities', () => {
   });
 
   it('401 — unauthenticated', async () => {
-    const res = await request(app).get('/api/activities');
+    const res = await request(app).get('/api/v1/activities');
     expect(res.status).toBe(401);
   });
 });
@@ -82,12 +82,12 @@ describe('GET /api/activities', () => {
 // GET /workspace/:workspaceId
 // ─────────────────────────────────────────────────────────────
 
-describe('GET /api/activities/workspace/:workspaceId', () => {
+describe('GET /api/v1/activities/workspace/:workspaceId', () => {
   it('200 — member can access workspace activities', async () => {
     await createActivity(user.id, workspace.id);
 
     const res = await request(app)
-      .get(`/api/activities/workspace/${workspace.id}`)
+      .get(`/api/v1/activities/workspace/${workspace.id}`)
       .set(authHeaders(user));
 
     expect(res.status).toBe(200);
@@ -98,7 +98,7 @@ describe('GET /api/activities/workspace/:workspaceId', () => {
     const other = await createUser();
 
     const res = await request(app)
-      .get(`/api/activities/workspace/${workspace.id}`)
+      .get(`/api/v1/activities/workspace/${workspace.id}`)
       .set(authHeaders(other));
 
     expect(res.status).toBe(403);
@@ -109,7 +109,7 @@ describe('GET /api/activities/workspace/:workspaceId', () => {
 // GET /task/:taskId
 // ─────────────────────────────────────────────────────────────
 
-describe('GET /api/activities/task/:taskId', () => {
+describe('GET /api/v1/activities/task/:taskId', () => {
   it('200 — assigned user can access task activities', async () => {
     const member = await createUser();
     await addMemberToWorkspace(member.id, workspace.id);
@@ -120,7 +120,7 @@ describe('GET /api/activities/task/:taskId', () => {
     });
 
     const res = await request(app)
-      .get(`/api/activities/task/${task.id}`)
+      .get(`/api/v1/activities/task/${task.id}`)
       .set(authHeaders(member));
 
     expect(res.status).toBe(200);
@@ -130,7 +130,7 @@ describe('GET /api/activities/task/:taskId', () => {
     const other = await createUser();
 
     const res = await request(app)
-      .get(`/api/activities/task/${task.id}`)
+      .get(`/api/v1/activities/task/${task.id}`)
       .set(authHeaders(other));
 
     expect(res.status).toBe(403);
@@ -141,12 +141,12 @@ describe('GET /api/activities/task/:taskId', () => {
 // DELETE /api/activities/clear
 // ─────────────────────────────────────────────────────────────
 
-describe('DELETE /api/activities/clear', () => {
+describe('DELETE /api/v1/activities/clear', () => {
   it('200 — clears all user activities', async () => {
     await createActivity(user.id, workspace.id);
 
     const res = await request(app)
-      .delete('/api/activities/clear')
+      .delete('/api/v1/activities/clear')
       .set(await authWithCsrfHeaders(user));
 
     expect(res.status).toBe(200);
@@ -161,7 +161,7 @@ describe('DELETE /api/activities/clear', () => {
     await createActivity(user.id, otherWorkspace.id);
 
     const res = await request(app)
-      .delete('/api/activities/clear')
+      .delete('/api/v1/activities/clear')
       .query({ workspaceId: workspace.id })
       .set(await authWithCsrfHeaders(user));
 
@@ -176,15 +176,15 @@ describe('DELETE /api/activities/clear', () => {
 });
 
 // ─────────────────────────────────────────────────────────────
-// DELETE /api/activities/:activityId
+// DELETE /api/v1/activities/:activityId
 // ─────────────────────────────────────────────────────────────
 
-describe('DELETE /api/activities/:activityId', () => {
+describe('DELETE /api/v1/activities/:activityId', () => {
   it('200 — user deletes own activity', async () => {
     const activity = await createActivity(user.id, workspace.id);
 
     const res = await request(app)
-      .delete(`/api/activities/${activity.id}`)
+      .delete(`/api/v1/activities/${activity.id}`)
       .set(await authWithCsrfHeaders(user));
 
     expect(res.status).toBe(200);
@@ -197,7 +197,7 @@ describe('DELETE /api/activities/:activityId', () => {
     await addMemberToWorkspace(other.id, workspace.id);
 
     const res = await request(app)
-      .delete(`/api/activities/${activity.id}`)
+      .delete(`/api/v1/activities/${activity.id}`)
       .set(await authWithCsrfHeaders(other));
 
     expect(res.status).toBe(403);
@@ -210,7 +210,7 @@ describe('DELETE /api/activities/:activityId', () => {
     await addMemberToWorkspace(admin.id, workspace.id, 'ADMIN');
 
     const res = await request(app)
-      .delete(`/api/activities/${activity.id}`)
+      .delete(`/api/v1/activities/${activity.id}`)
       .set(await authWithCsrfHeaders(admin));
 
     expect(res.status).toBe(200);
@@ -218,7 +218,7 @@ describe('DELETE /api/activities/:activityId', () => {
 
   it('404 — activity not found', async () => {
     const res = await request(app)
-      .delete('/api/activities/fake-id-123')
+      .delete('/api/v1/activities/fake-id-123')
       .set(await authWithCsrfHeaders(user));
 
     expect(res.status).toBe(404);

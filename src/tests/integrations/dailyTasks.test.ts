@@ -1,76 +1,76 @@
-import { describe, it, expect, beforeEach, afterAll } from 'vitest';
-import request from 'supertest';
-import app from '../../app.js';
-import { prisma } from '../../lib/prisma.js';
-import { createWorkspaceWithOwner } from '../factories/index.js';
-import { authHeaders, authWithCsrfHeaders } from '../helpers/auth.js';
+import { describe, it, expect, beforeEach, afterAll } from "vitest";
+import request from "supertest";
+import app from "../../app.js";
+import { prisma } from "../../lib/prisma.js";
+import { createWorkspaceWithOwner } from "../factories/index.js";
+import { authHeaders, authWithCsrfHeaders } from "../helpers/auth.js";
 
 // Helper: valid date
 const todayISO = () => new Date().toISOString();
 
 beforeEach(() => {
-  process.env.ENFORCE_CSRF_IN_TESTS = 'true';
+  process.env.ENFORCE_CSRF_IN_TESTS = "true";
 });
 afterAll(() => {
   delete process.env.ENFORCE_CSRF_IN_TESTS;
-})
+});
 
 // ─────────────────────────────────────────────────────────────
-// GET /api/daily-tasks
+// GET /api/v1/daily-tasks
 // ─────────────────────────────────────────────────────────────
-describe('GET /api/daily-tasks', () => {
-  it('200 — returns daily tasks', async () => {
+describe("GET /api/v1/daily-tasks", () => {
+  it("200 — returns daily tasks", async () => {
     const { user } = await createWorkspaceWithOwner();
 
     const res = await request(app)
-      .get('/api/daily-tasks')
+      .get("/api/v1/daily-tasks")
       .set(authHeaders(user))
       .query({ date: todayISO() });
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
-    expect(res.body.data).toHaveProperty('primaryTask');
-    expect(res.body.data).toHaveProperty('secondaryTasks');
+    expect(res.body.data).toHaveProperty("primaryTask");
+    expect(res.body.data).toHaveProperty("secondaryTasks");
   });
 
-  it('400 — invalid query', async () => {
+  it("400 — invalid query", async () => {
     const { user } = await createWorkspaceWithOwner();
 
     const res = await request(app)
-      .get('/api/daily-tasks')
+      .get("/api/v1/daily-tasks")
       .set(authHeaders(user))
-      .query({ date: 'invalid-date' });
+      .query({ date: "invalid-date" });
 
     expect(res.status).toBe(400);
   });
 
-  it('401 — unauthenticated', async () => {
-    const res = await request(app).get('/api/daily-tasks');
+  it("401 — unauthenticated", async () => {
+    const res = await request(app).get("/api/v1/daily-tasks");
     expect(res.status).toBe(401);
   });
 });
 
 // ─────────────────────────────────────────────────────────────
-// POST /api/daily-tasks
+// POST /api/v1/daily-tasks
 // ─────────────────────────────────────────────────────────────
-describe('POST /api/daily-tasks', () => {
-  it('201 — adds daily task', async () => {
+describe("POST /api/v1/daily-tasks", () => {
+  it("201 — adds daily task", async () => {
     const { user } = await createWorkspaceWithOwner();
 
     // Create a task first
     const task = await prisma.task.create({
       data: {
-        title: 'Test Task',
+        title: "Test Task",
         createdById: user.id,
       },
     });
 
     const res = await request(app)
-      .post('/api/daily-tasks')
+      .post("/api/v1/daily-tasks")
       .set(await authWithCsrfHeaders(user))
       .send({
         taskId: task.id,
-        type: 'PRIMARY', // assuming enum allows PRIMARY/SECONDARY
+        type: "PRIMARY", // assuming enum allows PRIMARY/SECONDARY
         date: todayISO(),
       });
 
@@ -79,68 +79,66 @@ describe('POST /api/daily-tasks', () => {
     expect(res.body.data.taskId).toBe(task.id);
   });
 
-  it('409 — cannot add second primary task', async () => {
+  it("409 — cannot add second primary task", async () => {
     const { user } = await createWorkspaceWithOwner();
 
     const task1 = await prisma.task.create({
-      data: { title: 'Task 1', createdById: user.id },
+      data: { title: "Task 1", createdById: user.id },
     });
 
     const task2 = await prisma.task.create({
-      data: { title: 'Task 2', createdById: user.id },
+      data: { title: "Task 2", createdById: user.id },
     });
 
     await request(app)
-      .post('/api/daily-tasks')
+      .post("/api/v1/daily-tasks")
       .set(await authWithCsrfHeaders(user))
       .send({
         taskId: task1.id,
-        type: 'PRIMARY',
+        type: "PRIMARY",
         date: todayISO(),
       });
 
     const res = await request(app)
-      .post('/api/daily-tasks')
+      .post("/api/v1/daily-tasks")
       .set(await authWithCsrfHeaders(user))
       .send({
         taskId: task2.id,
-        type: 'PRIMARY',
+        type: "PRIMARY",
         date: todayISO(),
       });
 
     expect(res.status).toBe(409);
   });
 
-  it('400 — validation error', async () => {
+  it("400 — validation error", async () => {
     const { user } = await createWorkspaceWithOwner();
 
     const res = await request(app)
-      .post('/api/daily-tasks')
+      .post("/api/v1/daily-tasks")
       .set(await authWithCsrfHeaders(user))
       .send({}); // invalid
 
     expect(res.status).toBe(400);
   });
 
-  it('401 — unauthenticated', async () => {
-    const res = await request(app)
-      .post('/api/daily-tasks')
-      .send({});
+  it("401 — unauthenticated", async () => {
+    const res = await request(app).post("/api/v1/daily-tasks").send({});
 
     expect(res.status).toBe(401);
   });
 });
 
 // ─────────────────────────────────────────────────────────────
-// DELETE /api/daily-tasks/:taskId
+// DELETE /api/v1/daily-tasks/:taskId
 // ─────────────────────────────────────────────────────────────
-describe('DELETE /api/daily-tasks/:taskId', () => {
-  it('200 — removes daily task', async () => {
+describe("DELETE /api/v1/daily-tasks/:taskId", () => {
+  it("200 — removes daily task", async () => {
     const { user } = await createWorkspaceWithOwner();
 
     const task = await prisma.task.create({
       data: {
-        title: 'Task to remove',
+        title: "Task to remove",
         createdById: user.id,
       },
     });
@@ -149,13 +147,13 @@ describe('DELETE /api/daily-tasks/:taskId', () => {
       data: {
         userId: user.id,
         taskId: task.id,
-        type: 'SECONDARY',
+        type: "SECONDARY",
         date: new Date(),
       },
     });
 
     const res = await request(app)
-      .delete(`/api/daily-tasks/${task.id}`)
+      .delete(`/api/v1/daily-tasks/${task.id}`)
       .set(await authWithCsrfHeaders(user))
       .query({ date: todayISO() });
 
@@ -163,58 +161,56 @@ describe('DELETE /api/daily-tasks/:taskId', () => {
     expect(res.body.success).toBe(true);
   });
 
-  it('404 — task not found', async () => {
+  it("404 — task not found", async () => {
     const { user } = await createWorkspaceWithOwner();
 
     const res = await request(app)
-      .delete('/api/daily-tasks/non-existing-id')
+      .delete("/api/v1/daily-tasks/non-existing-id")
       .set(await authWithCsrfHeaders(user))
       .query({ date: todayISO() });
 
     expect(res.status).toBe(404);
   });
 
-  it('401 — unauthenticated', async () => {
-    const res = await request(app)
-      .delete('/api/daily-tasks/123');
+  it("401 — unauthenticated", async () => {
+    const res = await request(app).delete("/api/v1/daily-tasks/123");
 
     expect(res.status).toBe(401);
   });
 });
 
 // ─────────────────────────────────────────────────────────────
-// POST /api/daily-tasks/clear-expired
+// POST /api/v1/daily-tasks/clear-expired
 // ─────────────────────────────────────────────────────────────
-describe('POST /api/daily-tasks/clear-expired', () => {
-  it('200 — clears expired tasks', async () => {
+describe("POST /api/v1/daily-tasks/clear-expired", () => {
+  it("200 — clears expired tasks", async () => {
     const { user } = await createWorkspaceWithOwner();
 
     const res = await request(app)
-      .post('/api/daily-tasks/clear-expired')
+      .post("/api/v1/daily-tasks/clear-expired")
       .set(await authWithCsrfHeaders(user));
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
-    expect(res.body.data).toHaveProperty('deletedCount');
+    expect(res.body.data).toHaveProperty("deletedCount");
   });
 
-  it('401 — unauthenticated', async () => {
-    const res = await request(app)
-      .post('/api/daily-tasks/clear-expired');
+  it("401 — unauthenticated", async () => {
+    const res = await request(app).post("/api/v1/daily-tasks/clear-expired");
 
     expect(res.status).toBe(401);
   });
 });
 
 // ─────────────────────────────────────────────────────────────
-// GET /api/daily-tasks/stats
+// GET /api/v1/daily-tasks/stats
 // ─────────────────────────────────────────────────────────────
-describe('GET /api/daily-tasks/stats', () => {
-  it('200 — returns stats', async () => {
+describe("GET /api/v1/daily-tasks/stats", () => {
+  it("200 — returns stats", async () => {
     const { user } = await createWorkspaceWithOwner();
 
     const res = await request(app)
-      .get('/api/daily-tasks/stats')
+      .get("/api/v1/daily-tasks/stats")
       .set(authHeaders(user))
       .query({
         startDate: new Date(Date.now() - 7 * 86400000).toISOString(),
@@ -225,20 +221,19 @@ describe('GET /api/daily-tasks/stats', () => {
     expect(res.body.success).toBe(true);
   });
 
-  it('400 — invalid query', async () => {
+  it("400 — invalid query", async () => {
     const { user } = await createWorkspaceWithOwner();
 
     const res = await request(app)
-      .get('/api/daily-tasks/stats')
+      .get("/api/v1/daily-tasks/stats")
       .set(authHeaders(user))
-      .query({ startDate: 'invalid' });
+      .query({ startDate: "invalid" });
 
     expect(res.status).toBe(400);
   });
 
-  it('401 — unauthenticated', async () => {
-    const res = await request(app)
-      .get('/api/daily-tasks/stats');
+  it("401 — unauthenticated", async () => {
+    const res = await request(app).get("/api/v1/daily-tasks/stats");
 
     expect(res.status).toBe(401);
   });

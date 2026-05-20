@@ -160,7 +160,7 @@ See [AUTHENTICATION.md](./AUTHENTICATION.md) for the full architecture.
 
 **Summary:**
 - RS256 asymmetric JWT — private key never leaves this server
-- NextAuth exchanges a HMAC-signed proof for an RS256 token pair via `POST /api/auth/exchange`
+- NextAuth exchanges a HMAC-signed proof for an RS256 token pair via `POST /api/v1/auth/exchange`
 - Access tokens: 15 min, refresh tokens: 7 days with rotation
 - Refresh token JTIs tracked in Redis — replay attacks detected and logged
 - Token version field allows global invalidation by incrementing `CURRENT_TOKEN_VERSION`
@@ -176,16 +176,16 @@ See [AUTHENTICATION.md](./AUTHENTICATION.md) for the full architecture.
 All mutating routes (`POST`, `PATCH`, `PUT`, `DELETE`) require a valid CSRF token via the `requireCsrfToken()` middleware.
 
 **Flow:**
-1. Authenticated client calls `GET /api/csrf-token` → receives a signed token stored in ioredis
+1. Authenticated client calls `GET /api/v1/csrf-token` → receives a signed token stored in ioredis
 2. Client attaches it as `X-CSRF-Token` header on every mutating request
 3. `requireCsrfToken()` validates the token against Redis; invalid or missing → `403 CSRF_VALIDATION_FAILED`
 4. On CSRF failure the frontend automatically refreshes the token and retries once
 
 **Routes exempt from CSRF:**
 - `GET` requests (read-only)
-- `/api/notifications/stream` (SSE — EventSource API cannot send custom headers)
-- `/api/auth/*` (handles its own token exchange flow)
-- `/api/contact`, `/api/jobs`, `/api/templates` (public endpoints)
+- `/api/v1/notifications/stream` (SSE — EventSource API cannot send custom headers)
+- `/api/v1/auth/*` (handles its own token exchange flow)
+- `/api/v1/contact`, `/api/v1/jobs`, `/api/v1/templates` (public endpoints)
 - Stripe webhook (`/webhooks/stripe`) — verified via Stripe signature instead
 
 ---
@@ -213,7 +213,7 @@ Helmet is also applied on top for additional defaults, with a stricter CSP in pr
 ## 📡 Real-Time Notifications (SSE + Redis Pub/Sub)
 
 ```
-Client → GET /api/notifications/stream?token=<accessToken>
+Client → GET /api/v1/notifications/stream?token=<accessToken>
 Backend → verifyToken() → extract userId
        → await SUBSCRIBE sse:user:<userId> (Redis confirmed)
        → write "connected" handshake
@@ -401,35 +401,35 @@ Server runs on `http://localhost:5000`.
 
 ## 📡 API Overview
 
-**Base URL:** `/api`
+**Base URL:** `/api/v1`
 
 | Method | Route | Auth | CSRF | Description |
 |--------|-------|------|------|-------------|
-| `POST` | `/api/auth/exchange` | — | — | Issue RS256 tokens after NextAuth login |
-| `POST` | `/api/auth/refresh` | — | — | Rotate refresh token |
-| `POST` | `/api/auth/logout` | ✓ | — | Revoke tokens |
-| `GET` | `/api/csrf-token` | ✓ | — | Get CSRF token for session |
-| `GET` | `/api/notifications/stream` | query token | — | SSE stream (Redis pub/sub backed) |
-| `GET` | `/api/notifications` | ✓ | — | Paginated list (read replica) |
-| `GET` | `/api/notifications/unread-count` | ✓ | — | Badge count (primary DB) |
-| `PATCH` | `/api/notifications/:id/read` | ✓ | ✓ | Mark as read |
-| `PATCH` | `/api/notifications/read-all` | ✓ | ✓ | Mark all as read |
-| `DELETE` | `/api/notifications/:id` | ✓ | ✓ | Delete notification |
-| `DELETE` | `/api/notifications/read/all` | ✓ | ✓ | Delete all read |
-| `GET` | `/api/workspaces` | ✓ | — | List user workspaces (cached) |
-| `POST` | `/api/workspaces` | ✓ | ✓ | Create workspace |
-| `PATCH` | `/api/workspaces/:id` | ✓ | ✓ | Update workspace |
-| `DELETE` | `/api/workspaces/:id` | ✓ | ✓ | Delete workspace |
-| `GET` | `/api/workspace-usage/:workspaceId` | ✓ | — | Usage dashboard (cached) |
-| `POST` | `/api/projects` | ✓ | ✓ | Create project |
-| `GET` | `/api/tasks` | ✓ | — | List tasks |
-| `GET` | `/api/tasks/stats` | ✓ | — | Task analytics (cached) |
-| `PATCH` | `/api/tasks/:id/status` | ✓ | ✓ | Update task status |
-| `POST` | `/api/tasks/:id/comments` | ✓ | ✓ | Add comment |
-| `GET` | `/api/analytics` | ✓ | — | Workspace analytics (cached) |
-| `GET` | `/api/storage` | ✓ | — | Storage usage (cached) |
-| `POST` | `/api/upload` | ✓ | ✓ | File upload |
-| `GET` | `/api/admin/stats` | ✓ admin | ✓ | Platform-wide metrics |
+| `POST` | `/api/v1/auth/exchange` | — | — | Issue RS256 tokens after NextAuth login |
+| `POST` | `/api/v1/auth/refresh` | — | — | Rotate refresh token |
+| `POST` | `/api/v1/auth/logout` | ✓ | — | Revoke tokens |
+| `GET` | `/api/v1/csrf-token` | ✓ | — | Get CSRF token for session |
+| `GET` | `/api/v1/notifications/stream` | query token | — | SSE stream (Redis pub/sub backed) |
+| `GET` | `/api/v1/notifications` | ✓ | — | Paginated list (read replica) |
+| `GET` | `/api/v1/notifications/unread-count` | ✓ | — | Badge count (primary DB) |
+| `PATCH` | `/api/v1/notifications/:id/read` | ✓ | ✓ | Mark as read |
+| `PATCH` | `/api/v1/notifications/read-all` | ✓ | ✓ | Mark all as read |
+| `DELETE` | `/api/v1/notifications/:id` | ✓ | ✓ | Delete notification |
+| `DELETE` | `/api/v1/notifications/read/all` | ✓ | ✓ | Delete all read |
+| `GET` | `/api/v1/workspaces` | ✓ | — | List user workspaces (cached) |
+| `POST` | `/api/v1/workspaces` | ✓ | ✓ | Create workspace |
+| `PATCH` | `/api/v1/workspaces/:id` | ✓ | ✓ | Update workspace |
+| `DELETE` | `/api/v1/workspaces/:id` | ✓ | ✓ | Delete workspace |
+| `GET` | `/api/v1/workspace-usage/:workspaceId` | ✓ | — | Usage dashboard (cached) |
+| `POST` | `/api/v1/projects` | ✓ | ✓ | Create project |
+| `GET` | `/api/v1/tasks` | ✓ | — | List tasks |
+| `GET` | `/api/v1/tasks/stats` | ✓ | — | Task analytics (cached) |
+| `PATCH` | `/api/v1/tasks/:id/status` | ✓ | ✓ | Update task status |
+| `POST` | `/api/v1/tasks/:id/comments` | ✓ | ✓ | Add comment |
+| `GET` | `/api/v1/analytics` | ✓ | — | Workspace analytics (cached) |
+| `GET` | `/api/v1/storage` | ✓ | — | Storage usage (cached) |
+| `POST` | `/api/v1/upload` | ✓ | ✓ | File upload |
+| `GET` | `/api/v1/admin/stats` | ✓ admin | ✓ | Platform-wide metrics |
 | `GET` | `/health` | — | — | Health check |
 
 All authenticated routes require `Authorization: Bearer <accessToken>`.
@@ -477,7 +477,7 @@ npm run bench:api
 Required env vars:
 
 ```env
-BENCH_BASE_URL=http://localhost:5000/api
+BENCH_BASE_URL=http://localhost:5000/api/v1
 BENCH_ACCESS_TOKEN=<valid access token>
 BENCH_WORKSPACE_ID=<workspace id>
 BENCH_RUNS=20

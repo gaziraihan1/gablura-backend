@@ -1,35 +1,35 @@
-import { describe, it, expect, beforeEach, afterAll } from 'vitest';
-import request from 'supertest';
-import app from '../../app.js';
-import { prisma } from '../../lib/prisma.js';
+import { describe, it, expect, beforeEach, afterAll } from "vitest";
+import request from "supertest";
+import app from "../../app.js";
+import { prisma } from "../../lib/prisma.js";
 import {
   createUser,
   createWorkspaceWithOwner,
   createTask,
-} from '../factories/index.js';
-import { authHeaders, authWithCsrfHeaders } from '../helpers/auth.js';
-import { FocusType } from '@prisma/client';
+} from "../factories/index.js";
+import { authHeaders, authWithCsrfHeaders } from "../helpers/auth.js";
+import { FocusType } from "@prisma/client";
 
-const BASE = '/api/focus-sessions';
+const BASE = "/api/v1/focus-sessions";
 beforeEach(() => {
-  process.env.ENFORCE_CSRF_IN_TESTS = 'true';
+  process.env.ENFORCE_CSRF_IN_TESTS = "true";
 });
 afterAll(() => {
   delete process.env.ENFORCE_CSRF_IN_TESTS;
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// POST /api/focus-sessions  —  Start a session
+// POST /api/v1/focus-sessions  —  Start a session
 // ─────────────────────────────────────────────────────────────────────────────
-describe('POST /api/focus-sessions/start — start', () => {
-  it('201 — starts a POMODORO session (default)', async () => {
+describe("POST /api/v1/focus-sessions/start — start", () => {
+  it("201 — starts a POMODORO session (default)", async () => {
     const user = await createUser();
 
     const res = await request(app)
       .post(`${BASE}/start`)
       .set(await authWithCsrfHeaders(user))
       .send({ duration: 25, type: FocusType.POMODORO });
-      const data = res.body.data
+    const data = res.body.data;
 
     expect(res.status).toBe(201);
     expect(data.userId).toBe(user.id);
@@ -40,9 +40,11 @@ describe('POST /api/focus-sessions/start — start', () => {
     expect(data.startedAt).toBeDefined();
   });
 
-  it('201 — starts a DEEP_WORK session linked to a task', async () => {
+  it("201 — starts a DEEP_WORK session linked to a task", async () => {
     const { user, workspace } = await createWorkspaceWithOwner();
-    const task = await createTask(workspace.id, user.id, { title: 'Deep work task' });
+    const task = await createTask(workspace.id, user.id, {
+      title: "Deep work task",
+    });
 
     const res = await request(app)
       .post(`${BASE}/start`)
@@ -54,7 +56,7 @@ describe('POST /api/focus-sessions/start — start', () => {
     expect(res.body.data.type).toBe(FocusType.DEEP_WORK);
   });
 
-  it('201 — CUSTOM session with arbitrary duration', async () => {
+  it("201 — CUSTOM session with arbitrary duration", async () => {
     const user = await createUser();
 
     const res = await request(app)
@@ -66,7 +68,7 @@ describe('POST /api/focus-sessions/start — start', () => {
     expect(res.body.data.duration).toBe(45);
   });
 
-  it('400 — cannot start session when one is already active', async () => {
+  it("400 — cannot start session when one is already active", async () => {
     const user = await createUser();
 
     // Start first session
@@ -84,7 +86,7 @@ describe('POST /api/focus-sessions/start — start', () => {
     expect(res.status).toBe(400);
   });
 
-  it('400 — missing duration', async () => {
+  it("400 — missing duration", async () => {
     const user = await createUser();
 
     const res = await request(app)
@@ -95,18 +97,18 @@ describe('POST /api/focus-sessions/start — start', () => {
     expect(res.status).toBe(400);
   });
 
-  it('400 — invalid FocusType', async () => {
+  it("400 — invalid FocusType", async () => {
     const user = await createUser();
 
     const res = await request(app)
       .post(`${BASE}/start`)
       .set(await authWithCsrfHeaders(user))
-      .send({ duration: 25, type: 'MARATHON' });
+      .send({ duration: 25, type: "MARATHON" });
 
     expect(res.status).toBe(400);
   });
 
-  it('400 — duration must be positive', async () => {
+  it("400 — duration must be positive", async () => {
     const user = await createUser();
 
     const res = await request(app)
@@ -117,7 +119,7 @@ describe('POST /api/focus-sessions/start — start', () => {
     expect(res.status).toBe(400);
   });
 
-  it('401 — unauthenticated', async () => {
+  it("401 — unauthenticated", async () => {
     const res = await request(app)
       .post(`${BASE}/start`)
       .send({ duration: 25, type: FocusType.POMODORO });
@@ -127,10 +129,10 @@ describe('POST /api/focus-sessions/start — start', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// POST /api/focus-sessions/:sessionId/complete  —  Complete a session
+// POST /api/v1/focus-sessions/:sessionId/complete  —  Complete a session
 // ─────────────────────────────────────────────────────────────────────────────
-describe('POST /api/focus-sessions/:id/complete', () => {
-  it('200 — completes active session, sets endedAt + completed=true', async () => {
+describe("POST /api/v1/focus-sessions/:id/complete", () => {
+  it("200 — completes active session, sets endedAt + completed=true", async () => {
     const user = await createUser();
 
     const startRes = await request(app)
@@ -148,12 +150,14 @@ describe('POST /api/focus-sessions/:id/complete', () => {
     expect(res.body.data.completed).toBe(true);
     expect(res.body.data.endedAt).not.toBeNull();
 
-    const db = await prisma.focusSession.findUnique({ where: { id: sessionId } });
+    const db = await prisma.focusSession.findUnique({
+      where: { id: sessionId },
+    });
     expect(db?.completed).toBe(true);
     expect(db?.endedAt).not.toBeNull();
   });
 
-  it('200 — after completing, user can start a new session', async () => {
+  it("200 — after completing, user can start a new session", async () => {
     const user = await createUser();
 
     const startRes = await request(app)
@@ -174,7 +178,7 @@ describe('POST /api/focus-sessions/:id/complete', () => {
     expect(res.status).toBe(201);
   });
 
-  it('404 — completing non-existent session', async () => {
+  it("404 — completing non-existent session", async () => {
     const user = await createUser();
 
     const res = await request(app)
@@ -184,7 +188,7 @@ describe('POST /api/focus-sessions/:id/complete', () => {
     expect(res.status).toBe(404);
   });
 
-  it('404 — cannot complete another user\'s session', async () => {
+  it("404 — cannot complete another user's session", async () => {
     const user1 = await createUser();
     const user2 = await createUser();
 
@@ -200,7 +204,7 @@ describe('POST /api/focus-sessions/:id/complete', () => {
     expect(res.status).toBe(404);
   });
 
-  it('400 — cannot complete an already-completed session', async () => {
+  it("400 — cannot complete an already-completed session", async () => {
     const user = await createUser();
 
     const startRes = await request(app)
@@ -222,10 +226,10 @@ describe('POST /api/focus-sessions/:id/complete', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// DELETE /api/focus-sessions/:sessionId  —  Abandon / cancel session
+// DELETE /api/v1/focus-sessions/:sessionId  —  Abandon / cancel session
 // ─────────────────────────────────────────────────────────────────────────────
-describe('POST /api/focus-sessions/:id — abandon', () => {
-  it('200 — user can abandon (delete) their active session', async () => {
+describe("POST /api/v1/focus-sessions/:id — abandon", () => {
+  it("200 — user can abandon (delete) their active session", async () => {
     const user = await createUser();
 
     const startRes = await request(app)
@@ -248,7 +252,7 @@ describe('POST /api/focus-sessions/:id — abandon', () => {
     expect(newRes.status).toBe(201);
   });
 
-  it('404 — cannot abandon another user\'s session', async () => {
+  it("404 — cannot abandon another user's session", async () => {
     const user1 = await createUser();
     const user2 = await createUser();
 
@@ -266,19 +270,37 @@ describe('POST /api/focus-sessions/:id — abandon', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GET /api/focus-sessions  —  Session history
+// GET /api/v1/focus-sessions  —  Session history
 // ─────────────────────────────────────────────────────────────────────────────
-describe('GET /api/focus-sessions/history — history', () => {
-  it('200 — returns only the requesting user\'s sessions', async () => {
+describe("GET /api/v1/focus-sessions/history — history", () => {
+  it("200 — returns only the requesting user's sessions", async () => {
     const user1 = await createUser();
     const user2 = await createUser();
 
     // Seed sessions directly for both users
     await prisma.focusSession.createMany({
       data: [
-        { userId: user1.id, duration: 25, type: FocusType.POMODORO, completed: true, endedAt: new Date() },
-        { userId: user1.id, duration: 25, type: FocusType.POMODORO, completed: true, endedAt: new Date() },
-        { userId: user2.id, duration: 25, type: FocusType.POMODORO, completed: true, endedAt: new Date() },
+        {
+          userId: user1.id,
+          duration: 25,
+          type: FocusType.POMODORO,
+          completed: true,
+          endedAt: new Date(),
+        },
+        {
+          userId: user1.id,
+          duration: 25,
+          type: FocusType.POMODORO,
+          completed: true,
+          endedAt: new Date(),
+        },
+        {
+          userId: user2.id,
+          duration: 25,
+          type: FocusType.POMODORO,
+          completed: true,
+          endedAt: new Date(),
+        },
       ],
     });
 
@@ -288,33 +310,31 @@ describe('GET /api/focus-sessions/history — history', () => {
 
     expect(res.status).toBe(200);
     const sessions = res.body.data ?? res.body;
-    expect(sessions.every((s: { userId: string }) => s.userId === user1.id)).toBe(true);
+    expect(
+      sessions.every((s: { userId: string }) => s.userId === user1.id),
+    ).toBe(true);
     expect(sessions).toHaveLength(2);
   });
 
-  it('200 — GET active session (endedAt=null)', async () => {
+  it("200 — GET active session (endedAt=null)", async () => {
     const user = await createUser();
 
     await request(app)
-      .post(BASE + '/start')
+      .post(BASE + "/start")
       .set(await authWithCsrfHeaders(user))
       .send({ duration: 25, type: FocusType.POMODORO });
 
-    const res = await request(app)
-      .get(`${BASE}/active`)
-      .set(authHeaders(user));
+    const res = await request(app).get(`${BASE}/active`).set(authHeaders(user));
 
     expect(res.status).toBe(200);
     expect(res.body.data.endedAt).toBeNull();
     expect(res.body.data.completed).toBe(false);
   });
 
-  it('200 — no active session returns 200 with null body or 404', async () => {
+  it("200 — no active session returns 200 with null body or 404", async () => {
     const user = await createUser();
 
-    const res = await request(app)
-      .get(`${BASE}/active`)
-      .set(authHeaders(user));
+    const res = await request(app).get(`${BASE}/active`).set(authHeaders(user));
 
     // Either 200 { data: null } or 404 — both acceptable
     expect([200, 404]).toContain(res.status);
@@ -325,50 +345,77 @@ describe('GET /api/focus-sessions/history — history', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GET /api/focus-sessions/stats  —  Aggregated stats
+// GET /api/v1/focus-sessions/stats  —  Aggregated stats
 // ─────────────────────────────────────────────────────────────────────────────
-describe('GET /api/focus-sessions/stats', () => {
-  it('200 — returns stats for user\'s completed sessions only', async () => {
+describe("GET /api/v1/focus-sessions/stats", () => {
+  it("200 — returns stats for user's completed sessions only", async () => {
     const user = await createUser();
 
     // Seed: 3 completed, 1 incomplete
     await prisma.focusSession.createMany({
       data: [
-        { userId: user.id, duration: 25, type: FocusType.POMODORO, completed: true, endedAt: new Date() },
-        { userId: user.id, duration: 25, type: FocusType.POMODORO, completed: true, endedAt: new Date() },
-        { userId: user.id, duration: 90, type: FocusType.DEEP_WORK, completed: true, endedAt: new Date() },
-        { userId: user.id, duration: 25, type: FocusType.POMODORO, completed: false }, // active
+        {
+          userId: user.id,
+          duration: 25,
+          type: FocusType.POMODORO,
+          completed: true,
+          endedAt: new Date(),
+        },
+        {
+          userId: user.id,
+          duration: 25,
+          type: FocusType.POMODORO,
+          completed: true,
+          endedAt: new Date(),
+        },
+        {
+          userId: user.id,
+          duration: 90,
+          type: FocusType.DEEP_WORK,
+          completed: true,
+          endedAt: new Date(),
+        },
+        {
+          userId: user.id,
+          duration: 25,
+          type: FocusType.POMODORO,
+          completed: false,
+        }, // active
       ],
     });
 
-    const res = await request(app)
-      .get(`${BASE}/stats`)
-      .set(authHeaders(user));
+    const res = await request(app).get(`${BASE}/stats`).set(authHeaders(user));
 
     expect(res.status).toBe(200);
     // Completed: 25 + 25 + 90 = 140 minutes
-    expect(res.body.data.totalMinutes ?? res.body.total).toBeGreaterThanOrEqual(140);
+    expect(res.body.data.totalMinutes ?? res.body.total).toBeGreaterThanOrEqual(
+      140,
+    );
     expect(res.body.data.totalSessions ?? res.body.completed).toBe(3);
   });
 
-  it('200 — stats are isolated per user', async () => {
+  it("200 — stats are isolated per user", async () => {
     const user1 = await createUser();
     const user2 = await createUser();
 
     await prisma.focusSession.create({
-      data: { userId: user2.id, duration: 999, type: FocusType.DEEP_WORK, completed: true, endedAt: new Date() },
+      data: {
+        userId: user2.id,
+        duration: 999,
+        type: FocusType.DEEP_WORK,
+        completed: true,
+        endedAt: new Date(),
+      },
     });
 
-    const res = await request(app)
-      .get(`${BASE}/stats`)
-      .set(authHeaders(user1));
+    const res = await request(app).get(`${BASE}/stats`).set(authHeaders(user1));
 
     expect(res.status).toBe(200);
     // user1 has no sessions — should be 0
     expect(res.body.totalMinutes ?? 0).toBe(0);
   });
 
-  it('401 — unauthenticated', async () => {
+  it("401 — unauthenticated", async () => {
     const res = await request(app).get(`${BASE}/stats`);
     expect(res.status).toBe(401);
   });

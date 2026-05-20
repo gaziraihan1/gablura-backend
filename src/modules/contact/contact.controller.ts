@@ -12,7 +12,7 @@ function getRealIp(req: Request): string {
   return req.socket.remoteAddress ?? 'unknown';
 }
 
-// ─── POST /api/contact ────────────────────────────────────────────────────────
+// ─── POST /api/v1/contact ────────────────────────────────────────────────────────
 export async function submitContactMessage(
   req: Request,
   res: Response
@@ -52,7 +52,7 @@ export async function submitContactMessage(
   }
 }
 
-// ─── GET /api/contact ─────────────────────────────────────────────────────────
+// ─── GET /api/v1/contact ─────────────────────────────────────────────────────────
 export async function listContactMessages(
   req: AuthRequest,
   res: Response

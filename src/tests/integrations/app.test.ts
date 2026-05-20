@@ -29,7 +29,7 @@ describe('GET /health', () => {
 
 describe('404 — unknown routes', () => {
   it('404 — GET to undefined route', async () => {
-    const res = await request(app).get('/api/this-route-does-not-exist');
+    const res = await request(app).get('/api/v1/this-route-does-not-exist');
 
     expect(res.status).toBe(404);
     expect(res.body.success).toBe(false);
@@ -39,7 +39,7 @@ describe('404 — unknown routes', () => {
   });
 
   it('404 — POST to undefined route', async () => {
-    const res = await request(app).post('/api/totally-fake-endpoint').send({});
+    const res = await request(app).post('/api/v1/totally-fake-endpoint').send({});
 
     expect(res.status).toBe(404);
     expect(res.body.success).toBe(false);
@@ -49,7 +49,7 @@ describe('404 — unknown routes', () => {
 describe('Error response shape', () => {
   it('401 responses include code field', async () => {
     // Any protected route without auth
-    const res = await request(app).get('/api/workspaces');
+    const res = await request(app).get('/api/v1/workspaces');
 
     expect(res.status).toBe(401);
     expect(res.body).toHaveProperty('code');
@@ -69,7 +69,7 @@ describe('CORS headers', () => {
 
   it('OPTIONS preflight returns 204 / CORS headers', async () => {
     const res = await request(app)
-      .options('/api/workspaces')
+      .options('/api/v1/workspaces')
       .set('Origin', 'http://localhost:3000')
       .set('Access-Control-Request-Method', 'POST')
       .set('Access-Control-Request-Headers', 'Authorization, Content-Type');

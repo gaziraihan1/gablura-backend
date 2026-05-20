@@ -1,9 +1,9 @@
-import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest';
-import request from 'supertest';
-import app from '../../app.js';
-import { generateTestToken } from '../helpers/auth.js';
-import { generateTestCsrfToken } from '../helpers/csrf.js';
-import { createUser } from '../factories/index.js';
+import { describe, it, expect, beforeEach, afterAll, vi } from "vitest";
+import request from "supertest";
+import app from "../../app.js";
+import { generateTestToken } from "../helpers/auth.js";
+import { generateTestCsrfToken } from "../helpers/csrf.js";
+import { createUser } from "../factories/index.js";
 
 /**
  * Why we use generateTestCsrfToken (from helpers/csrf.ts) instead of the
@@ -21,15 +21,15 @@ import { createUser } from '../factories/index.js';
  * because the CSRF key is keyed as `csrf:{userId}:{sessionId}`.
  */
 
-describe('CSRF Protection', () => {
+describe("CSRF Protection", () => {
   let authToken: string;
   let userId: string;
   let csrfToken: string;
-  const sessionId = 'test-session-csrf';
+  const sessionId = "test-session-csrf";
 
   beforeEach(async () => {
     // Signal to validateCsrfToken to enforce real validation (not skip in dev)
-    process.env.ENFORCE_CSRF_IN_TESTS = 'true';
+    process.env.ENFORCE_CSRF_IN_TESTS = "true";
 
     const user = await createUser();
     userId = user.id;
@@ -37,7 +37,7 @@ describe('CSRF Protection', () => {
     // JWT must carry the same sessionId used to key the CSRF token
     authToken = generateTestToken(
       { id: user.id, email: user.email, role: user.role },
-      { sessionId }
+      { sessionId },
     );
 
     // Store token in global._testCsrfTokens under csrf:{userId}:{sessionId}
@@ -48,56 +48,59 @@ describe('CSRF Protection', () => {
     delete process.env.ENFORCE_CSRF_IN_TESTS;
   });
 
-  it('should reject POST without CSRF token → 403 CSRF_VALIDATION_FAILED', async () => {
+  it("should reject POST without CSRF token → 403 CSRF_VALIDATION_FAILED", async () => {
     const response = await request(app)
-      .post('/api/tasks')
-      .set('Authorization', `Bearer ${authToken}`)
-      .send({ title: 'Test Task' });
+      .post("/api/v1/tasks")
+      .set("Authorization", `Bearer ${authToken}`)
+      .send({ title: "Test Task" });
 
     expect(response.status).toBe(403);
-    expect(response.body.code).toBe('CSRF_VALIDATION_FAILED');
+    expect(response.body.code).toBe("CSRF_VALIDATION_FAILED");
   });
 
-  it('should accept POST with valid CSRF token → not 403', async () => {
+  it("should accept POST with valid CSRF token → not 403", async () => {
     const response = await request(app)
-      .post('/api/tasks')
-      .set('Authorization', `Bearer ${authToken}`)
-      .set('x-csrf-token', csrfToken)
-      .send({ title: 'Test Task' });
+      .post("/api/v1/tasks")
+      .set("Authorization", `Bearer ${authToken}`)
+      .set("x-csrf-token", csrfToken)
+      .send({ title: "Test Task" });
 
     expect(response.status).not.toBe(403);
   });
 
-  it('should allow GET requests without CSRF token → not 403', async () => {
+  it("should allow GET requests without CSRF token → not 403", async () => {
     const response = await request(app)
-      .get('/api/tasks')
-      .set('Authorization', `Bearer ${authToken}`);
+      .get("/api/v1/tasks")
+      .set("Authorization", `Bearer ${authToken}`);
 
     expect(response.status).not.toBe(403);
   });
 
-  it('should reject POST with wrong CSRF token → 403 CSRF_VALIDATION_FAILED', async () => {
+  it("should reject POST with wrong CSRF token → 403 CSRF_VALIDATION_FAILED", async () => {
     const response = await request(app)
-      .post('/api/tasks')
-      .set('Authorization', `Bearer ${authToken}`)
-      .set('x-csrf-token', 'not-the-right-token')
-      .send({ title: 'Test Task' });
+      .post("/api/v1/tasks")
+      .set("Authorization", `Bearer ${authToken}`)
+      .set("x-csrf-token", "not-the-right-token")
+      .send({ title: "Test Task" });
 
     expect(response.status).toBe(403);
-    expect(response.body.code).toBe('CSRF_VALIDATION_FAILED');
+    expect(response.body.code).toBe("CSRF_VALIDATION_FAILED");
   });
 
-  it('should reject POST with CSRF token belonging to a different session → 403', async () => {
+  it("should reject POST with CSRF token belonging to a different session → 403", async () => {
     // Generate a valid token but for a different sessionId
-    const wrongSessionToken = await generateTestCsrfToken(userId, 'other-session');
+    const wrongSessionToken = await generateTestCsrfToken(
+      userId,
+      "other-session",
+    );
 
     const response = await request(app)
-      .post('/api/tasks')
-      .set('Authorization', `Bearer ${authToken}`)
-      .set('x-csrf-token', wrongSessionToken)
-      .send({ title: 'Test Task' });
+      .post("/api/v1/tasks")
+      .set("Authorization", `Bearer ${authToken}`)
+      .set("x-csrf-token", wrongSessionToken)
+      .send({ title: "Test Task" });
 
     expect(response.status).toBe(403);
-    expect(response.body.code).toBe('CSRF_VALIDATION_FAILED');
+    expect(response.body.code).toBe("CSRF_VALIDATION_FAILED");
   });
 });

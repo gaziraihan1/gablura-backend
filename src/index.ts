@@ -143,7 +143,7 @@ app.get("/health", async (req: Request, res: Response) => {
   }
 });
 
-app.get("/api/debug/auth", (req: Request, res: Response) => {
+app.get("/api/v1/debug/auth", (req: Request, res: Response) => {
   if (isProd) {
     return res
       .status(403)
@@ -169,76 +169,76 @@ app.get("/api/debug/auth", (req: Request, res: Response) => {
 // CRITICAL: CSRF Token Endpoint - NO CSRF PROTECTION
 // This must come BEFORE other authenticated routes
 // ============================================================================
-app.get("/api/csrf-token", authenticate, getCsrfTokenHandler);
+app.get("/api/v1/csrf-token", authenticate, getCsrfTokenHandler);
 
 // ============================================================================
 // Public Routes (No Auth, No CSRF)
 // ============================================================================
-app.use("/api/notifications", notificationRouter);
-app.use("/api/contact", contactRouter);
-app.use("/api/jobs", jobRouter);
-app.use("/api/templates", templatesRouter);
-app.use("/api/auth", logoutRoutes); // Auth routes handle their own CSRF
+app.use("/api/v1/notifications", notificationRouter);
+app.use("/api/v1/contact", contactRouter);
+app.use("/api/v1/jobs", jobRouter);
+app.use("/api/v1/templates", templatesRouter);
+app.use("/api/v1/auth", logoutRoutes); // Auth routes handle their own CSRF
 
 // ============================================================================
 // Authenticated Routes WITH CSRF Protection
 // ============================================================================
 app.use(
-  "/api/workspaces/:workspaceId/projects/:projectId/announcements",
+  "/api/v1/workspaces/:workspaceId/projects/:projectId/announcements",
   authenticate,
   requireCsrfToken(),
   projectAnnouncementRouter,
 );
 app.use(
-  "/api/workspaces/:workspaceId/announcements",
+  "/api/v1/workspaces/:workspaceId/announcements",
   authenticate,
   requireCsrfToken(),
   workspaceAnnouncementRouter,
 );
-app.use("/api/workspaces", workspaceRouter); // Has its own auth middleware inside
+app.use("/api/v1/workspaces", workspaceRouter); // Has its own auth middleware inside
 app.use(
-  "/api/workspaces/:workspaceId/billing",
+  "/api/v1/workspaces/:workspaceId/billing",
   authenticate,
   requireCsrfToken(),
   billingRouter,
 );
 app.use(
-  "/api/announcements",
+  "/api/v1/announcements",
   authenticate,
   requireCsrfToken(),
   announcementRouter,
 );
-app.use("/api/projects", authenticate, requireCsrfToken(), projectRoutes);
-app.use("/api/tasks", authenticate, requireCsrfToken(), taskRouter);
-app.use("/api/daily-tasks", authenticate, requireCsrfToken(), dailyTaskRouter);
-app.use("/api/activities", authenticate, requireCsrfToken(), activityRouter);
-app.use("/api/user", authenticate, requireCsrfToken(), userRoutes);
-app.use("/api/upload", authenticate, requireCsrfToken(), uploadRoutes);
-app.use("/api/labels", authenticate, requireCsrfToken(), labelRouter);
-app.use("/api/calendar", authenticate, requireCsrfToken(), calendarRouter);
+app.use("/api/v1/projects", authenticate, requireCsrfToken(), projectRoutes);
+app.use("/api/v1/tasks", authenticate, requireCsrfToken(), taskRouter);
+app.use("/api/v1/daily-tasks", authenticate, requireCsrfToken(), dailyTaskRouter);
+app.use("/api/v1/activities", authenticate, requireCsrfToken(), activityRouter);
+app.use("/api/v1/user", authenticate, requireCsrfToken(), userRoutes);
+app.use("/api/v1/upload", authenticate, requireCsrfToken(), uploadRoutes);
+app.use("/api/v1/labels", authenticate, requireCsrfToken(), labelRouter);
+app.use("/api/v1/calendar", authenticate, requireCsrfToken(), calendarRouter);
 app.use(
-  "/api/focus-sessions",
+  "/api/v1/focus-sessions",
   authenticate,
   requireCsrfToken(),
   focusSessionRouter,
 );
-app.use("/api/storage", authenticate, requireCsrfToken(), storageRouter);
-app.use("/api/analytics", authenticate, requireCsrfToken(), analyticsRouter);
+app.use("/api/v1/storage", authenticate, requireCsrfToken(), storageRouter);
+app.use("/api/v1/analytics", authenticate, requireCsrfToken(), analyticsRouter);
 app.use(
-  "/api/file-management",
+  "/api/v1/file-management",
   authenticate,
   requireCsrfToken(),
   fileManagementRouter,
 );
 app.use(
-  "/api/workspace-usage",
+  "/api/v1/workspace-usage",
   authenticate,
   requireCsrfToken(),
   workspaceUsageRouter,
 );
-app.use("/api/meetings", authenticate, requireCsrfToken(), meetingRoutes);
-app.use("/api/features", authenticate, requireCsrfToken(), featureRouter);
-app.use("/api/admin", authenticate, requireCsrfToken(), adminRouter);
+app.use("/api/v1/meetings", authenticate, requireCsrfToken(), meetingRoutes);
+app.use("/api/v1/features", authenticate, requireCsrfToken(), featureRouter);
+app.use("/api/v1/admin", authenticate, requireCsrfToken(), adminRouter);
 
 app.use((req: Request, res: Response) => {
   console.warn(`404 - Route not found: ${req.method} ${req.path}`);
@@ -263,9 +263,9 @@ const server = app
     console.log(
       `🛡️  CSRF Protection: ENABLED (ioredis @ ${process.env.REDIS_URL ?? "redis://localhost:6379"})`,
     );
-    console.log(`📡 SSE: /api/notifications/stream/:userId?token=`);
+    console.log(`📡 SSE: /api/v1/notifications/stream/:userId?token=`);
     console.log(
-      `📅 Daily Tasks: /api/daily-tasks (PRIMARY/SECONDARY prioritization)`,
+      `📅 Daily Tasks: /api/v1/daily-tasks (PRIMARY/SECONDARY prioritization)`,
     );
     console.log(`⏰ Cron Jobs: Notifications + Daily Task Cleanup`);
     console.log("=".repeat(60));
