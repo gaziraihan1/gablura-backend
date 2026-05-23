@@ -1,22 +1,91 @@
 import nodemailer from "nodemailer";
 import type { CreateContactMessageInput } from "./contact.validator.js";
 
-// ─── Transporter ──────────────────────────────────────────────────────────────
-// Uses the EMAIL_* env vars you already have configured
-const transporter = nodemailer.createTransport({
-  host: process.env.EMAIL_SERVER_HOST,
-  port: Number(process.env.EMAIL_SERVER_PORT ?? 587),
-  secure: false, // STARTTLS on port 587
-  auth: {
-    user: process.env.EMAIL_SERVER_USER,
-    pass: process.env.EMAIL_SERVER_PASSWORD,
-  },
-});
+// ─── Custom error class ───────────────────────────────────────────────────────
+export class ContactEmailError extends Error {
+  constructor(message: string, public readonly cause?: unknown) {
+    super(message);
+    this.name = "ContactEmailError";
+  }
+}
 
-const FROM = process.env.EMAIL_FROM ?? "Focura <focurabusiness@gmail.com>";
-const SUPPORT_EMAIL = process.env.EMAIL_SERVER_USER ?? "focurabusiness@gmail.com";
+// ─── Singleton transporter ────────────────────────────────────────────────────
+function createTransporter() {
+  const { EMAIL_SERVER_HOST, EMAIL_SERVER_PORT, EMAIL_SERVER_USER, EMAIL_SERVER_PASSWORD } =
+    process.env;
 
-// ─── Category label map ───────────────────────────────────────────────────────
+  if (!EMAIL_SERVER_HOST || !EMAIL_SERVER_PORT || !EMAIL_SERVER_USER || !EMAIL_SERVER_PASSWORD) {
+    throw new ContactEmailError(
+      "Missing required email env vars: EMAIL_SERVER_HOST, EMAIL_SERVER_PORT, EMAIL_SERVER_USER, EMAIL_SERVER_PASSWORD"
+    );
+  }
+
+  return nodemailer.createTransport({
+    host: EMAIL_SERVER_HOST,
+    port: Number(EMAIL_SERVER_PORT),
+    secure: false, // true for SMTPS, false for STARTTLS (587)
+    auth: {
+      user: EMAIL_SERVER_USER,
+      pass: EMAIL_SERVER_PASSWORD,
+    },
+    tls: {
+      rejectUnauthorized: process.env.NODE_ENV === "production",
+    },
+  });
+}
+
+let _transporter: ReturnType<typeof nodemailer.createTransport> | null = null;
+
+function getTransporter() {
+  if (!_transporter) {
+    _transporter = createTransporter();
+  }
+  return _transporter;
+}
+
+// ─── Shared send helper ───────────────────────────────────────────────────────
+async function sendMail(options: {
+  to: string;
+  replyTo?: string;
+  subject: string;
+  html: string;
+  text: string;
+}): Promise<void> {
+  const from = process.env.EMAIL_FROM;
+  if (!from) {
+    throw new ContactEmailError("Missing required env var: EMAIL_FROM");
+  }
+
+  try {
+    const info = await getTransporter().sendMail({
+      from,
+      to: options.to,
+      replyTo: options.replyTo,
+      subject: options.subject,
+      html: options.html,
+      text: options.text,
+    });
+
+    console.log(`[contact.email] Sent to ${options.to} — messageId: ${info.messageId}`);
+  } catch (error) {
+    // Reset transporter on connection/auth errors so next call gets a fresh attempt
+    const isConnectionError =
+      error instanceof Error &&
+      (error.message.includes("ECONNREFUSED") ||
+        error.message.includes("ENOTFOUND") ||
+        error.message.includes("535") || // SMTP auth failure
+        error.message.includes("534"));
+
+    if (isConnectionError) {
+      _transporter = null;
+    }
+
+    console.error(`[contact.email] Failed to send to ${options.to}:`, error);
+    throw new ContactEmailError(`Failed to send email to ${options.to}`, error);
+  }
+}
+
+// ─── Category maps ────────────────────────────────────────────────────────────
 const categoryLabel: Record<string, string> = {
   GENERAL: "General Enquiry",
   BILLING: "Billing & Subscriptions",
@@ -27,7 +96,56 @@ const categoryLabel: Record<string, string> = {
   OTHER: "Other",
 };
 
-// ─── Template helpers ─────────────────────────────────────────────────────────
+const categoryColor: Record<string, string> = {
+  GENERAL: "#6366f1",
+  BILLING: "#f59e0b",
+  TECHNICAL: "#ef4444",
+  FEATURE_REQUEST: "#10b981",
+  PARTNERSHIP: "#8b5cf6",
+  SECURITY: "#dc2626",
+  OTHER: "#64748b",
+};
+
+// ─── Public send functions ────────────────────────────────────────────────────
+
+/**
+ * Sends the admin notification email to focurabusiness@gmail.com.
+ * Called fire-and-forget in contact.service — errors are caught and logged there.
+ */
+export async function sendAdminContactNotification(
+  data: CreateContactMessageInput,
+  messageId: string,
+  ip: string
+): Promise<void> {
+  const supportEmail =
+    process.env.EMAIL_SERVER_USER ?? "focurabusiness@gmail.com";
+
+  await sendMail({
+    to: supportEmail,
+    replyTo: data.email,
+    subject: `[Contact] ${categoryLabel[data.category] ?? data.category}: ${data.subject}`,
+    html: buildAdminEmailHtml(data, messageId, ip),
+    text: buildAdminEmailText(data, messageId, ip),
+  });
+}
+
+/**
+ * Sends the auto-reply confirmation to the user.
+ * Called fire-and-forget in contact.service — errors are caught and logged there.
+ */
+export async function sendUserAutoReply(
+  data: CreateContactMessageInput
+): Promise<void> {
+  await sendMail({
+    to: data.email,
+    subject: `We received your message — Focura`,
+    html: buildUserAutoReplyHtml(data),
+    text: buildUserAutoReplyText(data),
+  });
+}
+
+// ─── HTML templates ───────────────────────────────────────────────────────────
+
 function baseWrapper(content: string): string {
   return `
 <!DOCTYPE html>
@@ -46,9 +164,7 @@ function baseWrapper(content: string): string {
           <!-- Header -->
           <tr>
             <td style="background:#0a0a0a;border-radius:12px 12px 0 0;padding:28px 36px;">
-              <span style="font-size:20px;font-weight:700;color:#ffffff;letter-spacing:-0.5px;">
-                Focura
-              </span>
+              <span style="font-size:20px;font-weight:700;color:#ffffff;letter-spacing:-0.5px;">Focura</span>
             </td>
           </tr>
 
@@ -63,7 +179,7 @@ function baseWrapper(content: string): string {
           <tr>
             <td style="padding:24px 0;text-align:center;">
               <p style="margin:0;font-size:12px;color:#a3a3a3;">
-                © ${new Date().getFullYear()} Focura · 
+                © ${new Date().getFullYear()} Focura ·
                 <a href="https://focura-client.vercel.app" style="color:#a3a3a3;">focura-client.vercel.app</a>
               </p>
             </td>
@@ -77,44 +193,45 @@ function baseWrapper(content: string): string {
 </html>`.trim();
 }
 
-// ─── Admin notification email ─────────────────────────────────────────────────
 function buildAdminEmailHtml(
   data: CreateContactMessageInput,
   messageId: string,
   ip: string
 ): string {
-  const content = `
-    <h2 style="margin:0 0 4px;font-size:18px;font-weight:700;color:#0a0a0a;">
-      New Contact Message
-    </h2>
-    <p style="margin:0 0 24px;font-size:13px;color:#737373;">Message ID: ${messageId}</p>
+  const color = categoryColor[data.category] ?? "#64748b";
+  const label = categoryLabel[data.category] ?? data.category;
 
-    <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e5e5e5;border-radius:8px;overflow:hidden;margin-bottom:24px;">
-      ${[
-        ["Name", data.name],
-        ["Email", `<a href="mailto:${data.email}" style="color:#0a0a0a;">${data.email}</a>`],
-        ["Category", categoryLabel[data.category] ?? data.category],
-        ["Subject", data.subject],
-        ["IP Address", ip],
-      ]
-        .map(
-          ([label, value], i) => `
-        <tr style="background:${i % 2 === 0 ? "#fafafa" : "#ffffff"};">
-          <td style="padding:10px 14px;font-size:12px;font-weight:600;color:#737373;white-space:nowrap;border-bottom:1px solid #f0f0f0;width:120px;">
-            ${label}
-          </td>
-          <td style="padding:10px 14px;font-size:13px;color:#0a0a0a;border-bottom:1px solid #f0f0f0;">
-            ${value}
-          </td>
-        </tr>`
-        )
-        .join("")}
+  const rows = [
+    ["Name", data.name],
+    ["Email", `<a href="mailto:${data.email}" style="color:#0a0a0a;">${data.email}</a>`],
+    ["Category", label],
+    ["Subject", data.subject],
+    ["IP Address", ip],
+    ["Message ID", messageId],
+  ]
+    .map(
+      ([l, v], i) => `
+      <tr style="background:${i % 2 === 0 ? "#fafafa" : "#ffffff"};">
+        <td style="padding:10px 14px;font-size:12px;font-weight:600;color:#737373;white-space:nowrap;border-bottom:1px solid #f0f0f0;width:120px;">${l}</td>
+        <td style="padding:10px 14px;font-size:13px;color:#0a0a0a;border-bottom:1px solid #f0f0f0;">${v}</td>
+      </tr>`
+    )
+    .join("");
+
+  const content = `
+    <div style="display:inline-block;padding:3px 10px;background:${color}18;border-radius:4px;margin-bottom:16px;">
+      <span style="font-size:11px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:${color};">${label}</span>
+    </div>
+    <h2 style="margin:0 0 4px;font-size:18px;font-weight:700;color:#0a0a0a;">New Contact Message</h2>
+    <p style="margin:0 0 24px;font-size:13px;color:#737373;">Submitted via focura-client.vercel.app/contact</p>
+
+    <table width="100%" cellpadding="0" cellspacing="0"
+      style="border:1px solid #e5e5e5;border-radius:8px;overflow:hidden;margin-bottom:24px;">
+      ${rows}
     </table>
 
-    <div style="background:#fafafa;border:1px solid #e5e5e5;border-radius:8px;padding:16px;margin-bottom:24px;">
-      <p style="margin:0 0 8px;font-size:12px;font-weight:600;color:#737373;text-transform:uppercase;letter-spacing:0.5px;">
-        Message
-      </p>
+    <div style="background:#fafafa;border:1px solid #e5e5e5;border-left:3px solid ${color};border-radius:8px;padding:16px;margin-bottom:24px;">
+      <p style="margin:0 0 8px;font-size:12px;font-weight:600;color:#737373;text-transform:uppercase;letter-spacing:0.5px;">Message</p>
       <p style="margin:0;font-size:14px;color:#0a0a0a;line-height:1.7;white-space:pre-wrap;">${data.message}</p>
     </div>
 
@@ -123,14 +240,19 @@ function buildAdminEmailHtml(
       Reply to ${data.name}
     </a>
   `;
+
   return baseWrapper(content);
 }
 
-// ─── User auto-reply email ────────────────────────────────────────────────────
 function buildUserAutoReplyHtml(data: CreateContactMessageInput): string {
+  const label = categoryLabel[data.category] ?? data.category;
+  const preview =
+    data.message.length > 300 ? data.message.slice(0, 300) + "…" : data.message;
+  const firstName = data.name.split(" ")[0];
+
   const content = `
     <h2 style="margin:0 0 8px;font-size:18px;font-weight:700;color:#0a0a0a;">
-      Thanks for reaching out, ${data.name.split(" ")[0]}!
+      Thanks for reaching out, ${firstName}!
     </h2>
     <p style="margin:0 0 24px;font-size:14px;color:#525252;line-height:1.7;">
       We received your message and our team will get back to you within
@@ -138,35 +260,29 @@ function buildUserAutoReplyHtml(data: CreateContactMessageInput): string {
       you can browse our documentation or check the FAQ on our contact page.
     </p>
 
-    <div style="background:#fafafa;border:1px solid #e5e5e5;border-radius:8px;padding:16px;margin-bottom:24px;">
-      <p style="margin:0 0 6px;font-size:12px;font-weight:600;color:#737373;text-transform:uppercase;letter-spacing:0.5px;">
-        Your message
-      </p>
+    <div style="background:#fafafa;border:1px solid #e5e5e5;border-radius:8px;padding:16px;margin-bottom:16px;">
+      <p style="margin:0 0 6px;font-size:12px;font-weight:600;color:#737373;text-transform:uppercase;letter-spacing:0.5px;">Your message</p>
       <p style="margin:0 0 4px;font-size:13px;font-weight:600;color:#0a0a0a;">${data.subject}</p>
-      <p style="margin:0;font-size:13px;color:#525252;line-height:1.6;white-space:pre-wrap;">${data.message.length > 300 ? data.message.slice(0, 300) + "…" : data.message}</p>
+      <p style="margin:0;font-size:13px;color:#525252;line-height:1.6;white-space:pre-wrap;">${preview}</p>
     </div>
 
-    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
-      <tr>
-        <td style="background:#fafafa;border:1px solid #e5e5e5;border-radius:8px;padding:14px 16px;">
-          <p style="margin:0 0 4px;font-size:12px;font-weight:600;color:#737373;">Category</p>
-          <p style="margin:0;font-size:13px;color:#0a0a0a;">${categoryLabel[data.category] ?? data.category}</p>
-        </td>
-      </tr>
-    </table>
+    <div style="background:#fafafa;border:1px solid #e5e5e5;border-radius:8px;padding:14px 16px;margin-bottom:24px;">
+      <p style="margin:0 0 4px;font-size:12px;font-weight:600;color:#737373;">Category</p>
+      <p style="margin:0;font-size:13px;color:#0a0a0a;">${label}</p>
+    </div>
 
     <p style="margin:0 0 8px;font-size:13px;color:#737373;line-height:1.6;">
       If this is urgent, you can also reach us directly at
       <a href="mailto:focurabusiness@gmail.com" style="color:#0a0a0a;font-weight:600;">focurabusiness@gmail.com</a>.
     </p>
-    <p style="margin:0;font-size:13px;color:#737373;">
-      — The Focura Team
-    </p>
+    <p style="margin:0;font-size:13px;color:#737373;">— The Focura Team</p>
   `;
+
   return baseWrapper(content);
 }
 
 // ─── Plain-text fallbacks ─────────────────────────────────────────────────────
+
 function buildAdminEmailText(
   data: CreateContactMessageInput,
   messageId: string,
@@ -190,53 +306,22 @@ function buildAdminEmailText(
 }
 
 function buildUserAutoReplyText(data: CreateContactMessageInput): string {
+  const preview =
+    data.message.length > 300 ? data.message.slice(0, 300) + "…" : data.message;
+
   return [
     `Hi ${data.name.split(" ")[0]},`,
     "",
     "Thanks for reaching out to Focura. We received your message and will reply within 2 business days.",
     "",
-    `Subject: ${data.subject}`,
+    `Subject:  ${data.subject}`,
     `Category: ${categoryLabel[data.category] ?? data.category}`,
     "",
     "Your message:",
-    data.message.length > 300 ? data.message.slice(0, 300) + "…" : data.message,
+    preview,
     "",
     "If urgent, email us directly at focurabusiness@gmail.com.",
     "",
     "— The Focura Team",
   ].join("\n");
-}
-
-// ─── Public send functions ────────────────────────────────────────────────────
-/**
- * Sends admin notification email to focurabusiness@gmail.com
- */
-export async function sendAdminContactNotification(
-  data: CreateContactMessageInput,
-  messageId: string,
-  ip: string
-): Promise<void> {
-  await transporter.sendMail({
-    from: FROM,
-    to: SUPPORT_EMAIL,
-    replyTo: data.email,
-    subject: `[Contact] ${categoryLabel[data.category] ?? data.category}: ${data.subject}`,
-    text: buildAdminEmailText(data, messageId, ip),
-    html: buildAdminEmailHtml(data, messageId, ip),
-  });
-}
-
-/**
- * Sends auto-reply confirmation to the user who submitted the form
- */
-export async function sendUserAutoReply(
-  data: CreateContactMessageInput
-): Promise<void> {
-  await transporter.sendMail({
-    from: FROM,
-    to: data.email,
-    subject: `We received your message — Focura`,
-    text: buildUserAutoReplyText(data),
-    html: buildUserAutoReplyHtml(data),
-  });
 }

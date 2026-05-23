@@ -20,6 +20,46 @@ import type {
   WorkspaceGrowthMetrics,
 } from "./workspaceUsage.types.js";
 
+// ─── Shared local types for pre-fetched data ────────────────────────────────
+
+type FetchedMember = {
+  user: {
+    id: string;
+    name: string | null;
+    email: string;
+    image: string | null;
+    lastLoginAt: Date | null;
+  };
+};
+
+type FetchedFile = {
+  id: string;
+  size: number;
+  uploadedById: string;
+  projectId: string | null;
+};
+
+type FetchedWorkspace = {
+  plan: string;
+  maxStorage: number;
+} | null;
+
+// ─── Helpers ────────────────────────────────────────────────────────────────
+
+function nDaysAgo(n: number): Date {
+  return new Date(Date.now() - n * 24 * 60 * 60 * 1000);
+}
+
+function nDaysFromNow(n: number): Date {
+  return new Date(Date.now() + n * 24 * 60 * 60 * 1000);
+}
+
+function totalStorageMB(files: FetchedFile[]): number {
+  return bytesToMB(files.reduce((sum, f) => sum + f.size, 0));
+}
+
+// ─── Query ──────────────────────────────────────────────────────────────────
+
 export const WorkspaceUsageQuery = {
   async getWorkspaceUsage(
     workspaceId: string,
@@ -31,6 +71,7 @@ export const WorkspaceUsageQuery = {
     );
     const isAdmin = WorkspaceUsageAccess.isAdmin(member.role);
 
+    // ── Tier-1: base data ──
     const [workspace, members, files] = await Promise.all([
       prisma.workspace.findUnique({
         where: { id: workspaceId },
@@ -56,6 +97,10 @@ export const WorkspaceUsageQuery = {
       }),
     ]);
 
+    // Compute DAU once and share across snapshot + engagement.
+    const dauLastWeek = await this.getDailyActiveUsers(workspaceId, 7);
+
+    // ── Tier-2: derived metrics (all parallel) ──
     const [
       snapshot,
       projectActivity,
@@ -64,17 +109,23 @@ export const WorkspaceUsageQuery = {
       workspaceLoad,
       workspaceGrowth,
       featureUsage,
-      planLimits,
     ] = await Promise.all([
-      this.getUsageSnapshot(workspaceId, members, files),
+      this.getUsageSnapshot(workspaceId, members, files, dauLastWeek),
       this.getProjectActivity(workspaceId),
-      this.getUserEngagement(workspaceId, members, isAdmin),
+      this.getUserEngagement(workspaceId, members, isAdmin, dauLastWeek),
       this.getResourceUsage(workspaceId, files, workspace?.maxStorage ?? 1024),
       this.getWorkspaceLoad(workspaceId, members, isAdmin),
       this.getWorkspaceGrowth(workspaceId),
       this.getFeatureUsage(workspaceId),
-      this.getPlanLimits(workspaceId, workspace, members.length, files),
     ]);
+
+    // planLimits reuses projectCount already fetched by getProjectActivity.
+    const planLimits = await this.getPlanLimits(
+      workspace,
+      members.length,
+      files,
+      projectActivity.mostActive.length + projectActivity.lowActivity.length,
+    );
 
     return {
       snapshot,
@@ -88,6 +139,8 @@ export const WorkspaceUsageQuery = {
       isAdmin,
     };
   },
+
+  // ── DAU ──────────────────────────────────────────────────────────────────
 
   async getDailyActiveUsers(
     workspaceId: string,
@@ -107,57 +160,52 @@ export const WorkspaceUsageQuery = {
       select: { userId: true, createdAt: true },
     });
 
+    // Build date → unique user set map in one pass.
     const dayUsersMap = new Map<string, Set<string>>();
-    for (const activity of activities) {
-      const key = activity.createdAt.toISOString().split("T")[0];
-      if (!dayUsersMap.has(key)) dayUsersMap.set(key, new Set());
-      dayUsersMap.get(key)!.add(activity.userId);
+    for (const { userId, createdAt } of activities) {
+      const key = createdAt.toISOString().split("T")[0];
+      let set = dayUsersMap.get(key);
+      if (!set) {
+        set = new Set();
+        dayUsersMap.set(key, set);
+      }
+      set.add(userId);
     }
 
     return dateRange.map((date) => {
-      const { start, end } = getDayBounds(date);
+      const { start } = getDayBounds(date);
       const key = start.toISOString().split("T")[0];
-      const uniqueUsers = dayUsersMap.get(key) ?? new Set<string>();
-
-      return {
-        date: end.toISOString().split("T")[0],
-        count: uniqueUsers.size,
-      };
+      return { date: key, count: dayUsersMap.get(key)?.size ?? 0 };
     });
   },
 
+  // ── Snapshot ─────────────────────────────────────────────────────────────
+
   async getUsageSnapshot(
     workspaceId: string,
-    members: any[], // Pre-fetched
-    files: any[], // Pre-fetched
+    members: FetchedMember[],
+    files: FetchedFile[],
+    dauLastWeek: Array<{ date: string; count: number }>,
   ): Promise<UsageSnapshot> {
-    const now = new Date();
-    const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const oneWeekAgo = nDaysAgo(7);
 
-    const [totalTasks, totalProjects, totalActivities, dauLastWeek] =
-      await Promise.all([
-        prisma.task.count({ where: { workspaceId } }),
-        prisma.project.count({ where: { workspaceId } }),
-        prisma.activity.count({
-          where: { workspaceId, createdAt: { gte: oneWeekAgo } },
-        }),
-        this.getDailyActiveUsers(workspaceId, 7),
-      ]);
+    const [totalTasks, totalProjects, totalActivities] = await Promise.all([
+      prisma.task.count({ where: { workspaceId } }),
+      prisma.project.count({ where: { workspaceId } }),
+      prisma.activity.count({
+        where: { workspaceId, createdAt: { gte: oneWeekAgo } },
+      }),
+    ]);
 
     const totalMembers = members.length;
     const activeMembers = members.filter(
       (m) => m.user.lastLoginAt && m.user.lastLoginAt >= oneWeekAgo,
     ).length;
 
-    const storageUsedMB = bytesToMB(files.reduce((sum, f) => sum + f.size, 0));
-
+    const storageUsedMB = totalStorageMB(files);
+    const dauSum = dauLastWeek.reduce((sum, d) => sum + d.count, 0);
     const avgDailyUsers =
-      dauLastWeek.length > 0
-        ? Math.round(
-            dauLastWeek.reduce((sum, d) => sum + d.count, 0) /
-              dauLastWeek.length,
-          )
-        : 0;
+      dauLastWeek.length > 0 ? Math.round(dauSum / dauLastWeek.length) : 0;
 
     const engagementScore =
       totalMembers > 0
@@ -176,13 +224,14 @@ export const WorkspaceUsageQuery = {
     };
   },
 
+  // ── User Engagement ───────────────────────────────────────────────────────
+
   async getUserEngagement(
     workspaceId: string,
-    members: any[], // Pre-fetched
+    members: FetchedMember[],
     isAdmin: boolean,
+    dailyActiveUsers: Array<{ date: string; count: number }>,
   ): Promise<UserEngagementMetrics> {
-    const dailyActiveUsers = await this.getDailyActiveUsers(workspaceId, 7);
-
     if (!isAdmin) {
       return {
         activeUsers: { online: 0, thisWeek: 0, thisMonth: 0 },
@@ -193,9 +242,9 @@ export const WorkspaceUsageQuery = {
     }
 
     const now = new Date();
-    const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-    const oneMonthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-    const fourteenAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
+    const oneWeekAgo = nDaysAgo(7);
+    const oneMonthAgo = nDaysAgo(30);
+    const fourteenAgo = nDaysAgo(14);
 
     const activeThisWeek = members.filter(
       (m) => m.user.lastLoginAt && m.user.lastLoginAt >= oneWeekAgo,
@@ -239,22 +288,15 @@ export const WorkspaceUsageQuery = {
       }),
     ]);
 
-    const commentMap = new Map(
-      commentCounts.map((c) => [c.userId, c._count.userId]),
-    );
-    const taskMap = new Map(
-      tasksCounts.map((t) => [t.createdById, t._count.createdById]),
-    );
-    const assigneeMap = new Map(
-      assigneeCounts.map((a) => [a.userId, a._count.userId]),
-    );
+    const commentMap = new Map(commentCounts.map((c) => [c.userId, c._count.userId]));
+    const taskMap = new Map(tasksCounts.map((t) => [t.createdById, t._count.createdById]));
+    const assigneeMap = new Map(assigneeCounts.map((a) => [a.userId, a._count.userId]));
 
     const collaborationIndex = members
       .map((m) => {
         const commentsCount = commentMap.get(m.user.id) ?? 0;
         const tasksCreated = taskMap.get(m.user.id) ?? 0;
         const tasksAssigned = assigneeMap.get(m.user.id) ?? 0;
-
         return {
           userId: m.user.id,
           userName: m.user.name,
@@ -263,27 +305,23 @@ export const WorkspaceUsageQuery = {
           commentsCount,
           tasksCreated,
           tasksAssigned,
-          collaborationScore:
-            commentsCount * 3 + tasksCreated * 2 + tasksAssigned,
+          collaborationScore: commentsCount * 3 + tasksCreated * 2 + tasksAssigned,
         };
       })
       .sort((a, b) => b.collaborationScore - a.collaborationScore);
 
     return {
-      activeUsers: {
-        online: 0,
-        thisWeek: activeThisWeek,
-        thisMonth: activeThisMonth,
-      },
+      activeUsers: { online: 0, thisWeek: activeThisWeek, thisMonth: activeThisMonth },
       inactiveUsers,
       collaborationIndex,
       dailyActiveUsers,
     };
   },
 
+  // ── Feature Usage ─────────────────────────────────────────────────────────
+
   async getFeatureUsage(workspaceId: string): Promise<FeatureUsageMetrics> {
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const thirtyDaysAgo = nDaysAgo(30);
 
     const [
       tasksCreated,
@@ -291,35 +329,31 @@ export const WorkspaceUsageQuery = {
       timeEntriesLogged,
       filesUploaded,
       notifications,
+      commentsWithMentions,
     ] = await Promise.all([
-      prisma.task.count({
-        where: { workspaceId, createdAt: { gte: thirtyDaysAgo } },
-      }),
+      prisma.task.count({ where: { workspaceId, createdAt: { gte: thirtyDaysAgo } } }),
       prisma.comment.count({
         where: { task: { workspaceId }, createdAt: { gte: thirtyDaysAgo } },
       }),
       prisma.timeEntry.count({
         where: { task: { workspaceId }, startedAt: { gte: thirtyDaysAgo } },
       }),
-      prisma.file.count({
-        where: { workspaceId, uploadedAt: { gte: thirtyDaysAgo } },
-      }),
+      prisma.file.count({ where: { workspaceId, uploadedAt: { gte: thirtyDaysAgo } } }),
       prisma.notification.count({
         where: {
           user: { workspaceMembers: { some: { workspaceId } } },
           createdAt: { gte: thirtyDaysAgo },
         },
       }),
+      prisma.comment.findMany({
+        where: {
+          task: { workspaceId },
+          content: { contains: "@" },
+          createdAt: { gte: thirtyDaysAgo },
+        },
+        select: { content: true },
+      }),
     ]);
-
-    const commentsWithMentions = await prisma.comment.findMany({
-      where: {
-        task: { workspaceId },
-        content: { contains: "@" },
-        createdAt: { gte: thirtyDaysAgo },
-      },
-      select: { content: true },
-    });
 
     const mentionsUsed = commentsWithMentions.reduce(
       (sum, c) => sum + (c.content.match(/@\w+/g)?.length ?? 0),
@@ -336,20 +370,19 @@ export const WorkspaceUsageQuery = {
     };
   },
 
+  // ── Plan Limits ───────────────────────────────────────────────────────────
+
   async getPlanLimits(
-    workspaceId: string,
-    workspace: any, // Pre-fetched
-    memberCount: number, // Pre-calculated
-    files: any[], // Pre-fetched
+    workspace: FetchedWorkspace,
+    memberCount: number,
+    files: FetchedFile[],
+    projectCount: number,
   ): Promise<PlanLimitsMetrics> {
     if (!workspace) throw new Error("Workspace not found");
 
-    const projectCount = await prisma.project.count({ where: { workspaceId } });
-
-    const storageUsedMB = bytesToMB(files.reduce((sum, f) => sum + f.size, 0));
+    const storageUsedMB = totalStorageMB(files);
     const limits =
-      PLAN_LIMITS[workspace.plan as keyof typeof PLAN_LIMITS] ??
-      PLAN_LIMITS.FREE;
+      PLAN_LIMITS[workspace.plan as keyof typeof PLAN_LIMITS] ?? PLAN_LIMITS.FREE;
 
     return {
       currentPlan: workspace.plan,
@@ -364,11 +397,10 @@ export const WorkspaceUsageQuery = {
     };
   },
 
-  async getProjectActivity(
-    workspaceId: string,
-  ): Promise<ProjectActivityMetrics> {
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+  // ── Project Activity ──────────────────────────────────────────────────────
+
+  async getProjectActivity(workspaceId: string): Promise<ProjectActivityMetrics> {
+    const thirtyDaysAgo = nDaysAgo(30);
 
     const projects = await prisma.project.findMany({
       where: { workspaceId },
@@ -386,13 +418,16 @@ export const WorkspaceUsageQuery = {
     }
 
     const projectIds = projects.map((p) => p.id);
+
+    // Fetch tasks belonging to these projects (id → projectId lookup).
     const tasks = await prisma.task.findMany({
       where: { projectId: { in: projectIds } },
       select: { id: true, projectId: true },
     });
-    const taskProjectMap = new Map(tasks.map((t) => [t.id, t.projectId]));
+    const taskProjectMap = new Map(tasks.map((t) => [t.id, t.projectId!]));
 
-    const [commentsByProject, activitiesByProject] = await Promise.all([
+    // Aggregate comments & recent activity per project in parallel.
+    const [commentsByProject, activitiesByProject, lastActivities] = await Promise.all([
       prisma.comment
         .groupBy({
           by: ["taskId"],
@@ -400,18 +435,14 @@ export const WorkspaceUsageQuery = {
           _count: { id: true },
         })
         .then((counts) => {
-          const projectCommentMap = new Map<string, number>();
-          counts.forEach((c) => {
+          const map = new Map<string, number>();
+          for (const c of counts) {
             const projId = taskProjectMap.get(c.taskId);
-            if (projId) {
-              projectCommentMap.set(
-                projId,
-                (projectCommentMap.get(projId) || 0) + c._count.id,
-              );
-            }
-          });
-          return projectCommentMap;
+            if (projId) map.set(projId, (map.get(projId) ?? 0) + c._count.id);
+          }
+          return map;
         }),
+
       prisma.activity
         .groupBy({
           by: ["taskId"],
@@ -422,41 +453,35 @@ export const WorkspaceUsageQuery = {
           _count: { id: true },
         })
         .then((counts) => {
-          const projectActivityMap = new Map<string, number>();
-          counts.forEach((c) => {
+          const map = new Map<string, number>();
+          for (const c of counts) {
             if (c.taskId) {
               const projId = taskProjectMap.get(c.taskId);
-              if (projId) {
-                projectActivityMap.set(
-                  projId,
-                  (projectActivityMap.get(projId) || 0) + c._count.id,
-                );
-              }
+              if (projId) map.set(projId, (map.get(projId) ?? 0) + c._count.id);
             }
-          });
-          return projectActivityMap;
+          }
+          return map;
+        }),
+
+      // Most-recent activity per project: fetch ordered rows, take first per project.
+      prisma.activity
+        .findMany({
+          where: { task: { projectId: { in: projectIds } } },
+          select: { taskId: true, createdAt: true },
+          orderBy: { createdAt: "desc" },
+        })
+        .then((rows) => {
+          const map = new Map<string, Date>();
+          for (const { taskId, createdAt } of rows) {
+            if (!taskId) continue;
+            const projId = taskProjectMap.get(taskId);
+            if (projId && !map.has(projId)) map.set(projId, createdAt);
+          }
+          return map;
         }),
     ]);
 
-    const lastActivities = await prisma.activity
-      .findMany({
-        where: { task: { projectId: { in: projectIds } } },
-        select: { taskId: true, createdAt: true },
-        orderBy: { createdAt: "desc" },
-        distinct: ["taskId"],
-      })
-      .then((activities) => {
-        const projectLastActivityMap = new Map<string, Date>();
-        activities.forEach((a) => {
-          if (a.taskId) {
-            const projId = taskProjectMap.get(a.taskId);
-            if (projId && !projectLastActivityMap.has(projId)) {
-              projectLastActivityMap.set(projId, a.createdAt);
-            }
-          }
-        });
-        return projectLastActivityMap;
-      });
+    const now = new Date();
 
     const projectsWithScores = projects.map((p) => {
       const commentCount = commentsByProject.get(p.id) ?? 0;
@@ -467,12 +492,11 @@ export const WorkspaceUsageQuery = {
         id: p.id,
         name: p.name,
         color: p.color,
-        activityScore:
-          recentActivityCount * 5 + commentCount * 3 + p._count.tasks,
+        activityScore: recentActivityCount * 5 + commentCount * 3 + p._count.tasks,
         taskCount: p._count.tasks,
         commentCount,
         lastActivity,
-        daysSinceLastActivity: daysBetween(lastActivity, new Date()),
+        daysSinceLastActivity: daysBetween(lastActivity, now),
       };
     });
 
@@ -495,9 +519,11 @@ export const WorkspaceUsageQuery = {
     return { mostActive, lowActivity, tasksPerProjectTrend: [] };
   },
 
+  // ── Resource Usage ────────────────────────────────────────────────────────
+
   async getResourceUsage(
     workspaceId: string,
-    files: any[], // Pre-fetched
+    files: FetchedFile[],
     maxStorageMB: number,
   ): Promise<ResourceUsageMetrics> {
     const projects = await prisma.project.findMany({
@@ -505,47 +531,43 @@ export const WorkspaceUsageQuery = {
       select: { id: true, name: true },
     });
 
-    const filesByProject = new Map<string, typeof files>();
-    files.forEach((f) => {
+    // Group files by project.
+    const filesByProject = new Map<string, FetchedFile[]>();
+    for (const f of files) {
       if (f.projectId) {
-        if (!filesByProject.has(f.projectId)) {
-          filesByProject.set(f.projectId, []);
-        }
-        filesByProject.get(f.projectId)!.push(f);
+        const bucket = filesByProject.get(f.projectId) ?? [];
+        bucket.push(f);
+        filesByProject.set(f.projectId, bucket);
       }
-    });
+    }
 
-    const totalStorageMB = bytesToMB(files.reduce((sum, f) => sum + f.size, 0));
+    const usedMB = totalStorageMB(files);
 
     const storageByProject = projects
-      .map((p) => {
-        const projectFiles = filesByProject.get(p.id) || [];
-        const storageMB = bytesToMB(
-          projectFiles.reduce((s, f) => s + f.size, 0),
-        );
-        return {
-          projectId: p.id,
-          projectName: p.name,
-          storageUsedMB: storageMB,
-          fileCount: projectFiles.length,
-          percentage:
-            totalStorageMB > 0
-              ? Math.round((storageMB / totalStorageMB) * 100)
-              : 0,
-        };
+      .flatMap((p) => {
+        const projectFiles = filesByProject.get(p.id);
+        if (!projectFiles?.length) return [];
+        const storageMB = bytesToMB(projectFiles.reduce((s, f) => s + f.size, 0));
+        return [
+          {
+            projectId: p.id,
+            projectName: p.name,
+            storageUsedMB: storageMB,
+            fileCount: projectFiles.length,
+            percentage: usedMB > 0 ? Math.round((storageMB / usedMB) * 100) : 0,
+          },
+        ];
       })
-      .filter((p) => p.fileCount > 0)
       .sort((a, b) => b.storageUsedMB - a.storageUsedMB)
       .slice(0, 10);
 
-    // Group files by user
-    const filesByUserId = new Map<string, typeof files>();
-    files.forEach((f) => {
-      if (!filesByUserId.has(f.uploadedById)) {
-        filesByUserId.set(f.uploadedById, []);
-      }
-      filesByUserId.get(f.uploadedById)!.push(f);
-    });
+    // Group files by user.
+    const filesByUserId = new Map<string, FetchedFile[]>();
+    for (const f of files) {
+      const bucket = filesByUserId.get(f.uploadedById) ?? [];
+      bucket.push(f);
+      filesByUserId.set(f.uploadedById, bucket);
+    }
 
     const userIds = Array.from(filesByUserId.keys());
     const users = await prisma.user.findMany({
@@ -555,7 +577,7 @@ export const WorkspaceUsageQuery = {
 
     const filesByUser = users
       .map((u) => {
-        const userFiles = filesByUserId.get(u.id) || [];
+        const userFiles = filesByUserId.get(u.id) ?? [];
         return {
           userId: u.id,
           userName: u.name,
@@ -571,19 +593,18 @@ export const WorkspaceUsageQuery = {
       storageByProject,
       filesByUser,
       totalStorage: {
-        usedMB: totalStorageMB,
+        usedMB,
         totalMB: maxStorageMB,
-        percentage: Math.min(
-          100,
-          Math.round((totalStorageMB / maxStorageMB) * 100),
-        ),
+        percentage: Math.min(100, Math.round((usedMB / maxStorageMB) * 100)),
       },
     };
   },
 
+  // ── Workspace Load ────────────────────────────────────────────────────────
+
   async getWorkspaceLoad(
     workspaceId: string,
-    members: any[], // Pre-fetched
+    members: FetchedMember[],
     isAdmin: boolean,
   ): Promise<WorkspaceLoadMetrics> {
     if (!isAdmin) {
@@ -595,34 +616,39 @@ export const WorkspaceUsageQuery = {
     }
 
     const now = new Date();
-    const fourteenDaysOut = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
+    const fourteenDaysOut = nDaysFromNow(14);
 
-    const assigneeCounts = await prisma.taskAssignee.groupBy({
-      by: ["userId"],
-      where: {
-        task: { workspaceId, status: { notIn: ["COMPLETED", "CANCELLED"] } },
-      },
-      _count: { userId: true },
-    });
-
-    const overdueTaskCounts = await prisma.taskAssignee.groupBy({
-      by: ["userId"],
-      where: {
-        task: {
-          workspaceId,
-          status: { notIn: ["COMPLETED", "CANCELLED"] },
-          dueDate: { lt: now },
+    const [assigneeCounts, overdueTaskCounts, nearingProjects] = await Promise.all([
+      prisma.taskAssignee.groupBy({
+        by: ["userId"],
+        where: {
+          task: { workspaceId, status: { notIn: ["COMPLETED", "CANCELLED"] } },
         },
-      },
-      _count: { userId: true },
-    });
+        _count: { userId: true },
+      }),
+      prisma.taskAssignee.groupBy({
+        by: ["userId"],
+        where: {
+          task: {
+            workspaceId,
+            status: { notIn: ["COMPLETED", "CANCELLED"] },
+            dueDate: { lt: now },
+          },
+        },
+        _count: { userId: true },
+      }),
+      prisma.project.findMany({
+        where: {
+          workspaceId,
+          dueDate: { gte: now, lte: fourteenDaysOut },
+          status: { notIn: ["COMPLETED", "ARCHIVED"] },
+        },
+        include: { tasks: { select: { id: true, status: true } } },
+      }),
+    ]);
 
-    const assigneeMap = new Map(
-      assigneeCounts.map((a) => [a.userId, a._count.userId]),
-    );
-    const overdueMap = new Map(
-      overdueTaskCounts.map((a) => [a.userId, a._count.userId]),
-    );
+    const assigneeMap = new Map(assigneeCounts.map((a) => [a.userId, a._count.userId]));
+    const overdueMap = new Map(overdueTaskCounts.map((a) => [a.userId, a._count.userId]));
 
     const tasksPerUser = members
       .map((m) => {
@@ -649,21 +675,10 @@ export const WorkspaceUsageQuery = {
       })
       .sort((a, b) => b.activeTasks - a.activeTasks);
 
-    const nearingProjects = await prisma.project.findMany({
-      where: {
-        workspaceId,
-        dueDate: { gte: now, lte: fourteenDaysOut },
-        status: { notIn: ["COMPLETED", "ARCHIVED"] },
-      },
-      include: { tasks: { select: { id: true, status: true } } },
-    });
-
     const projectsNearingDeadlines = nearingProjects
       .map((p) => {
         const total = p.tasks.length;
-        const completed = p.tasks.filter(
-          (t) => t.status === "COMPLETED",
-        ).length;
+        const completed = p.tasks.filter((t) => t.status === "COMPLETED").length;
         return {
           projectId: p.id,
           projectName: p.name,
@@ -671,8 +686,7 @@ export const WorkspaceUsageQuery = {
           daysRemaining: Math.ceil(
             (p.dueDate!.getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
           ),
-          completionPercentage:
-            total > 0 ? Math.round((completed / total) * 100) : 0,
+          completionPercentage: total > 0 ? Math.round((completed / total) * 100) : 0,
           status: p.status,
         };
       })
@@ -685,81 +699,75 @@ export const WorkspaceUsageQuery = {
     };
   },
 
-  async getWorkspaceGrowth(
-    workspaceId: string,
-  ): Promise<WorkspaceGrowthMetrics> {
+  // ── Workspace Growth ──────────────────────────────────────────────────────
+
+  async getWorkspaceGrowth(workspaceId: string): Promise<WorkspaceGrowthMetrics> {
     const now = new Date();
     const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-
-    const [newUsers, newProjects, newTasks] = await Promise.all([
-      prisma.workspaceMember.count({
-        where: { workspaceId, joinedAt: { gte: firstDayOfMonth } },
-      }),
-      prisma.project.count({
-        where: { workspaceId, createdAt: { gte: firstDayOfMonth } },
-      }),
-      prisma.task.count({
-        where: { workspaceId, createdAt: { gte: firstDayOfMonth } },
-      }),
-    ]);
-
     const monthRanges = getMonthRange(6);
     const trendWindowStart = monthRanges[0]?.start ?? firstDayOfMonth;
     const trendWindowEnd = monthRanges[monthRanges.length - 1]?.end ?? now;
 
-    const [memberRows, projectRows, taskRows, lifecycleRows] = await Promise.all([
-      prisma.workspaceMember.findMany({
-        where: {
-          workspaceId,
-          joinedAt: { gte: trendWindowStart, lte: trendWindowEnd },
-        },
-        select: { joinedAt: true },
-      }),
-      prisma.project.findMany({
-        where: {
-          workspaceId,
-          createdAt: { gte: trendWindowStart, lte: trendWindowEnd },
-        },
-        select: { createdAt: true },
-      }),
-      prisma.task.findMany({
-        where: {
-          workspaceId,
-          createdAt: { gte: trendWindowStart, lte: trendWindowEnd },
-        },
-        select: { createdAt: true },
-      }),
-      prisma.project.groupBy({
-        by: ["status"],
-        where: { workspaceId, status: { in: ["ACTIVE", "COMPLETED", "ARCHIVED"] } },
-        _count: { status: true },
-      }),
-    ]);
+    const [newUsers, newProjects, newTasks, memberRows, projectRows, taskRows, lifecycleRows] =
+      await Promise.all([
+        prisma.workspaceMember.count({
+          where: { workspaceId, joinedAt: { gte: firstDayOfMonth } },
+        }),
+        prisma.project.count({
+          where: { workspaceId, createdAt: { gte: firstDayOfMonth } },
+        }),
+        prisma.task.count({
+          where: { workspaceId, createdAt: { gte: firstDayOfMonth } },
+        }),
+        prisma.workspaceMember.findMany({
+          where: {
+            workspaceId,
+            joinedAt: { gte: trendWindowStart, lte: trendWindowEnd },
+          },
+          select: { joinedAt: true },
+        }),
+        prisma.project.findMany({
+          where: {
+            workspaceId,
+            createdAt: { gte: trendWindowStart, lte: trendWindowEnd },
+          },
+          select: { createdAt: true },
+        }),
+        prisma.task.findMany({
+          where: {
+            workspaceId,
+            createdAt: { gte: trendWindowStart, lte: trendWindowEnd },
+          },
+          select: { createdAt: true },
+        }),
+        prisma.project.groupBy({
+          by: ["status"],
+          where: {
+            workspaceId,
+            status: { in: ["ACTIVE", "COMPLETED", "ARCHIVED"] },
+          },
+          _count: { status: true },
+        }),
+      ]);
 
-    const trend = monthRanges.map(({ start, end, label }) => {
-      const users = memberRows.filter(
-        (row) => row.joinedAt >= start && row.joinedAt <= end,
-      ).length;
-      const projects = projectRows.filter(
-        (row) => row.createdAt >= start && row.createdAt <= end,
-      ).length;
-      const tasks = taskRows.filter(
-        (row) => row.createdAt >= start && row.createdAt <= end,
-      ).length;
-      return { month: label, users, projects, tasks };
-    });
+    const trend = monthRanges.map(({ start, end, label }) => ({
+      month: label,
+      users: memberRows.filter((r) => r.joinedAt >= start && r.joinedAt <= end).length,
+      projects: projectRows.filter((r) => r.createdAt >= start && r.createdAt <= end).length,
+      tasks: taskRows.filter((r) => r.createdAt >= start && r.createdAt <= end).length,
+    }));
 
-    const lifecycleMap = new Map(
-      lifecycleRows.map((row) => [row.status, row._count.status]),
-    );
-    const active = lifecycleMap.get("ACTIVE") ?? 0;
-    const completed = lifecycleMap.get("COMPLETED") ?? 0;
-    const archived = lifecycleMap.get("ARCHIVED") ?? 0;
+    const lifecycleMap = new Map(lifecycleRows.map((r) => [r.status, r._count.status]));
 
     return {
       thisMonth: { newUsers, newProjects, newTasks },
       trend,
-      projectLifecycle: { created: newProjects, active, completed, archived },
+      projectLifecycle: {
+        created: newProjects,
+        active: lifecycleMap.get("ACTIVE") ?? 0,
+        completed: lifecycleMap.get("COMPLETED") ?? 0,
+        archived: lifecycleMap.get("ARCHIVED") ?? 0,
+      },
     };
   },
 };
