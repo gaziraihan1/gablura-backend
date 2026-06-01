@@ -5,7 +5,7 @@
 
 */
 -- DropTable
-DROP TABLE "AuditLog";
+DROP TABLE IF EXISTS "AuditLog";
 
 -- CreateTable
 CREATE TABLE "SubscribeList" (
