@@ -4,6 +4,7 @@ export function calculateProjectStats(project: ProjectForStats): ProjectStats {
   const now = new Date();
 
   let completedTasks  = 0;
+  let inProgressTasks = 0;
   let overdueTasks    = 0;
   const completedAssignees: Array<{
     id: string; name: string | null; email: string; image: string | null;
@@ -11,6 +12,7 @@ export function calculateProjectStats(project: ProjectForStats): ProjectStats {
 
   for (const task of project.tasks) {
     const isCompleted = task.status === 'COMPLETED';
+    const isInProgress = task.status === 'IN_PROGRESS';
     const isOverdue   = !!task.dueDate && new Date(task.dueDate) < now && !isCompleted;
 
     if (isCompleted) {
@@ -18,6 +20,9 @@ export function calculateProjectStats(project: ProjectForStats): ProjectStats {
       for (const a of task.assignees) {
         completedAssignees.push(a.user);
       }
+    }
+    if (isInProgress) {
+      inProgressTasks++;
     }
 
     if (isOverdue) overdueTasks++;
@@ -43,6 +48,7 @@ export function calculateProjectStats(project: ProjectForStats): ProjectStats {
   return {
     totalTasks:    project._count.tasks,
     completedTasks,
+    inProgressTasks,
     overdueTasks,
     totalMembers:  project._count.members,
     projectDays,

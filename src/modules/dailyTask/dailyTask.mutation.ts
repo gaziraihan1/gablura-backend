@@ -1,9 +1,9 @@
-
-import { prisma } from '../../lib/prisma.js';
+import { prisma }          from '../../lib/prisma.js';
 import type { AddDailyTaskParams, RemoveDailyTaskParams, ClearExpiredResult } from './dailyTask.types.js';
 import { taskFullInclude } from './dailyTask.selects.js';
 import { DailyTaskAccess } from './dailyTask.access.js';
 import { DailyTaskActivity } from './dailyTask.activity.js';
+import { BadRequestError, ConflictError, NotFoundError } from '../../errors/index.js';
 
 function dayBounds(date: Date): { start: Date; end: Date } {
   const start = new Date(date);
@@ -14,42 +14,33 @@ function dayBounds(date: Date): { start: Date; end: Date } {
 
 export const DailyTaskMutation = {
   async addDailyTask(params: AddDailyTaskParams) {
-    const date          = params.date ?? new Date();
+    const date           = params.date ?? new Date();
     const { start, end } = dayBounds(date);
 
     const task = await DailyTaskAccess.assertTaskAccess(params.userId, params.taskId);
 
     if (task.status === 'COMPLETED') {
-      throw new Error('Cannot add a completed task to daily tasks');
+      throw new BadRequestError('Cannot add a completed task to daily tasks');
     }
 
     if (params.type === 'PRIMARY') {
       const existingPrimary = await prisma.dailyTask.findFirst({
-        where: {
-          userId: params.userId,
-          type:   'PRIMARY',
-          date:   { gte: start, lt: end },
-        },
+        where: { userId: params.userId, type: 'PRIMARY', date: { gte: start, lt: end } },
       });
-
       if (existingPrimary) {
-        throw new Error(
+        throw new ConflictError(
           'You already have a primary task for today. Remove it first or choose secondary.',
+          'PRIMARY_TASK_CONFLICT',
         );
       }
     }
 
     const existing = await prisma.dailyTask.findFirst({
-      where: {
-        userId: params.userId,
-        taskId: params.taskId,
-        date:   { gte: start, lt: end },
-      },
+      where: { userId: params.userId, taskId: params.taskId, date: { gte: start, lt: end } },
     });
 
     if (existing) {
       if (existing.type === params.type) return existing;
-
       return prisma.dailyTask.update({
         where:   { id: existing.id },
         data:    { type: params.type },
@@ -58,12 +49,7 @@ export const DailyTaskMutation = {
     }
 
     const dailyTask = await prisma.dailyTask.create({
-      data: {
-        userId: params.userId,
-        taskId: params.taskId,
-        type:   params.type,
-        date:   start,
-      },
+      data:    { userId: params.userId, taskId: params.taskId, type: params.type, date: start },
       include: { task: { include: taskFullInclude } },
     });
 
@@ -86,25 +72,13 @@ export const DailyTaskMutation = {
     const { start, end } = dayBounds(date);
 
     const dailyTask = await prisma.dailyTask.findFirst({
-      where: {
-        userId: params.userId,
-        taskId: params.taskId,
-        date:   { gte: start, lt: end },
-      },
+      where: { userId: params.userId, taskId: params.taskId, date: { gte: start, lt: end } },
       include: {
-        task: {
-          include: {
-            project: {
-              select: { workspace: { select: { id: true } } },
-            },
-          },
-        },
+        task: { include: { project: { select: { workspace: { select: { id: true } } } } } },
       },
     });
 
-    if (!dailyTask) {
-      throw new Error('Daily task not found');
-    }
+    if (!dailyTask) throw new NotFoundError('Daily task');
 
     await prisma.dailyTask.delete({ where: { id: dailyTask.id } });
 
@@ -123,11 +97,7 @@ export const DailyTaskMutation = {
   async clearExpiredDailyTasks(): Promise<ClearExpiredResult> {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-
-    const result = await prisma.dailyTask.deleteMany({
-      where: { date: { lt: today } },
-    });
-
+    const result = await prisma.dailyTask.deleteMany({ where: { date: { lt: today } } });
     return { deletedCount: result.count };
   },
 };

@@ -90,24 +90,26 @@ function buildProjectFilter(
   userId: string,
   projectId: string | null | undefined,
 ) {
-  // Specific project requested
+  // Specific project requested — return only that project's announcements
   if (projectId !== undefined) {
-    return {
-      projectId,
-    };
+    return { projectId };
   }
 
-  // All announcements
+  // Workspace-level query:
+  // 1. Workspace-wide announcements (no project)
+  // 2. PUBLIC announcements from any project (all workspace members can see these)
+  // 3. PRIVATE announcements from projects where this user is a member
   return {
     OR: [
       { projectId: null },
       {
         projectId: { not: null },
-        project: {
-          members: {
-            some: { userId },
-          },
-        },
+        visibility: 'PUBLIC' as const,
+      },
+      {
+        projectId: { not: null },
+        visibility: 'PRIVATE' as const,
+        project: { members: { some: { userId } } },
       },
     ],
   };

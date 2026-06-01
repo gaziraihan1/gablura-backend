@@ -10,92 +10,63 @@ import type {
   AnnouncementFilterParams,
 } from './announcement.types.js';
 import { WorkspaceRole } from '../workspace/workspace.types.js';
-import { prisma } from '../../lib/prisma.js';
+import { prisma }        from '../../lib/prisma.js';
+import { NotFoundError, ForbiddenError, BadRequestError } from '../../errors/index.js';
 
 type OnAnnouncementCreated = (data: {
   announcement: any;
-  workspaceId: string;
-  creatorName: string;
+  workspaceId:  string;
+  creatorName:  string;
 }) => Promise<void>;
 
 type OnAnnouncementDeleted = (data: {
   announcement: any;
-  workspaceId: string;
+  workspaceId:  string;
 }) => Promise<void>;
 
 export const AnnouncementService = {
-  async create(
-    input: CreateAnnouncementInput,
-    onCreated?: OnAnnouncementCreated,
-  ) {
+  async create(input: CreateAnnouncementInput, onCreated?: OnAnnouncementCreated) {
     const member = await AnnouncementRepository.isWorkspaceMember(
       input.workspaceId,
       input.createdById,
     );
-
-    if (!member) {
-      throw new Error('FORBIDDEN: You are not a member of this workspace');
-    }
+    if (!member) throw new ForbiddenError('You are not a member of this workspace');
 
     const workspaceRole = member.role as WorkspaceRole;
 
-    // ── PROJECT VALIDATION (FIXED) ─────────────────────────────
     if (input.projectId) {
       const project = await prisma.project.findFirst({
-        where: {
-          id: input.projectId,
-          workspaceId: input.workspaceId,
-        },
+        where:  { id: input.projectId, workspaceId: input.workspaceId },
         select: { id: true },
       });
-
-      if (!project) {
-        throw new Error('BAD_REQUEST: Invalid project for workspace');
-      }
+      if (!project) throw new BadRequestError('Invalid project for workspace');
 
       const projectMember = await AnnouncementRepository.isProjectMember(
         input.projectId,
         input.createdById,
       );
-
-      const projectRole = projectMember?.role ?? null;
-
-      if (
-        !canManageProjectAnnouncements(workspaceRole, projectRole)
-      ) {
-        throw new Error(
-          'FORBIDDEN: Not allowed to create project announcements',
-        );
+      if (!canManageProjectAnnouncements(workspaceRole, projectMember?.role ?? null)) {
+        throw new ForbiddenError('Not allowed to create project announcements');
       }
     } else {
       if (!canManageAnnouncements(workspaceRole)) {
-        throw new Error(
-          'FORBIDDEN: Only admins and owners can create workspace announcements',
-        );
+        throw new ForbiddenError('Only admins and owners can create workspace announcements');
       }
     }
 
-    // ── PRIVATE TARGET VALIDATION (FIXED) ───────────────────────
     if (input.visibility === 'PRIVATE') {
       if (!input.targetIds || input.targetIds.length === 0) {
-        throw new Error('BAD_REQUEST: Private announcements must have targets');
+        throw new BadRequestError('Private announcements must have targets');
       }
 
       const checks = await Promise.all(
         input.targetIds.map((uid) =>
-          AnnouncementRepository.isWorkspaceMember(
-            input.workspaceId,
-            uid,
-          ),
+          AnnouncementRepository.isWorkspaceMember(input.workspaceId, uid),
         ),
       );
-
       const invalid = input.targetIds.filter((_, i) => !checks[i]);
-
       if (invalid.length) {
-        throw new Error(
-          'BAD_REQUEST: Some target users are not workspace members',
-        );
+        throw new BadRequestError('Some target users are not workspace members');
       }
     }
 
@@ -115,41 +86,23 @@ export const AnnouncementService = {
       params.workspaceId,
       params.userId,
     );
-
-    if (!member) {
-      throw new Error('FORBIDDEN: You are not a member of this workspace');
-    }
+    if (!member) throw new ForbiddenError('You are not a member of this workspace');
 
     const workspaceRole = member.role as WorkspaceRole;
 
-    // ── PROJECT ACCESS FIXED ─────────────────────────────
     if (params.projectId !== undefined) {
       const project = await prisma.project.findFirst({
-        where: {
-          id: params.projectId!!,
-          workspaceId: params.workspaceId,
-        },
+        where:  { id: params.projectId!, workspaceId: params.workspaceId },
         select: { id: true },
       });
-
-      if (!project) {
-        throw new Error('FORBIDDEN: Invalid project access');
-      }
+      if (!project) throw new ForbiddenError('Invalid project access');
 
       const projectMember = await AnnouncementRepository.isProjectMember(
-        params.projectId!!,
+        params.projectId!,
         params.userId,
       );
-
-      const projectRole = projectMember?.role ?? null;
-
-      if (
-        !canManageProjectAnnouncements(workspaceRole, projectRole) &&
-        !projectMember
-      ) {
-        throw new Error(
-          'FORBIDDEN: You are not a member of this project',
-        );
+      if (!canManageProjectAnnouncements(workspaceRole, projectMember?.role ?? null) && !projectMember) {
+        throw new ForbiddenError('You are not a member of this project');
       }
     }
 
@@ -158,39 +111,24 @@ export const AnnouncementService = {
 
   async getOne(id: string, userId: string) {
     const announcement = await AnnouncementRepository.findById(id);
-
-    if (!announcement) {
-      throw new Error('NOT_FOUND: Announcement not found');
-    }
+    if (!announcement) throw new NotFoundError('Announcement');
 
     if (!canViewAnnouncement(announcement, userId)) {
-      throw new Error(
-        'FORBIDDEN: You do not have access to this announcement',
-      );
+      throw new ForbiddenError('You do not have access to this announcement');
     }
 
     return announcement;
   },
 
-  async delete(
-    id: string,
-    userId: string,
-    onDeleted?: OnAnnouncementDeleted,
-  ) {
+  async delete(id: string, userId: string, onDeleted?: OnAnnouncementDeleted) {
     const announcement = await AnnouncementRepository.findById(id);
-
-    if (!announcement) {
-      throw new Error('NOT_FOUND: Announcement not found');
-    }
+    if (!announcement) throw new NotFoundError('Announcement');
 
     const member = await AnnouncementRepository.isWorkspaceMember(
       announcement.workspaceId,
       userId,
     );
-
-    if (!member) {
-      throw new Error('FORBIDDEN: Not a workspace member');
-    }
+    if (!member) throw new ForbiddenError('Not a workspace member');
 
     const workspaceRole = member.role as WorkspaceRole;
 
@@ -199,50 +137,29 @@ export const AnnouncementService = {
         announcement.projectId,
         userId,
       );
-
-      if (
-        !canManageProjectAnnouncements(
-          workspaceRole,
-          projectMember?.role ?? null,
-        )
-      ) {
-        throw new Error(
-          'FORBIDDEN: Not allowed to delete project announcements',
-        );
+      if (!canManageProjectAnnouncements(workspaceRole, projectMember?.role ?? null)) {
+        throw new ForbiddenError('Not allowed to delete project announcements');
       }
     } else {
       if (!canManageAnnouncements(workspaceRole)) {
-        throw new Error(
-          'FORBIDDEN: Only admins and owners can delete announcements',
-        );
+        throw new ForbiddenError('Only admins and owners can delete announcements');
       }
     }
 
     await AnnouncementRepository.delete(id);
 
-    onDeleted?.({
-      announcement,
-      workspaceId: announcement.workspaceId,
-    }).catch(() => {});
-
-    return { success: true };
+    onDeleted?.({ announcement, workspaceId: announcement.workspaceId }).catch(() => {});
   },
 
   async togglePin(id: string, userId: string) {
     const announcement = await AnnouncementRepository.findById(id);
-
-    if (!announcement) {
-      throw new Error('NOT_FOUND: Announcement not found');
-    }
+    if (!announcement) throw new NotFoundError('Announcement');
 
     const member = await AnnouncementRepository.isWorkspaceMember(
       announcement.workspaceId,
       userId,
     );
-
-    if (!member) {
-      throw new Error('FORBIDDEN: Not a workspace member');
-    }
+    if (!member) throw new ForbiddenError('Not a workspace member');
 
     const workspaceRole = member.role as WorkspaceRole;
 
@@ -251,27 +168,15 @@ export const AnnouncementService = {
         announcement.projectId,
         userId,
       );
-
-      if (
-        !canManageProjectAnnouncements(
-          workspaceRole,
-          projectMember?.role ?? null,
-        )
-      ) {
-        throw new Error(
-          'FORBIDDEN: Not allowed to pin project announcements',
-        );
+      if (!canManageProjectAnnouncements(workspaceRole, projectMember?.role ?? null)) {
+        throw new ForbiddenError('Not allowed to pin project announcements');
       }
     } else {
       if (!canManageAnnouncements(workspaceRole)) {
-        throw new Error(
-          'FORBIDDEN: Only admins and owners can pin announcements',
-        );
+        throw new ForbiddenError('Only admins and owners can pin announcements');
       }
     }
 
-    return AnnouncementRepository.update(id, {
-      isPinned: !announcement.isPinned,
-    });
+    return AnnouncementRepository.update(id, { isPinned: !announcement.isPinned });
   },
 };

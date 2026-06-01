@@ -1,5 +1,5 @@
-
 import { prisma } from '../../lib/prisma.js';
+import { NotFoundError, ForbiddenError } from '../../errors/index.js';
 
 export const ActivityAccess = {
   async canAccessWorkspace(userId: string, workspaceId: string): Promise<boolean> {
@@ -12,7 +12,6 @@ export const ActivityAccess = {
         ],
       },
     });
-
     return !!workspace;
   },
 
@@ -36,7 +35,6 @@ export const ActivityAccess = {
         ],
       },
     });
-
     return !!task;
   },
 
@@ -46,18 +44,10 @@ export const ActivityAccess = {
         id: workspaceId,
         OR: [
           { ownerId: userId },
-          {
-            members: {
-              some: {
-                userId,
-                role: { in: ['OWNER', 'ADMIN'] },
-              },
-            },
-          },
+          { members: { some: { userId, role: { in: ['OWNER', 'ADMIN'] } } } },
         ],
       },
     });
-
     return !!workspace;
   },
 
@@ -66,9 +56,7 @@ export const ActivityAccess = {
       where: { id: activityId },
     });
 
-    if (!activity) {
-      throw new Error('Activity not found');
-    }
+    if (!activity) throw new NotFoundError('Activity');
 
     if (activity.userId === callerId) return;
 
@@ -77,6 +65,6 @@ export const ActivityAccess = {
       if (isAdmin) return;
     }
 
-    throw new Error('You do not have permission to delete this activity');
+    throw new ForbiddenError('You do not have permission to delete this activity');
   },
 };

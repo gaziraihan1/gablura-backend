@@ -1,9 +1,8 @@
-
-import type { Response } from 'express';
-import { z } from 'zod';
+import type { Response }   from 'express';
 import type { AuthRequest } from '../../middleware/auth.js';
 import { DailyTaskQuery }    from './dailyTask.query.js';
 import { DailyTaskMutation } from './dailyTask.mutation.js';
+import { asyncHandler, ValidationError } from '../../errors/index.js';
 import {
   getDailyTasksSchema,
   addDailyTaskSchema,
@@ -11,124 +10,80 @@ import {
   dailyTaskStatsSchema,
 } from './dailyTask.validators.js';
 
-function mapErrorToStatus(message: string): number {
-  if (message.includes('already have a primary task'))              return 409;
-  if (message.includes('not found'))                                return 404;
-  if (message.includes('do not have access'))                       return 404;
-  if (message.includes('completed task'))                           return 400;
-  return 500;
-}
+export const getDailyTasks = asyncHandler(async (req: AuthRequest, res: Response) => {
+  const parsed = getDailyTasksSchema.safeParse(req.query);
+  if (!parsed.success) throw new ValidationError('Validation error', parsed.error.issues);
 
-function handleError(res: Response, label: string, error: unknown): void {
-  if (error instanceof z.ZodError) {
-    res.status(400).json({ success: false, message: 'Validation error', errors: error.issues });
-    return;
-  }
+  const targetDate = parsed.data.date ?? new Date();
+  const result     = await DailyTaskQuery.getDailyTasks({ userId: req.user!.id, date: targetDate });
 
-  if (error instanceof Error) {
-    const status = mapErrorToStatus(error.message);
-    res.status(status).json({ success: false, message: error.message });
-    return;
-  }
+  res.json({
+    success: true,
+    data: {
+      date:           targetDate,
+      primaryTask:    result.primaryTask?.task   ?? null,
+      secondaryTasks: result.secondaryTasks.map((dt) => dt.task),
+    },
+  });
+});
 
-  res.status(500).json({ success: false, message: `Failed to ${label}` });
-}
+export const addDailyTask = asyncHandler(async (req: AuthRequest, res: Response) => {
+  const parsed = addDailyTaskSchema.safeParse(req.body);
+  if (!parsed.success) throw new ValidationError('Validation error', parsed.error.issues);
 
-export const getDailyTasks = async (req: AuthRequest, res: Response) => {
-  try {
-    const { date } = getDailyTasksSchema.parse(req.query);
-    const targetDate = date ?? new Date();
+  const { taskId, type, date } = parsed.data;
+  const targetDate = date ?? new Date();
 
-    const result = await DailyTaskQuery.getDailyTasks({
-      userId: req.user!.id,
-      date:   targetDate,
-    });
+  const dailyTask = await DailyTaskMutation.addDailyTask({
+    userId: req.user!.id,
+    taskId,
+    type,
+    date: targetDate,
+  });
 
-    res.json({
-      success: true,
-      data: {
-        date:           targetDate,
-        primaryTask:    result.primaryTask?.task   ?? null,
-        secondaryTasks: result.secondaryTasks.map((dt) => dt.task),
-      },
-    });
-  } catch (error) {
-    handleError(res, 'fetch daily tasks', error);
-  }
-};
+  res.status(201).json({
+    success: true,
+    message: `Task added to ${type.toLowerCase()} tasks`,
+    data:    dailyTask,
+  });
+});
 
-export const addDailyTask = async (req: AuthRequest, res: Response) => {
-  try {
-    const { taskId, type, date } = addDailyTaskSchema.parse(req.body);
-    const targetDate = date ?? new Date();
+export const removeDailyTask = asyncHandler(async (req: AuthRequest, res: Response) => {
+  const parsed = removeDailyTaskSchema.safeParse(req.query);
+  if (!parsed.success) throw new ValidationError('Validation error', parsed.error.issues);
 
-    const dailyTask = await DailyTaskMutation.addDailyTask({
-      userId: req.user!.id,
-      taskId,
-      type,
-      date: targetDate,
-    });
+  const targetDate = parsed.data.date ?? new Date();
 
-    res.status(201).json({
-      success: true,
-      message: `Task added to ${type.toLowerCase()} tasks`,
-      data:    dailyTask,
-    });
-  } catch (error) {
-    handleError(res, 'add daily task', error);
-  }
-};
+  await DailyTaskMutation.removeDailyTask({
+    userId: req.user!.id,
+    taskId: req.params.taskId,
+    date:   targetDate,
+  });
 
-export const removeDailyTask = async (req: AuthRequest, res: Response) => {
-  try {
-    const { taskId }  = req.params;
-    const { date }    = removeDailyTaskSchema.parse(req.query);
-    const targetDate  = date ?? new Date();
+  res.json({ success: true, message: 'Daily task removed successfully' });
+});
 
-    await DailyTaskMutation.removeDailyTask({
-      userId: req.user!.id,
-      taskId,
-      date: targetDate,
-    });
+export const clearExpiredDailyTasks = asyncHandler(async (req: AuthRequest, res: Response) => {
+  const result = await DailyTaskMutation.clearExpiredDailyTasks();
+  res.json({
+    success: true,
+    message: `Cleared ${result.deletedCount} expired daily tasks`,
+    data:    result,
+  });
+});
 
-    res.json({ success: true, message: 'Daily task removed successfully' });
-  } catch (error) {
-    handleError(res, 'remove daily task', error);
-  }
-};
+export const getDailyTaskStats = asyncHandler(async (req: AuthRequest, res: Response) => {
+  const parsed = dailyTaskStatsSchema.safeParse(req.query);
+  if (!parsed.success) throw new ValidationError('Validation error', parsed.error.issues);
 
-export const clearExpiredDailyTasks = async (req: AuthRequest, res: Response) => {
-  try {
-    const result = await DailyTaskMutation.clearExpiredDailyTasks();
+  const end   = parsed.data.endDate   ?? new Date();
+  const start = parsed.data.startDate ?? new Date(end.getTime() - 30 * 24 * 60 * 60 * 1000);
 
-    res.json({
-      success: true,
-      message: `Cleared ${result.deletedCount} expired daily tasks`,
-      data:    result,
-    });
-  } catch (error) {
-    handleError(res, 'clear expired daily tasks', error);
-  }
-};
+  const stats = await DailyTaskQuery.getDailyTaskStats({
+    userId:    req.user!.id,
+    startDate: start,
+    endDate:   end,
+  });
 
-export const getDailyTaskStats = async (req: AuthRequest, res: Response) => {
-  try {
-    const { startDate, endDate } = dailyTaskStatsSchema.parse(req.query);
-
-    const end   = endDate   ?? new Date();
-    const start = startDate ?? new Date(end.getTime() - 30 * 24 * 60 * 60 * 1000);
-
-    const stats = await DailyTaskQuery.getDailyTaskStats({
-      userId:    req.user!.id,
-      startDate: start,
-      endDate:   end,
-    });
-
-    res.json({
-      success: true,
-      data: { ...stats, startDate: start, endDate: end },
-    });
-  } catch (error) {
-    handleError(res, 'fetch daily task statistics', error);
-  }
-};
+  res.json({ success: true, data: { ...stats, startDate: start, endDate: end } });
+});

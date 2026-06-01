@@ -1273,6 +1273,9 @@ model JobPosting {
 model TemplateList {
   email             String         @unique
 }
+model SubscribeList {
+  email             String         @unique
+}
 
 enum JobDepartment {
   ENGINEERING

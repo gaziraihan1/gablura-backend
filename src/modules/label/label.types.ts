@@ -1,36 +1,3 @@
-// ─── Error classes ────────────────────────────────────────────────────────────
-
-export class LabelError extends Error {
-  constructor(message: string, public readonly code: string) {
-    super(message);
-    this.name = 'LabelError';
-  }
-}
-
-export class UnauthorizedError extends LabelError {
-  constructor(message = 'Unauthorized access') {
-    super(message, 'UNAUTHORIZED');
-  }
-}
-
-export class NotFoundError extends LabelError {
-  constructor(message = 'Resource not found') {
-    super(message, 'NOT_FOUND');
-  }
-}
-
-export class ValidationError extends LabelError {
-  constructor(message: string) {
-    super(message, 'VALIDATION_ERROR');
-  }
-}
-
-export class ConflictError extends LabelError {
-  constructor(message: string) {
-    super(message, 'CONFLICT');
-  }
-}
-
 // ─── DTOs ─────────────────────────────────────────────────────────────────────
 
 export interface CreateLabelDto {
@@ -50,8 +17,8 @@ export interface UpdateLabelDto {
 // ─── Pagination ───────────────────────────────────────────────────────────────
 
 export interface PaginationParams {
-  page?:  number; // 1-based, default 1
-  limit?: number; // default 20, max 100
+  page?:  number;
+  limit?: number;
 }
 
 export interface PaginationMeta {
@@ -76,7 +43,6 @@ export interface LabelFilters extends PaginationParams {
 
 export interface PopularLabelsFilters extends PaginationParams {
   workspaceId?: string;
-  /** Kept for backward-compat — maps to `limit` in PaginationParams. */
   limit?: number;
 }
 

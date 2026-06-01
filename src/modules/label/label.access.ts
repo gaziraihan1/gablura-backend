@@ -1,9 +1,5 @@
-import { prisma } from '../../lib/prisma.js';
-import {
-  NotFoundError,
-  UnauthorizedError,
-  ConflictError,
-} from './label.types.js';
+import { prisma }                              from '../../lib/prisma.js';
+import { NotFoundError, ForbiddenError, ConflictError } from '../../errors/index.js';
 
 interface LabelForPermission {
   createdById: string;
@@ -17,15 +13,15 @@ export const LabelAccess = {
       include: { workspace: true },
     });
 
-    if (!label) throw new NotFoundError('Label not found');
+    if (!label) throw new NotFoundError('Label');
 
     if (label.workspaceId) {
       const member = await prisma.workspaceMember.findFirst({
         where: { workspaceId: label.workspaceId, userId },
       });
-      if (!member) throw new UnauthorizedError('Access denied');
+      if (!member) throw new ForbiddenError('Access denied');
     } else if (label.createdById !== userId) {
-      throw new UnauthorizedError('Access denied');
+      throw new ForbiddenError('Access denied');
     }
 
     return label;
@@ -39,13 +35,11 @@ export const LabelAccess = {
         where:  { id: label.workspaceId },
         select: { ownerId: true },
       });
-
       if (workspace?.ownerId === userId) return true;
 
       const adminMember = await prisma.workspaceMember.findFirst({
         where: { workspaceId: label.workspaceId, userId, role: 'ADMIN' },
       });
-
       return !!adminMember;
     }
 
@@ -53,9 +47,9 @@ export const LabelAccess = {
   },
 
   async assertNoDuplicateName(
-    name:           string,
-    workspaceId:    string | null | undefined,
-    createdById:    string,
+    name:            string,
+    workspaceId:     string | null | undefined,
+    createdById:     string,
     excludeLabelId?: string,
   ): Promise<void> {
     const where: Record<string, unknown> = {
@@ -69,12 +63,9 @@ export const LabelAccess = {
       where.createdById = createdById;
     }
 
-    if (excludeLabelId) {
-      where.id = { not: excludeLabelId };
-    }
+    if (excludeLabelId) where.id = { not: excludeLabelId };
 
     const existing = await prisma.label.findFirst({ where });
-
     if (existing) {
       const scope = workspaceId ? 'workspace' : 'your personal labels';
       throw new ConflictError(`Label with this name already exists in ${scope}`);
@@ -89,32 +80,18 @@ export const LabelAccess = {
           { createdById: userId },
           { assignees: { some: { userId } } },
           { project: { workspace: { ownerId: userId } } },
-          {
-            project: {
-              workspace: {
-                members: { some: { userId, role: 'ADMIN' } },
-              },
-            },
-          },
-          {
-            project: {
-              members: { some: { userId } },
-            },
-          },
+          { project: { workspace: { members: { some: { userId, role: 'ADMIN' } } } } },
+          { project: { members: { some: { userId } } } },
         ],
       },
       select: { id: true },
     });
 
-    if (!task) throw new NotFoundError('Task not found or access denied');
-
+    if (!task) throw new NotFoundError('Task', 'TASK_NOT_FOUND');
     return task;
   },
 
-  async accessibleTaskIds(
-    taskIds: string[],
-    userId:  string,
-  ): Promise<Set<string>> {
+  async accessibleTaskIds(taskIds: string[], userId: string): Promise<Set<string>> {
     if (taskIds.length === 0) return new Set();
 
     const accessible = await prisma.task.findMany({
@@ -124,18 +101,8 @@ export const LabelAccess = {
           { createdById: userId },
           { assignees:   { some: { userId } } },
           { project: { workspace: { ownerId: userId } } },
-          {
-            project: {
-              workspace: {
-                members: { some: { userId, role: 'ADMIN' } },
-              },
-            },
-          },
-          {
-            project: {
-              members: { some: { userId, role: 'MANAGER' } },
-            },
-          },
+          { project: { workspace: { members: { some: { userId, role: 'ADMIN' } } } } },
+          { project: { members:   { some: { userId, role: 'MANAGER' } } } },
         ],
       },
       select: { id: true },
@@ -143,22 +110,19 @@ export const LabelAccess = {
 
     return new Set(accessible.map((t) => t.id));
   },
+
   async canManageLabel(label: LabelForPermission, userId: string): Promise<boolean> {
-  // Personal label → creator only
-  if (!label.workspaceId) return label.createdById === userId;
+    if (!label.workspaceId) return label.createdById === userId;
 
-  // Workspace label → owner or admin only (creator alone is NOT enough)
-  const workspace = await prisma.workspace.findUnique({
-    where:  { id: label.workspaceId },
-    select: { ownerId: true },
-  });
+    const workspace = await prisma.workspace.findUnique({
+      where:  { id: label.workspaceId },
+      select: { ownerId: true },
+    });
+    if (workspace?.ownerId === userId) return true;
 
-  if (workspace?.ownerId === userId) return true;
-
-  const admin = await prisma.workspaceMember.findFirst({
-    where: { workspaceId: label.workspaceId, userId, role: 'ADMIN' },
-  });
-
-  return !!admin;
-},
+    const admin = await prisma.workspaceMember.findFirst({
+      where: { workspaceId: label.workspaceId, userId, role: 'ADMIN' },
+    });
+    return !!admin;
+  },
 };

@@ -29,6 +29,7 @@ export const projectWithWorkspaceIdSelect = {
   slug:        true,
   name:        true,
   color:       true,
+  status:      true,
   workspaceId: true,
   workspace:   { select: { id: true, name: true, slug: true } },
 } as const;

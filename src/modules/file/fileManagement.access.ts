@@ -1,12 +1,12 @@
-
-import { prisma } from '../../lib/prisma.js';
+import { prisma }        from '../../lib/prisma.js';
+import { ForbiddenError } from '../../errors/index.js';
 
 export const FileManagementAccess = {
   async assertWorkspaceMember(userId: string, workspaceId: string) {
     const member = await prisma.workspaceMember.findUnique({
       where: { userId_workspaceId: { userId, workspaceId } },
     });
-    if (!member) throw new Error('You do not have access to this workspace');
+    if (!member) throw new ForbiddenError('You do not have access to this workspace');
     return member;
   },
 

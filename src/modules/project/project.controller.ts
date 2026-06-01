@@ -1,14 +1,8 @@
-import type { Response } from 'express';
-import { z } from 'zod';
+import type { Response }   from 'express';
 import type { AuthRequest } from '../../middleware/auth.js';
 import { ProjectQuery }    from './project.query.js';
 import { ProjectMutation } from './project.mutation.js';
-import {
-  ProjectError,
-  UnauthorizedError,
-  NotFoundError,
-  ValidationError,
-} from './project.types.js';
+import { asyncHandler, ValidationError } from '../../errors/index.js';
 import {
   createProjectSchema,
   updateProjectSchema,
@@ -16,144 +10,66 @@ import {
   updateProjectMemberRoleSchema,
 } from './project.validators.js';
 
-function handleError(error: unknown, res: Response): void {
-  if (error instanceof z.ZodError) {
-    res.status(422).json({
-      success: false,
-      message: 'Validation error',
-      errors:  error.issues.map((e) => ({ field: e.path.join('.'), message: e.message })),
-    });
-    return;
-  }
+export const getUserProjects = asyncHandler(async (req: AuthRequest, res: Response) => {
+  const projects = await ProjectQuery.getUserProjects(req.user!.id);
+  res.json({ success: true, data: projects });
+});
 
-  if (error instanceof UnauthorizedError) {
-    res.status(403).json({ success: false, message: error.message });
-    return;
-  }
+export const getProjectDetails = asyncHandler(async (req: AuthRequest, res: Response) => {
+  const project = await ProjectQuery.getProjectDetails(req.user!.id, req.params.projectId);
+  res.json({ success: true, data: project });
+});
 
-  if (error instanceof NotFoundError) {
-    res.status(404).json({ success: false, message: error.message });
-    return;
-  }
+export const getProjectBySlug = asyncHandler(async (req: AuthRequest, res: Response) => {
+  const project = await ProjectQuery.getProjectBySlug(req.user!.id, req.params.slug);
+  res.json({ success: true, data: project });
+});
 
-  // Business logic validation (duplicate member, not in workspace, etc.) → 400
-  if (error instanceof ValidationError || error instanceof ProjectError) {
-    res.status(400).json({ success: false, message: (error as Error).message });
-    return;
-  }
+export const getProjectsByWorkspace = asyncHandler(async (req: AuthRequest, res: Response) => {
+  const projects = await ProjectQuery.getProjectsByWorkspace(req.user!.id, req.params.workspaceId);
+  res.json({ success: true, data: projects });
+});
 
-  if ((error as any)?.code === 'P2002') {
-    res.status(409).json({ success: false, message: 'A record with that value already exists.' });
-    return;
-  }
+export const createProject = asyncHandler(async (req: AuthRequest, res: Response) => {
+  const parsed = createProjectSchema.safeParse(req.body);
+  if (!parsed.success) throw new ValidationError('Validation error', parsed.error.issues);
 
-  console.error('Project controller error:', error);
-  res.status(500).json({ success: false, message: 'An unexpected error occurred' });
-}
+  const project = await ProjectMutation.createProject({ ...parsed.data, createdById: req.user!.id });
+  res.status(201).json({ success: true, data: project, message: 'Project created successfully' });
+});
 
-export const getUserProjects = async (req: AuthRequest, res: Response) => {
-  try {
-    const projects = await ProjectQuery.getUserProjects(req.user!.id);
-    res.json({ success: true, data: projects });
-  } catch (error) {
-    handleError(error, res);
-  }
-};
+export const updateProject = asyncHandler(async (req: AuthRequest, res: Response) => {
+  const parsed = updateProjectSchema.safeParse(req.body);
+  if (!parsed.success) throw new ValidationError('Validation error', parsed.error.issues);
 
-export const getProjectDetails = async (req: AuthRequest, res: Response) => {
-  try {
-    const project = await ProjectQuery.getProjectDetails(req.user!.id, req.params.projectId);
-    res.json({ success: true, data: project });
-  } catch (error) {
-    handleError(error, res);
-  }
-};
+  const project = await ProjectMutation.updateProject(req.user!.id, req.params.projectId, parsed.data);
+  res.json({ success: true, data: project, message: 'Project updated successfully' });
+});
 
-export const getProjectBySlug = async (req: AuthRequest, res: Response) => {
-  try {
-    const project = await ProjectQuery.getProjectBySlug(req.user!.id, req.params.slug);
-    res.json({ success: true, data: project });
-  } catch (error) {
-    handleError(error, res);
-  }
-};
+export const deleteProject = asyncHandler(async (req: AuthRequest, res: Response) => {
+  await ProjectMutation.deleteProject(req.user!.id, req.params.projectId);
+  res.json({ success: true, message: 'Project deleted successfully' });
+});
 
-export const getProjectsByWorkspace = async (req: AuthRequest, res: Response) => {
-  try {
-    const projects = await ProjectQuery.getProjectsByWorkspace(
-      req.user!.id,
-      req.params.workspaceId,
-    );
-    res.json({ success: true, data: projects });
-  } catch (error) {
-    handleError(error, res);
-  }
-};
+export const addProjectMember = asyncHandler(async (req: AuthRequest, res: Response) => {
+  const parsed = addProjectMemberSchema.safeParse(req.body);
+  if (!parsed.success) throw new ValidationError('Validation error', parsed.error.issues);
 
-export const createProject = async (req: AuthRequest, res: Response) => {
-  try {
-    const data    = createProjectSchema.parse(req.body);
-    const project = await ProjectMutation.createProject({ ...data, createdById: req.user!.id });
+  const member = await ProjectMutation.addProjectMember(req.user!.id, req.params.projectId, parsed.data);
+  res.status(201).json({ success: true, data: member, message: 'Member added successfully' });
+});
 
-    res.status(201).json({ success: true, data: project, message: 'Project created successfully' });
-  } catch (error) {
-    handleError(error, res);
-  }
-};
+export const updateProjectMemberRole = asyncHandler(async (req: AuthRequest, res: Response) => {
+  const parsed = updateProjectMemberRoleSchema.safeParse(req.body);
+  if (!parsed.success) throw new ValidationError('Validation error', parsed.error.issues);
 
-export const updateProject = async (req: AuthRequest, res: Response) => {
-  try {
-    const data    = updateProjectSchema.parse(req.body);
-    const project = await ProjectMutation.updateProject(req.user!.id, req.params.projectId, data);
+  const member = await ProjectMutation.updateProjectMemberRole(
+    req.user!.id, req.params.projectId, req.params.memberId, parsed.data,
+  );
+  res.json({ success: true, data: member, message: 'Member role updated successfully' });
+});
 
-    res.json({ success: true, data: project, message: 'Project updated successfully' });
-  } catch (error) {
-    handleError(error, res);
-  }
-};
-
-export const deleteProject = async (req: AuthRequest, res: Response) => {
-  try {
-    await ProjectMutation.deleteProject(req.user!.id, req.params.projectId);
-    res.json({ success: true, message: 'Project deleted successfully' });
-  } catch (error) {
-    handleError(error, res);
-  }
-};
-
-export const addProjectMember = async (req: AuthRequest, res: Response) => {
-  try {
-    const data   = addProjectMemberSchema.parse(req.body);
-    const member = await ProjectMutation.addProjectMember(
-      req.user!.id, req.params.projectId, data,
-    );
-
-    res.status(201).json({ success: true, data: member, message: 'Member added successfully' });
-  } catch (error) {
-    handleError(error, res);
-  }
-};
-
-export const updateProjectMemberRole = async (req: AuthRequest, res: Response) => {
-  try {
-    const data   = updateProjectMemberRoleSchema.parse(req.body);
-    const member = await ProjectMutation.updateProjectMemberRole(
-      req.user!.id, req.params.projectId, req.params.memberId, data,
-    );
-
-    res.json({ success: true, data: member, message: 'Member role updated successfully' });
-  } catch (error) {
-    handleError(error, res);
-  }
-};
-
-export const removeProjectMember = async (req: AuthRequest, res: Response) => {
-  try {
-    await ProjectMutation.removeProjectMember(
-      req.user!.id, req.params.projectId, req.params.memberId,
-    );
-    res.json({ success: true, message: 'Member removed successfully' });
-  } catch (error) {
-    handleError(error, res);
-  }
-};
+export const removeProjectMember = asyncHandler(async (req: AuthRequest, res: Response) => {
+  await ProjectMutation.removeProjectMember(req.user!.id, req.params.projectId, req.params.memberId);
+  res.json({ success: true, message: 'Member removed successfully' });
+});

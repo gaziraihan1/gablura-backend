@@ -1,25 +1,22 @@
-import { prisma } from '../../lib/prisma.js';
-import type { ProjectForPermission } from './project.types.js';
-import { UnauthorizedError, NotFoundError } from './project.types.js';
+import { prisma }                              from '../../lib/prisma.js';
+import { ForbiddenError, NotFoundError }       from '../../errors/index.js';
+import type { ProjectForPermission }           from './project.types.js';
 
 export const ProjectAccess = {
   async assertWorkspaceAccess(userId: string, workspaceId: string) {
     const workspace = await prisma.workspace.findFirst({
       where: {
         id: workspaceId,
-        OR: [
-          { ownerId: userId },
-          { members: { some: { userId } } },
-        ],
+        OR: [{ ownerId: userId }, { members: { some: { userId } } }],
       },
     });
 
-    if (!workspace) throw new UnauthorizedError('No access to this workspace');
-
+    if (!workspace) throw new ForbiddenError('No access to this workspace');
     return workspace;
   },
 
   async assertProjectAdminAccess(userId: string, projectId: string) {
+    // Workspace owner or admin
     const project = await prisma.project.findFirst({
       where: {
         id: projectId,
@@ -32,10 +29,15 @@ export const ProjectAccess = {
       },
       include: { workspace: true },
     });
+    if (project) return project;
 
-    if (!project) throw new UnauthorizedError('Only admins can perform this action');
-
-    return project;
+    // Project MANAGER
+    const projectWithManager = await prisma.project.findFirst({
+      where:   { id: projectId, members: { some: { userId, role: 'MANAGER' } } },
+      include: { workspace: true },
+    });
+    if (!projectWithManager) throw new ForbiddenError('Only admins can perform this action');
+    return projectWithManager;
   },
 
   async assertProjectAccess(userId: string, projectId: string) {
@@ -43,22 +45,28 @@ export const ProjectAccess = {
       where: {
         id: projectId,
         workspace: {
-          OR: [
-            { ownerId: userId },
-            { members: { some: { userId } } },
-          ],
+          OR: [{ ownerId: userId }, { members: { some: { userId } } }],
         },
       },
     });
 
-    if (!project) throw new NotFoundError('Project not found or access denied');
-
+    if (!project) throw new NotFoundError('Project', 'PROJECT_NOT_FOUND');
     return project;
+  },
+
+  async assertProjectNotArchived(projectId: string) {
+    const project = await prisma.project.findUnique({
+      where:  { id: projectId },
+      select: { status: true, name: true },
+    });
+    if (!project) throw new NotFoundError('Project');
+    if (project.status === 'ARCHIVED') {
+      throw new ForbiddenError('This project is archived and cannot be modified');
+    }
   },
 
   async isProjectAdmin(userId: string, project: ProjectForPermission): Promise<boolean> {
     if (!project.workspace) return false;
-
     if (project.workspace.ownerId === userId) return true;
 
     const adminMember = await prisma.workspaceMember.findFirst({
@@ -68,7 +76,6 @@ export const ProjectAccess = {
         role: { in: ['OWNER', 'ADMIN'] },
       },
     });
-
     return !!adminMember;
   },
 };

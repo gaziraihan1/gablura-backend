@@ -4,7 +4,6 @@ import helmet from "helmet";
 
 import { prisma } from "./lib/prisma.js";
 import { authenticate } from "./middleware/auth.js";
-import { errorHandler } from "./middleware/errorHandler.js";
 import { getCsrfTokenHandler, requireCsrfToken } from "./middleware/csrf.js";
 
 // routers (same as before)
@@ -37,6 +36,7 @@ import {
   projectAnnouncementRouter,
   workspaceAnnouncementRouter,
 } from "./modules/announcement/index.js";
+import { errorHandler, notFoundHandler } from "./errors/errorHandler.js";
 
 const isProd = process.env.NODE_ENV === "production";
 
@@ -201,14 +201,8 @@ app.use("/api/v1/features", authenticate, requireCsrfToken(), featureRouter);
 app.use("/api/v1/admin", authenticate, requireCsrfToken(), adminRouter);
 
 // ── 404 ───────────────────────────────────────────────────
-app.use((req: Request, res: Response) => {
-  res.status(404).json({
-    success: false,
-    message: "Route not found",
-    path: req.path,
-    method: req.method,
-  });
-});
+app.use(notFoundHandler);  // catches unmatched routes → forwards to errorHandler
+app.use(errorHandler); 
 
 // ── Global error handler ───────────────────────────────────
 app.use(errorHandler);

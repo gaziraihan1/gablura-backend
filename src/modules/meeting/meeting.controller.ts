@@ -1,227 +1,77 @@
-import { Response } from "express";
-import { AuthRequest } from "../../middleware/auth.js";
-import { MeetingService } from "./meeting.service.js";
+import { Response }        from 'express';
+import type { AuthRequest } from '../../middleware/auth.js';
+import { MeetingService }   from './meeting.service.js';
+import { prisma }           from '../../lib/prisma.js';
+import { asyncHandler, ValidationError, ForbiddenError } from '../../errors/index.js';
 import {
   createMeetingSchema,
   updateMeetingSchema,
   listMeetingsSchema,
-} from "./meeting.validator.js";
-import { prisma } from "../../lib/prisma.js";
+} from './meeting.validator.js';
 
-export class MeetingController {
-  private static handleMeetingError(error: any, res: Response) {
-  console.error('[Meeting500] message:', error?.message);
-  console.error('[Meeting500] stack:', error?.stack);
-  console.error('[Meeting500] full:', JSON.stringify(error, Object.getOwnPropertyNames(error)));
+// ─── Shared context resolver ──────────────────────────────────────────────────
+// Looks up the caller's workspace role. Throws ForbiddenError if not a member.
 
-  if (error.message?.includes('FORBIDDEN')) {
-    return res.status(403).json({ success: false, message: error.message });
-  }
-  if (error.message?.includes('NOT_FOUND')) {
-    return res.status(404).json({ success: false, message: error.message });
-  }
-  if (error.message?.includes('BAD_REQUEST')) {
-    return res.status(400).json({ success: false, message: error.message });
-  }
-
-  return res.status(500).json({ success: false, message: 'Failed to process meeting request' });
-}
-
- private static async resolveCtx(req: AuthRequest, workspaceId: string) {
+async function resolveCtx(req: AuthRequest, workspaceId: string) {
   const member = await prisma.workspaceMember.findFirst({
-    where: {
-      userId: req.user?.id!,
-      workspaceId,
-    },
+    where:  { userId: req.user!.id, workspaceId },
     select: { role: true },
   });
 
+  if (!member) throw new ForbiddenError('You are not a member of this workspace');
+
   return {
-    userId: req.user?.id!,
+    userId:        req.user!.id,
     workspaceId,
-    workspaceRole: member?.role ?? null,
+    workspaceRole: member.role,
   };
 }
 
-  static async list(req: AuthRequest, res: Response) {
-  try {
-    if (!req.user?.id) {
-      return res.status(401).json({ success: false, message: "Unauthorized" });
-    }
+// ─── Handlers ─────────────────────────────────────────────────────────────────
 
+export class MeetingController {
+  static list = asyncHandler(async (req: AuthRequest, res: Response) => {
     const parsed = listMeetingsSchema.safeParse(req.query);
-    if (!parsed.success) {
-      return res.status(400).json({ success: false, error: parsed.error.flatten() });
-    }
+    if (!parsed.success) throw new ValidationError('Validation error', parsed.error.issues);
 
-    const ctx = await MeetingController.resolveCtx(req, req.params.workspaceId);
-    if (!ctx.workspaceRole) {
-      return res.status(403).json({
-        success: false,
-        message: "You are not a member of this workspace",
-      });
-    }
+    const ctx     = await resolveCtx(req, req.params.workspaceId);
+    const result  = await MeetingService.list(ctx, parsed.data);
+    res.json({ success: true, data: result });
+  });
 
-    const result = await MeetingService.list(ctx, parsed.data);
-    return res.json({ success: true, data: result });
-  } catch (error: any) {
-    return MeetingController.handleMeetingError(error, res);
-  }
-}
+  static getById = asyncHandler(async (req: AuthRequest, res: Response) => {
+    const ctx     = await resolveCtx(req, req.params.workspaceId);
+    const meeting = await MeetingService.getById(ctx, req.params.meetingId);
+    res.json({ success: true, data: meeting });
+  });
 
-  static async getById(req: AuthRequest, res: Response) {
-    try {
-      if (!req.user?.id) {
-        return res
-          .status(401)
-          .json({ success: false, message: "Unauthorized" });
-      }
+  static create = asyncHandler(async (req: AuthRequest, res: Response) => {
+    const parsed = createMeetingSchema.safeParse(req.body);
+    if (!parsed.success) throw new ValidationError('Validation error', parsed.error.issues);
 
-      const ctx = await MeetingController.resolveCtx(
-        req,
-        req.params.workspaceId,
-      );
-      if (!ctx.workspaceRole) {
-        return res.status(403).json({
-          success: false,
-          message: "You are not a member of this workspace",
-        });
-      }
+    const ctx     = await resolveCtx(req, req.params.workspaceId);
+    const meeting = await MeetingService.create(ctx, parsed.data, req.user!.name ?? 'Someone');
+    res.status(201).json({ success: true, data: meeting });
+  });
 
-      const meeting = await MeetingService.getById(ctx, req.params.meetingId);
-      return res.json({ success: true, data: meeting });
-    } catch (error: any) {
-      return MeetingController.handleMeetingError(error, res);
-    }
-  }
+  static update = asyncHandler(async (req: AuthRequest, res: Response) => {
+    const parsed = updateMeetingSchema.safeParse(req.body);
+    if (!parsed.success) throw new ValidationError('Validation error', parsed.error.issues);
 
-  static async create(req: AuthRequest, res: Response) {
-    try {
-      if (!req.user?.id) {
-        return res
-          .status(401)
-          .json({ success: false, message: "Unauthorized" });
-      }
+    const ctx     = await resolveCtx(req, req.params.workspaceId);
+    const meeting = await MeetingService.update(ctx, req.params.meetingId, parsed.data, req.user!.name ?? 'Someone');
+    res.json({ success: true, data: meeting });
+  });
 
-      const parsed = createMeetingSchema.safeParse(req.body);
-      if (!parsed.success) {
-        return res
-          .status(400)
-          .json({ success: false, error: parsed.error.flatten() });
-      }
+  static cancel = asyncHandler(async (req: AuthRequest, res: Response) => {
+    const ctx     = await resolveCtx(req, req.params.workspaceId);
+    const meeting = await MeetingService.cancel(ctx, req.params.meetingId, req.user!.name ?? 'Someone');
+    res.json({ success: true, data: meeting });
+  });
 
-      const ctx = await MeetingController.resolveCtx(
-        req,
-        req.params.workspaceId,
-      );
-      if (!ctx.workspaceRole) {
-        return res.status(403).json({
-          success: false,
-          message: "You are not a member of this workspace",
-        });
-      }
-
-      const senderName = req.user.name ?? "Someone";
-      const meeting = await MeetingService.create(ctx, parsed.data, senderName);
-      return res.status(201).json({ success: true, data: meeting });
-    } catch (error: any) {
-      return MeetingController.handleMeetingError(error, res);
-    }
-  }
-
-  static async update(req: AuthRequest, res: Response) {
-    try {
-      if (!req.user?.id) {
-        return res
-          .status(401)
-          .json({ success: false, message: "Unauthorized" });
-      }
-
-      const parsed = updateMeetingSchema.safeParse(req.body);
-      if (!parsed.success) {
-        return res
-          .status(400)
-          .json({ success: false, error: parsed.error.flatten() });
-      }
-
-      const ctx = await MeetingController.resolveCtx(
-        req,
-        req.params.workspaceId,
-      );
-      if (!ctx.workspaceRole) {
-        return res.status(403).json({
-          success: false,
-          message: "You are not a member of this workspace",
-        });
-      }
-
-      const senderName = req.user.name ?? "Someone";
-      const meeting = await MeetingService.update(
-        ctx,
-        req.params.meetingId,
-        parsed.data,
-        senderName,
-      );
-      return res.json({ success: true, data: meeting });
-    } catch (error: any) {
-      return MeetingController.handleMeetingError(error, res);
-    }
-  }
-
-  static async cancel(req: AuthRequest, res: Response) {
-    try {
-      if (!req.user?.id) {
-        return res
-          .status(401)
-          .json({ success: false, message: "Unauthorized" });
-      }
-
-      const ctx = await MeetingController.resolveCtx(
-        req,
-        req.params.workspaceId,
-      );
-      if (!ctx.workspaceRole) {
-        return res.status(403).json({
-          success: false,
-          message: "You are not a member of this workspace",
-        });
-      }
-
-      const senderName = req.user.name ?? "Someone";
-      const meeting = await MeetingService.cancel(
-        ctx,
-        req.params.meetingId,
-        senderName,
-      );
-      return res.json({ success: true, data: meeting });
-    } catch (error: any) {
-      return MeetingController.handleMeetingError(error, res);
-    }
-  }
-
-  static async delete(req: AuthRequest, res: Response) {
-    try {
-      if (!req.user?.id) {
-        return res
-          .status(401)
-          .json({ success: false, message: "Unauthorized" });
-      }
-
-      const ctx = await MeetingController.resolveCtx(
-        req,
-        req.params.workspaceId,
-      );
-      if (!ctx.workspaceRole) {
-        return res.status(403).json({
-          success: false,
-          message: "You are not a member of this workspace",
-        });
-      }
-
-      await MeetingService.delete(ctx, req.params.meetingId);
-      return res.json({ success: true });
-    } catch (error: any) {
-      return MeetingController.handleMeetingError(error, res);
-    }
-  }
+  static delete = asyncHandler(async (req: AuthRequest, res: Response) => {
+    const ctx = await resolveCtx(req, req.params.workspaceId);
+    await MeetingService.delete(ctx, req.params.meetingId);
+    res.json({ success: true });
+  });
 }

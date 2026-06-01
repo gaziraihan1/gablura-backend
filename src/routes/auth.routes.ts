@@ -15,36 +15,33 @@ import {
   revokeAllRefreshTokens,
 } from "../lib/auth/tokenRevocation.js";
 import { auditLog } from "../lib/auth/auditLog.js";
+import { acquireRefreshLock, releaseRefreshLock } from "../lib/auth/refreshLock.js";
+import { getClientIp } from "../lib/auth/sessionBinding.js";
+import { getRedisClient } from "../redis/redis.client.js";
+import {
+  asyncHandler,
+  BadRequestError,
+  UnauthorizedError,
+  TokenExpiredError,
+} from "../errors/index.js";
 
 const router = Router();
-const devRefreshResponseCache = new Map<string, string>();
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+
 const REFRESH_DEDUPE_TTL_SECONDS = 30;
 
-import {
-  acquireRefreshLock,
-  releaseRefreshLock,
-} from "../lib/auth/refreshLock.js";
-import { getRedisClient } from "../redis/redis.client.js";
-
-const getIp = (req: any) =>
-  (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() ||
-  req.socket.remoteAddress ||
-  "unknown";
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-
-// Remove: import { redis } from "../lib/redis.js";
-
-// Replace the two helper functions:
-
 async function getCachedRefreshResponse(cacheKey: string): Promise<string | null> {
   try {
     return await getRedisClient().get(cacheKey);
   } catch {
-    return devRefreshResponseCache.get(cacheKey) ?? null;
+    return null;
   }
 }
 
@@ -52,11 +49,7 @@ async function cacheRefreshResponse(cacheKey: string, payload: string): Promise<
   try {
     await getRedisClient().setex(cacheKey, REFRESH_DEDUPE_TTL_SECONDS, payload);
   } catch {
-    devRefreshResponseCache.set(cacheKey, payload);
-    setTimeout(
-      () => devRefreshResponseCache.delete(cacheKey),
-      REFRESH_DEDUPE_TTL_SECONDS * 1000,
-    );
+    // Non-fatal: cache miss on next request is acceptable
   }
 }
 
@@ -75,104 +68,69 @@ function verifyExchangeProof(payload: string, signature: string): boolean {
   }
 }
 
-router.post("/exchange", async (req, res) => {
-  const ip = getIp(req);
-  try {
+// ─── POST /exchange ───────────────────────────────────────────────────────────
+
+router.post(
+  "/exchange",
+  asyncHandler(async (req, res) => {
+    const ip = getClientIp(req);
     const { userId, email, role, sessionId, timestamp, signature } = req.body;
 
     if (!userId || !email || !role || !sessionId || !timestamp || !signature) {
-      return res.status(400).json({
-        success: false,
-        message: "Missing required fields",
-        code: "MISSING_FIELDS",
-      });
+      throw new BadRequestError("Missing required fields", "MISSING_FIELDS");
     }
 
+    // Proof age check
     const age = Date.now() - Number(timestamp);
     if (age > 60_000 || age < 0) {
-      auditLog("EXCHANGE_FAILED", {
-        userId,
-        email,
-        ip,
-        reason: "Proof expired",
-      });
-      return res.status(401).json({
-        success: false,
-        message: "Exchange proof expired",
-        code: "PROOF_EXPIRED",
-      });
+      auditLog("EXCHANGE_FAILED", { userId, email, ip, reason: "Proof expired" });
+      throw new UnauthorizedError("Exchange proof expired", "PROOF_EXPIRED");
     }
 
-    const payload = `${userId}${email}${role}${sessionId}${timestamp}`;
-    if (!verifyExchangeProof(payload, signature)) {
-      auditLog("EXCHANGE_FAILED", {
-        userId,
-        email,
-        ip,
-        reason: "Invalid signature",
-      });
-      return res.status(401).json({
-        success: false,
-        message: "Invalid exchange proof",
-        code: "INVALID_PROOF",
-      });
+    // Signature check
+    const proofPayload = `${userId}${email}${role}${sessionId}${timestamp}`;
+    if (!verifyExchangeProof(proofPayload, signature)) {
+      auditLog("EXCHANGE_FAILED", { userId, email, ip, reason: "Invalid signature" });
+      throw new UnauthorizedError("Invalid exchange proof", "INVALID_PROOF");
     }
 
+    // Idempotency check — return cached tokens for duplicate exchange calls
+    const idempotencyKey = `focura:exchange:lock:${sessionId}`;
+    try {
+      const cached = await getRedisClient().get(idempotencyKey);
+      if (cached) {
+        auditLog("EXCHANGE_SUCCESS", {
+          userId,
+          email,
+          ip,
+          sessionId,
+          meta: { idempotencyKey: true },
+        });
+        return res.json({ success: true, ...JSON.parse(cached) });
+      }
+    } catch {
+      // Redis unavailable — continue without idempotency check
+    }
+
+    // User lookup
     const user = await prisma.user.findUnique({
       where: { id: userId },
       select: { id: true, email: true, role: true, emailVerified: true },
     });
 
     if (!user) {
-      auditLog("EXCHANGE_FAILED", {
-        userId,
-        email,
-        ip,
-        reason: "User not found",
-      });
-      return res.status(401).json({
-        success: false,
-        message: "User not found",
-        code: "USER_NOT_FOUND",
-      });
+      auditLog("EXCHANGE_FAILED", { userId, email, ip, reason: "User not found" });
+      throw new UnauthorizedError("User not found", "USER_NOT_FOUND");
     }
 
+    // Email trust check
     const isEmailTrusted = !!user.emailVerified || user.email === email;
-
     if (!isEmailTrusted) {
-      auditLog("EXCHANGE_FAILED", {
-        userId,
-        email,
-        ip,
-        reason: "Email not verified",
-      });
-      return res.status(401).json({
-        success: false,
-        message: "Email not verified",
-        code: "EMAIL_NOT_VERIFIED",
-      });
+      auditLog("EXCHANGE_FAILED", { userId, email, ip, reason: "Email not verified" });
+      throw new UnauthorizedError("Email not verified", "EMAIL_NOT_VERIFIED");
     }
 
-    const idempotencyKey = `focura:exchange:lock:${sessionId}`;
-    
-    // Only use Redis if properly configured
-      try {
-        const cached = await getRedisClient().get(idempotencyKey);;
-        if (cached) {
-          auditLog("EXCHANGE_SUCCESS", {
-            userId: user.id,
-            email: user.email,
-            ip,
-            sessionId,
-            meta: { idempotencyKey: true },
-          });
-          return res.json({ success: true, ...JSON.parse(cached) });
-        }
-      } catch (error) {
-        console.error('Redis idempotency check error:', error);
-        // Continue without idempotency check
-      }
-
+    // Auto-verify email on first successful exchange (OAuth flow)
     if (!user.emailVerified) {
       await prisma.user.update({
         where: { id: user.id },
@@ -180,6 +138,7 @@ router.post("/exchange", async (req, res) => {
       });
     }
 
+    // Issue tokens
     const tokens = createTokenPair({
       id: user.id,
       email: user.email,
@@ -192,67 +151,61 @@ router.post("/exchange", async (req, res) => {
       extractJti(tokens.refreshToken),
       parseExpiry(REFRESH_TOKEN_EXPIRY) / 1000,
     );
-    
-    // Store idempotency cache if Redis available
-      try {
-        await getRedisClient().setex(idempotencyKey, 90, JSON.stringify({
-    accessToken: tokens.accessToken,
-    refreshToken: tokens.refreshToken,
-    accessTokenExpiry: tokens.accessTokenExpiry,
-    refreshTokenExpiry: tokens.refreshTokenExpiry,
-  }));
-      } catch (error) {
-        console.error('Redis idempotency set error:', error);
-        // Continue without caching
-      }
 
-    auditLog("EXCHANGE_SUCCESS", {
-      userId: user.id,
-      email: user.email,
-      ip,
-      sessionId,
-    });
-
-    return res.json({
-      success: true,
+    const tokenPayload = {
       accessToken: tokens.accessToken,
       refreshToken: tokens.refreshToken,
       accessTokenExpiry: tokens.accessTokenExpiry,
       refreshTokenExpiry: tokens.refreshTokenExpiry,
-    });
-  } catch (err) {
-    console.error("Exchange error:", err);
-    auditLog("EXCHANGE_FAILED", { ip, reason: (err as Error).message });
-    return res.status(500).json({
-      success: false,
-      message: "Exchange failed",
-      code: "EXCHANGE_ERROR",
-    });
-  }
-});
+    };
 
-router.post("/refresh", async (req, res) => {
-  const ip = getIp(req);
-  try {
-    const { refreshToken } = req.body;
-    if (!refreshToken) {
-      return res
-        .status(400)
-        .json({ success: false, message: "Refresh token required" });
+    // Cache for idempotency
+    try {
+      await getRedisClient().setex(idempotencyKey, 90, JSON.stringify(tokenPayload));
+    } catch {
+      // Non-fatal
     }
 
-    const decoded = verifyToken(refreshToken, "refresh");
+    auditLog("EXCHANGE_SUCCESS", { userId: user.id, email: user.email, ip, sessionId });
+
+    return res.json({ success: true, ...tokenPayload });
+  }),
+);
+
+// ─── POST /refresh ────────────────────────────────────────────────────────────
+
+router.post(
+  "/refresh",
+  asyncHandler(async (req, res) => {
+    const ip = getClientIp(req);
+    const { refreshToken } = req.body;
+
+    if (!refreshToken) {
+      throw new BadRequestError("Refresh token required", "MISSING_REFRESH_TOKEN");
+    }
+
+    // Verify the refresh token — let JWT errors bubble to the catch below
+    let decoded: ReturnType<typeof verifyToken>;
+    try {
+      decoded = verifyToken(refreshToken, "refresh");
+    } catch (err: any) {
+      if (err.name === "TokenExpiredError") throw new TokenExpiredError();
+      throw new UnauthorizedError("Invalid refresh token", "INVALID_TOKEN");
+    }
+
     const sessionId = decoded.sessionId!;
     const refreshReplayCacheKey = `focura:refresh:result:${decoded.id}:${decoded.jti}`;
-    
+
+    // Distributed lock — prevents concurrent refresh races
     const acquired = await acquireRefreshLock(sessionId);
     if (!acquired) {
-      // In-flight refresh: extended cache check
+      // Another request holds the lock — poll the cache for its result
       for (let i = 0; i < 10; i++) {
         await sleep(30);
         const cached = await getCachedRefreshResponse(refreshReplayCacheKey);
         if (cached) return res.json(JSON.parse(cached));
       }
+      // Lock holder didn't cache in time — ask the client to retry
       return res.status(429).json({
         success: false,
         message: "Refresh in progress, please retry",
@@ -260,57 +213,47 @@ router.post("/refresh", async (req, res) => {
         retryAfter: 1,
       });
     }
-    
-    const cachedResponse = await getCachedRefreshResponse(
-      refreshReplayCacheKey,
-    );
-    if (cachedResponse) {
-      await releaseRefreshLock(sessionId);
-      return res.json(JSON.parse(cachedResponse));
-    }
 
     try {
+      // Check if we already processed this exact token (replay deduplication)
+      const cachedResponse = await getCachedRefreshResponse(refreshReplayCacheKey);
+      if (cachedResponse) return res.json(JSON.parse(cachedResponse));
+
       const tokens = createTokenPair({
         id: decoded.id,
         email: decoded.email,
         role: decoded.role,
         sessionId: decoded.sessionId,
       });
-      
+
       const rotated = await rotateRefreshToken(
         decoded.id,
         decoded.jti,
         extractJti(tokens.refreshToken),
         parseExpiry(REFRESH_TOKEN_EXPIRY) / 1000,
       );
-  
+
       if (!rotated) {
+        // Rotation failed — wait briefly in case a concurrent request is mid-cache
         for (let i = 0; i < 3; i++) {
           await sleep(75);
-          const duplicateResponse = await getCachedRefreshResponse(
-            refreshReplayCacheKey,
-          );
-          if (duplicateResponse) {
-            await releaseRefreshLock(sessionId);
-            return res.json(JSON.parse(duplicateResponse));
-          }
+          const duplicateResponse = await getCachedRefreshResponse(refreshReplayCacheKey);
+          if (duplicateResponse) return res.json(JSON.parse(duplicateResponse));
         }
-  
+
         auditLog("TOKEN_REPLAY_DETECTED", {
           userId: decoded.id,
           jti: decoded.jti,
           ip,
           reason: "Refresh token already used or revoked",
         });
-        
-        await releaseRefreshLock(sessionId);
-        return res.status(401).json({
-          success: false,
-          message: "Refresh token invalid or already used",
-          code: "TOKEN_INVALID",
-        });
+
+        throw new UnauthorizedError(
+          "Refresh token invalid or already used",
+          "TOKEN_REPLAY_DETECTED",
+        );
       }
-  
+
       const responsePayload = {
         success: true,
         accessToken: tokens.accessToken,
@@ -318,41 +261,24 @@ router.post("/refresh", async (req, res) => {
         accessTokenExpiry: tokens.accessTokenExpiry,
         refreshTokenExpiry: tokens.refreshTokenExpiry,
       };
-      
-      await cacheRefreshResponse(
-        refreshReplayCacheKey,
-        JSON.stringify(responsePayload),
-      );
-  
-      auditLog("TOKEN_REFRESHED", {
-        userId: decoded.id,
-        ip,
-        sessionId: decoded.sessionId,
-      });
-      
+
+      await cacheRefreshResponse(refreshReplayCacheKey, JSON.stringify(responsePayload));
+
+      auditLog("TOKEN_REFRESHED", { userId: decoded.id, ip, sessionId: decoded.sessionId });
+
       return res.json(responsePayload);
     } finally {
       await releaseRefreshLock(sessionId);
     }
+  }),
+);
 
-  } catch (err: any) {
-    if (err.name === "TokenExpiredError") {
-      return res.status(401).json({
-        success: false,
-        message: "Refresh token expired",
-        code: "TOKEN_EXPIRED",
-      });
-    }
-    return res.status(401).json({
-      success: false,
-      message: "Token refresh failed",
-      code: "REFRESH_FAILED",
-    });
-  }
-});
+// ─── POST /logout ─────────────────────────────────────────────────────────────
+// Logout is always best-effort — it must never fail the client even if Redis
+// is down or the token is already invalid. So we don't use asyncHandler here.
 
 router.post("/logout", async (req, res) => {
-  const ip = getIp(req);
+  const ip = getClientIp(req);
   const { logoutAll = false } = req.body ?? {};
 
   let userId: string | undefined;
@@ -360,6 +286,7 @@ router.post("/logout", async (req, res) => {
   let sessionId: string | undefined;
   let email: string | undefined;
 
+  // Extract identity from the access token if present — failure is non-fatal
   const authHeader = req.headers.authorization;
   if (authHeader?.startsWith("Bearer ")) {
     try {
@@ -368,34 +295,30 @@ router.post("/logout", async (req, res) => {
       tokenJti = decoded.jti;
       sessionId = decoded.sessionId;
       email = decoded.email;
-    } catch {}
+    } catch {
+      // Expired or invalid token is fine here — we're logging out anyway
+    }
   }
 
+  // Revoke tokens — best effort, don't block the response on Redis failure
   try {
-      try {
-  if (tokenJti) await revokeAccessToken(tokenJti, 900);
-  if (logoutAll && userId) await revokeAllRefreshTokens(userId);
-} catch (error) {
-  console.error('Redis revocation error:', error);
-}
-
-    auditLog(logoutAll ? "LOGOUT_ALL_DEVICES" : "LOGOUT", {
-      userId,
-      email,
-      ip,
-      sessionId,
-    });
-
-    return res.json({
-      success: true,
-      message: logoutAll
-        ? "Logged out from all devices"
-        : "Logged out successfully",
-    });
+    if (tokenJti) await revokeAccessToken(tokenJti, 900);
+    if (logoutAll && userId) await revokeAllRefreshTokens(userId);
   } catch (err) {
-    console.error("Logout error:", err);
-    return res.json({ success: true, message: "Logged out" });
+    console.error("Token revocation error during logout:", err);
   }
+
+  auditLog(logoutAll ? "LOGOUT_ALL_DEVICES" : "LOGOUT", {
+    userId,
+    email,
+    ip,
+    sessionId,
+  });
+
+  return res.json({
+    success: true,
+    message: logoutAll ? "Logged out from all devices" : "Logged out successfully",
+  });
 });
 
 export default router;

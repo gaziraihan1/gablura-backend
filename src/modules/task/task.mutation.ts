@@ -11,6 +11,7 @@ import {
 } from "./task.quota.service.js";
 import { AnalyticsCache, WorkspaceCache } from "../../lib/redis/cache.client.js";
 import { getRedisClient } from "../../redis/redis.client.js";
+import { ProjectAccess } from "../project/project.access.js";
 
 // ─── Plan resolution ──────────────────────────────────────────────────────────
 // Adapt these two functions to match however your DB stores plan info.
@@ -87,6 +88,7 @@ type OnCommentAdded = (data: {
 
 export const TaskMutation = {
   async createTask(data: CreateTaskInput, onCreated?: OnTaskCreated) {
+    await ProjectAccess.assertProjectNotArchived(data?.projectId!);
     // ── Validation ────────────────────────────────────────────────────────────
     if (!data.title?.trim()) throw new Error("Task title is required");
     if (
@@ -256,6 +258,9 @@ export const TaskMutation = {
       include: { project: true, assignees: true },
     });
     if (!existingTask) throw new Error("Task not found");
+     if (existingTask.projectId) {
+    await ProjectAccess.assertProjectNotArchived(existingTask.projectId);
+  }
 
     const wasCompleted =
       data.status === "COMPLETED" && existingTask.status !== "COMPLETED";
@@ -353,6 +358,9 @@ export const TaskMutation = {
       include: taskWithAssigneesInclude,
     });
     if (!existingTask) throw new Error("Task not found");
+     if (existingTask.projectId) {
+    await ProjectAccess.assertProjectNotArchived(existingTask.projectId);
+  }
 
     const wasCompleted =
       status === "COMPLETED" && existingTask.status !== "COMPLETED";
@@ -392,6 +400,9 @@ export const TaskMutation = {
 
   async deleteTask(taskId: string, userId: string, onDeleted?: OnTaskDeleted) {
     const task = await TaskAccess.assertDeletePermission(taskId, userId);
+    if (task.projectId) {
+    await ProjectAccess.assertProjectNotArchived(task.projectId);
+  }
     
     // Store workspaceId before deletion
     const workspaceId = task.workspaceId;

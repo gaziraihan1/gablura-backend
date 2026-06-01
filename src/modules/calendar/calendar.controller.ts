@@ -1,133 +1,87 @@
-
-import type { Response } from 'express';
-import { z } from 'zod';
+import type { Response }   from 'express';
 import type { AuthRequest } from '../../middleware/auth.js';
-import { CalendarAggregation }    from './calendar.aggregation.js';
+import { CalendarAggregation }     from './calendar.aggregation.js';
 import { CalendarInsightsService } from './calendar.insights.js';
-import { CalendarQuery }          from './calendar.query.js';
-import { CalendarMutation }       from './calendar.mutation.js';
+import { CalendarQuery }           from './calendar.query.js';
+import { CalendarMutation }        from './calendar.mutation.js';
+import { asyncHandler, ValidationError } from '../../errors/index.js';
 import {
   calendarRangeSchema,
   createGoalCheckpointSchema,
   recalculateSchema,
 } from './calendar.validators.js';
 
-function handleError(res: Response, label: string, error: unknown): Response {
-  console.error(`${label}:`, error);
+export const getCalendarAggregates = asyncHandler(async (req: AuthRequest, res: Response) => {
+  const parsed = calendarRangeSchema.safeParse(req.query);
+  if (!parsed.success) throw new ValidationError('Validation error', parsed.error.issues);
 
-  if (error instanceof z.ZodError) {
-    return res.status(400).json({
-      success: false,
-      message: 'Validation error',
-      errors:  error.issues,
-    });
-  }
-
-  return res.status(500).json({
-    success: false,
-    message: `Failed to ${label.toLowerCase()}`,
+  const aggregates = await CalendarAggregation.getOrComputeAggregates({
+    userId: req.user!.id,
+    ...parsed.data,
   });
-}
 
-export const getCalendarAggregates = async (req: AuthRequest, res: Response) => {
-  try {
-    const userId = req.user!.id;
-    const { workspaceId, startDate, endDate } = calendarRangeSchema.parse(req.query);
+  res.json({ success: true, data: aggregates });
+});
 
-    const aggregates = await CalendarAggregation.getOrComputeAggregates({
-      userId, workspaceId, startDate, endDate,
-    });
+export const getCalendarInsights = asyncHandler(async (req: AuthRequest, res: Response) => {
+  const parsed = calendarRangeSchema.safeParse(req.query);
+  if (!parsed.success) throw new ValidationError('Validation error', parsed.error.issues);
 
-    return res.json({ success: true, data: aggregates });
-  } catch (error) {
-    return handleError(res, 'fetch calendar aggregates', error);
-  }
-};
+  const { workspaceId, startDate, endDate } = parsed.data;
+  const insights = await CalendarInsightsService.getInsights(
+    req.user!.id, workspaceId, startDate, endDate,
+  );
 
-export const getCalendarInsights = async (req: AuthRequest, res: Response) => {
-  try {
-    const userId = req.user!.id;
-    const { workspaceId, startDate, endDate } = calendarRangeSchema.parse(req.query);
+  res.json({ success: true, data: insights });
+});
 
-    const insights = await CalendarInsightsService.getInsights(
-      userId, workspaceId, startDate, endDate,
-    );
+export const getSystemEvents = asyncHandler(async (req: AuthRequest, res: Response) => {
+  const parsed = calendarRangeSchema.safeParse(req.query);
+  if (!parsed.success) throw new ValidationError('Validation error', parsed.error.issues);
 
-    return res.json({ success: true, data: insights });
-  } catch (error) {
-    return handleError(res, 'fetch calendar insights', error);
-  }
-};
+  const { workspaceId, startDate, endDate } = parsed.data;
+  const events = await CalendarQuery.getSystemEvents(
+    req.user!.id, workspaceId, startDate, endDate,
+  );
 
-export const getSystemEvents = async (req: AuthRequest, res: Response) => {
-  try {
-    const userId = req.user!.id;
-    const { workspaceId, startDate, endDate } = calendarRangeSchema.parse(req.query);
+  res.json({ success: true, data: events });
+});
 
-    const events = await CalendarQuery.getSystemEvents(
-      userId, workspaceId, startDate, endDate,
-    );
+export const getGoalCheckpoints = asyncHandler(async (req: AuthRequest, res: Response) => {
+  const parsed = calendarRangeSchema.safeParse(req.query);
+  if (!parsed.success) throw new ValidationError('Validation error', parsed.error.issues);
 
-    return res.json({ success: true, data: events });
-  } catch (error) {
-    return handleError(res, 'fetch system events', error);
-  }
-};
+  const { workspaceId, startDate, endDate } = parsed.data;
+  const goals = await CalendarQuery.getGoalCheckpoints(
+    req.user!.id, workspaceId, startDate, endDate,
+  );
 
-export const getGoalCheckpoints = async (req: AuthRequest, res: Response) => {
-  try {
-    const userId = req.user!.id;
-    const { workspaceId, startDate, endDate } = calendarRangeSchema.parse(req.query);
+  res.json({ success: true, data: goals });
+});
 
-    const goals = await CalendarQuery.getGoalCheckpoints(
-      userId, workspaceId, startDate, endDate,
-    );
+export const createGoalCheckpoint = asyncHandler(async (req: AuthRequest, res: Response) => {
+  const parsed = createGoalCheckpointSchema.safeParse(req.body);
+  if (!parsed.success) throw new ValidationError('Validation error', parsed.error.issues);
 
-    return res.json({ success: true, data: goals });
-  } catch (error) {
-    return handleError(res, 'fetch goal checkpoints', error);
-  }
-};
+  const goal = await CalendarMutation.createGoalCheckpoint({
+    userId: req.user!.id,
+    ...parsed.data,
+  });
 
-export const createGoalCheckpoint = async (req: AuthRequest, res: Response) => {
-  try {
-    const userId = req.user!.id;
-    const data   = createGoalCheckpointSchema.parse(req.body);
+  res.status(201).json({ success: true, data: goal, message: 'Goal checkpoint created successfully' });
+});
 
-    const goal = await CalendarMutation.createGoalCheckpoint({ userId, ...data });
+export const recalculateAggregate = asyncHandler(async (req: AuthRequest, res: Response) => {
+  const parsed = recalculateSchema.safeParse(req.body);
+  if (!parsed.success) throw new ValidationError('Validation error', parsed.error.issues);
 
-    return res.status(201).json({
-      success: true,
-      data:    goal,
-      message: 'Goal checkpoint created successfully',
-    });
-  } catch (error) {
-    return handleError(res, 'create goal checkpoint', error);
-  }
-};
+  const { workspaceId, date } = parsed.data;
+  await CalendarAggregation.recalculateDay(req.user!.id, workspaceId, date);
 
-export const recalculateAggregate = async (req: AuthRequest, res: Response) => {
-  try {
-    const userId              = req.user!.id;
-    const { workspaceId, date } = recalculateSchema.parse(req.body);
+  res.json({ success: true, message: 'Aggregate recalculated successfully' });
+});
 
-    await CalendarAggregation.recalculateDay(userId, workspaceId, date);
-
-    return res.json({ success: true, message: 'Aggregate recalculated successfully' });
-  } catch (error) {
-    return handleError(res, 'recalculate aggregate', error);
-  }
-};
-
-export const initializeUserSettings = async (req: AuthRequest, res: Response) => {
-  try {
-    await CalendarMutation.initializeUserSettings(req.user!.id);
-
-    return res.json({
-      success: true,
-      message: 'User calendar settings initialized successfully',
-    });
-  } catch (error) {
-    return handleError(res, 'initialize user settings', error);
-  }
-};
+export const initializeUserSettings = asyncHandler(async (req: AuthRequest, res: Response) => {
+  await CalendarMutation.initializeUserSettings(req.user!.id);
+  res.json({ success: true, message: 'User calendar settings initialized successfully' });
+});

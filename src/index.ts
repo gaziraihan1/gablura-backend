@@ -34,7 +34,7 @@ import { featureRouter } from "./modules/feature/index.js";
 import { contactRouter } from "./modules/contact/index.js";
 import { jobRouter } from "./modules/job/index.js";
 
-import { errorHandler } from "./middleware/errorHandler.js";
+// import { errorHandler } from "./middleware/errorHandler.js";
 import { authenticate } from "./middleware/auth.js";
 import {
   projectAnnouncementRouter,
@@ -43,6 +43,7 @@ import {
 import { adminRouter } from "./admin/admin.routes.js";
 import { prisma } from "./lib/prisma.js";
 import { templatesRouter } from "./modules/templates/index.js";
+import { errorHandler, notFoundHandler } from "./errors/errorHandler.js";
 
 dotenv.config();
 
@@ -240,17 +241,8 @@ app.use("/api/v1/meetings", authenticate, requireCsrfToken(), meetingRoutes);
 app.use("/api/v1/features", authenticate, requireCsrfToken(), featureRouter);
 app.use("/api/v1/admin", authenticate, requireCsrfToken(), adminRouter);
 
-app.use((req: Request, res: Response) => {
-  console.warn(`404 - Route not found: ${req.method} ${req.path}`);
-  res.status(404).json({
-    success: false,
-    message: "Route not found",
-    path: req.path,
-    method: req.method,
-  });
-});
-
-app.use(errorHandler);
+app.use(notFoundHandler);  // catches unmatched routes → forwards to errorHandler
+app.use(errorHandler); 
 
 const server = app
   .listen(PORT, "0.0.0.0", () => {

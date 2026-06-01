@@ -1,59 +1,34 @@
-export class ProjectError extends Error {
-  constructor(message: string, public readonly code: string) {
-    super(message);
-    this.name = 'ProjectError';
-  }
-}
-
-export class UnauthorizedError extends ProjectError {
-  constructor(message = 'Unauthorized access') {
-    super(message, 'UNAUTHORIZED');
-  }
-}
-
-export class NotFoundError extends ProjectError {
-  constructor(message = 'Resource not found') {
-    super(message, 'NOT_FOUND');
-  }
-}
-
-export class ValidationError extends ProjectError {
-  constructor(message: string) {
-    super(message, 'VALIDATION_ERROR');
-  }
-}
-
 export type ProjectStatus   = 'PLANNING' | 'ACTIVE' | 'ON_HOLD' | 'COMPLETED' | 'ARCHIVED';
 export type ProjectPriority = 'URGENT' | 'HIGH' | 'MEDIUM' | 'LOW';
 export type ProjectRole     = 'MANAGER' | 'COLLABORATOR' | 'VIEWER';
 
 export interface CreateProjectDto {
-  name: string;
+  name:         string;
   description?: string;
-  color?: string;
-  icon?: string;
-  status?: ProjectStatus;
-  priority?: ProjectPriority;
-  startDate?: Date;
-  dueDate?: Date;
-  workspaceId: string;
-  createdById: string;
+  color?:       string;
+  icon?:        string;
+  status?:      ProjectStatus;
+  priority?:    ProjectPriority;
+  startDate?:   Date;
+  dueDate?:     Date;
+  workspaceId:  string;
+  createdById:  string;
 }
 
 export interface UpdateProjectDto {
-  name?: string;
+  name?:        string;
   description?: string;
-  color?: string;
-  icon?: string;
-  status?: ProjectStatus;
-  priority?: ProjectPriority;
-  startDate?: Date;
-  dueDate?: Date;
+  color?:       string;
+  icon?:        string;
+  status?:      ProjectStatus;
+  priority?:    ProjectPriority;
+  startDate?:   Date;
+  dueDate?:     Date;
 }
 
 export interface AddProjectMemberDto {
   userId: string;
-  role?: ProjectRole;
+  role?:  ProjectRole;
 }
 
 export interface UpdateProjectMemberRoleDto {
@@ -61,28 +36,29 @@ export interface UpdateProjectMemberRoleDto {
 }
 
 export interface TopPerformer {
-  id: string;
-  name: string | null;
+  id:    string;
+  name:  string | null;
   email: string;
   image: string | null;
 }
 
 export interface ProjectStats {
-  totalTasks: number;
-  completedTasks: number;
-  overdueTasks: number;
-  totalMembers: number;
-  projectDays: number;
-  topPerformer: TopPerformer | null;
+  totalTasks:      number;
+  completedTasks:  number;
+  inProgressTasks: number;
+  overdueTasks:    number;
+  totalMembers:    number;
+  projectDays:     number;
+  topPerformer:    TopPerformer | null;
 }
 
 export interface ProjectForStats {
-  startDate:  Date | null;
-  createdAt:  Date;
-  _count:     { tasks: number; members: number };
+  startDate: Date | null;
+  createdAt: Date;
+  _count:    { tasks: number; members: number };
   tasks: Array<{
-    status:   string;
-    dueDate:  Date | null;
+    status:    string;
+    dueDate:   Date | null;
     assignees: Array<{
       user: { id: string; name: string | null; email: string; image: string | null };
     }>;

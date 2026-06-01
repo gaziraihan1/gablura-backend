@@ -1,4 +1,5 @@
-import { prisma } from '../../lib/prisma.js';
+import { prisma }                              from '../../lib/prisma.js';
+import { NotFoundError, ForbiddenError, BadRequestError } from '../../errors/index.js';
 
 export const AttachmentAccess = {
   async assertCanAttach(taskId: string, userId: string) {
@@ -9,13 +10,7 @@ export const AttachmentAccess = {
         OR: [
           { createdById: userId },
           { assignees: { some: { userId } } },
-          {
-            project: {
-              workspace: {
-                members: { some: { userId } },
-              },
-            },
-          },
+          { project: { workspace: { members: { some: { userId } } } } },
         ],
       },
       select: {
@@ -25,12 +20,9 @@ export const AttachmentAccess = {
             workspaceId: true,
             workspace: {
               select: {
-                id:   true,
-                plan: true,
-                members: {
-                  where:  { userId },
-                  select: { role: true },
-                },
+                id:      true,
+                plan:    true,
+                members: { where: { userId }, select: { role: true } },
               },
             },
           },
@@ -38,12 +30,9 @@ export const AttachmentAccess = {
       },
     });
 
-    if (!task) {
-      throw new Error('Task not found or you cannot attach files to this task');
-    }
-
+    if (!task) throw new NotFoundError('Task', 'TASK_NOT_FOUND');
     if (!task.project?.workspaceId) {
-      throw new Error('Personal tasks cannot have attachments');
+      throw new BadRequestError('Personal tasks cannot have attachments');
     }
 
     return {
@@ -59,23 +48,20 @@ export const AttachmentAccess = {
       select: {
         id:           true,
         name:         true,
-        originalName: true,  // ← needed for activity metadata
+        originalName: true,
         size:         true,
-        taskId:       true,  // ← needed for activity taskId
+        taskId:       true,
         uploadedById: true,
         workspaceId:  true,
         workspace: {
           select: {
-            members: {
-              where:  { userId },
-              select: { role: true },
-            },
+            members: { where: { userId }, select: { role: true } },
           },
         },
       },
     });
 
-    if (!file) throw new Error('File not found');
+    if (!file) throw new NotFoundError('File');
 
     const isUploader = file.uploadedById === userId;
     const isAdmin    =
@@ -83,7 +69,7 @@ export const AttachmentAccess = {
       file.workspace?.members[0]?.role === 'ADMIN';
 
     if (!isUploader && !isAdmin) {
-      throw new Error('You do not have permission to delete this file');
+      throw new ForbiddenError('You do not have permission to delete this file');
     }
 
     return file;
@@ -91,15 +77,11 @@ export const AttachmentAccess = {
 
   async assertCanViewStats(workspaceId: string, userId: string) {
     const member = await prisma.workspaceMember.findFirst({
-      where: {
-        workspaceId,
-        userId,
-        role: { in: ['OWNER', 'ADMIN'] },
-      },
+      where: { workspaceId, userId, role: { in: ['OWNER', 'ADMIN'] } },
     });
 
     if (!member) {
-      throw new Error('Only workspace owners and admins can view attachment statistics');
+      throw new ForbiddenError('Only workspace owners and admins can view attachment statistics');
     }
   },
 };

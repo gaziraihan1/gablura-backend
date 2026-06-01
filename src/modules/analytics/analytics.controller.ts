@@ -1,273 +1,168 @@
-import { Response } from 'express';
-import { AuthRequest } from '../../middleware/auth.js';
-import { AnalyticsQuery } from './analytics.query.js';
-import { prisma } from '../../lib/prisma.js';
+import type { Response } from "express";
+import type { AuthRequest } from "../../middleware/auth.js";
+import { AnalyticsQuery } from "./analytics.query.js";
+import { AnalyticsAccess } from "./analytics.access.js";
+import { asyncHandler } from "../../errors/index.js";
 
-class ForbiddenError extends Error {
-  constructor() {
-    super('FORBIDDEN');
-  }
-}
-class AppError extends Error {
-  public statusCode: number;
+// ─── helpers ──────────────────────────────────────────────────────────────────
 
-  constructor(message: string, statusCode: number) {
-    super(message);
-    this.statusCode = statusCode;
-  }
-}
+const parseDays = (value: unknown, fallback: number): number => {
+  const n = parseInt(value as string, 10);
+  return isNaN(n) ? fallback : n;
+};
 
-async function assertWorkspaceMember(workspaceId: string, userId: string) {
-  const member = await prisma.workspaceMember.findFirst({
-    where: { workspaceId, userId },
-  });
+// ─── controller ───────────────────────────────────────────────────────────────
 
-  if (!member) {
-    throw new AppError('Forbidden', 403);
-  }
-
-  return member;
-}
-
-async function assertAnalyticsAccess(workspaceId: string, userId: string) {
-  const workspace = await prisma.workspace.findUnique({
-    where: { id: workspaceId },
-    select: { plan: true },
-  });
-
-  if (!workspace) {
-    throw new AppError('Workspace not found', 404);
-  }
-
-  if (workspace.plan === 'FREE') {
-    throw new AppError('Upgrade workspace plan to access analytics', 403);
-  }
-
-  await assertWorkspaceMember(workspaceId, userId);
-}
 export class AnalyticsController {
-  private static handleAnalyticsError(error: any, res: Response) {
-  console.error('Analytics error:', error);
-
-  if (error instanceof AppError) {
-    return res.status(error.statusCode).json({
-      success: false,
-      message: error.message,
-    });
-  }
-
-  return res.status(500).json({
-    success: false,
-    message: 'Failed to fetch analytics data',
-  });
-}
-
-  static async getOverview(req: AuthRequest, res: Response) {
-  try {
-    if (!req.user?.id) {
-      return res.status(401).json({
-        success: false,
-        message: 'Unauthorized',
-      });
-    }
-    
+  /**
+   * GET /analytics/:workspaceId/overview
+   *
+   * Note: uses Promise.allSettled so a single query failure doesn't black out
+   * the entire dashboard. Individual null values are returned with a flag so
+   * the client can show partial data + a targeted error message.
+   */
+  static getOverview = asyncHandler(async (req: AuthRequest, res: Response) => {
     const { workspaceId } = req.params;
-    const workspace = await prisma.workspace.findUnique({
-    where: { id: workspaceId },
-    select: { plan: true },
-  });
-  if(workspace?.plan === 'FREE') {
-    throw new AppError('Upgrade workspace plan to access analytics', 403);
-  }
 
-    await assertWorkspaceMember(workspaceId, req.user.id);
+    // Single access check — assertAnalyticsAccess covers plan + role
+    await AnalyticsAccess.assertAnalyticsAccess(req.user!.id, workspaceId);
 
-    const results = await Promise.allSettled([
-      AnalyticsQuery.getExecutiveKPIs(workspaceId, req.user.id),
-      AnalyticsQuery.getTaskStatusDistribution(workspaceId, req.user.id),
-      AnalyticsQuery.getProjectStatusDistribution(workspaceId, req.user.id),
-      AnalyticsQuery.getTasksByPriority(workspaceId, req.user.id),
-      AnalyticsQuery.getDeadlineRiskAnalysis(workspaceId, req.user.id),
+    const [
+      kpisResult,
+      taskStatusResult,
+      projectStatusResult,
+      priorityResult,
+      deadlineResult,
+    ] = await Promise.allSettled([
+      AnalyticsQuery.getExecutiveKPIs(workspaceId, req.user!.id),
+      AnalyticsQuery.getTaskStatusDistribution(workspaceId, req.user!.id),
+      AnalyticsQuery.getProjectStatusDistribution(workspaceId, req.user!.id),
+      AnalyticsQuery.getTasksByPriority(workspaceId, req.user!.id),
+      AnalyticsQuery.getDeadlineRiskAnalysis(workspaceId, req.user!.id),
     ]);
 
-    const [kpis, taskStatus, projectStatus, tasksByPriority, deadlineRisk] =
-      results.map(r => (r.status === 'fulfilled' ? r.value : null));
+    // Log individual failures without crashing the whole response
+    [
+      kpisResult,
+      taskStatusResult,
+      projectStatusResult,
+      priorityResult,
+      deadlineResult,
+    ].forEach((r, i) => {
+      if (r.status === "rejected") {
+        console.error(`Analytics overview query [${i}] failed:`, r.reason);
+      }
+    });
 
-    return res.json({
+    res.json({
       success: true,
       data: {
-        kpis: kpis ?? {},
-        taskStatus: taskStatus ?? [],
-        projectStatus: projectStatus ?? [],
-        tasksByPriority: tasksByPriority ?? [],
-        deadlineRisk: deadlineRisk ?? {},
+        kpis: kpisResult.status === "fulfilled" ? kpisResult.value : null,
+        taskStatus:
+          taskStatusResult.status === "fulfilled"
+            ? taskStatusResult.value
+            : null,
+        projectStatus:
+          projectStatusResult.status === "fulfilled"
+            ? projectStatusResult.value
+            : null,
+        tasksByPriority:
+          priorityResult.status === "fulfilled" ? priorityResult.value : null,
+        deadlineRisk:
+          deadlineResult.status === "fulfilled" ? deadlineResult.value : null,
       },
+      // Tell the client if something partially failed
+      partial: [
+        kpisResult,
+        taskStatusResult,
+        projectStatusResult,
+        priorityResult,
+        deadlineResult,
+      ].some((r) => r.status === "rejected"),
     });
-  } catch (error: any) {
-    return AnalyticsController.handleAnalyticsError(error, res);
-  }
-}
+  });
 
-  static async getTaskTrends(req: AuthRequest, res: Response) {
-    try {
-      if (!req.user?.id) {
-        return res.status(401).json({
-          success: false,
-          message: 'Unauthorized',
-        });
-      }
-
+  static getTaskTrends = asyncHandler(
+    async (req: AuthRequest, res: Response) => {
       const { workspaceId } = req.params;
-          await assertAnalyticsAccess(workspaceId, req.user.id); // ✅ add this
+      await AnalyticsAccess.assertAnalyticsAccess(req.user!.id, workspaceId);
 
-      const { days = '30' } = req.query;
-      const daysNum = parseInt(days as string);
+      const days = parseDays(req.query.days, 30);
 
       const [completionTrend, overdueTrend] = await Promise.all([
-        AnalyticsQuery.getTaskCompletionTrend(workspaceId, req.user.id, daysNum),
-        AnalyticsQuery.getOverdueTrend(workspaceId, req.user.id, daysNum),
+        AnalyticsQuery.getTaskCompletionTrend(workspaceId, req.user!.id, days),
+        AnalyticsQuery.getOverdueTrend(workspaceId, req.user!.id, days),
       ]);
 
-      return res.json({
-        success: true,
-        data: {
-          completionTrend,
-          overdueTrend,
-        },
-      });
-    } catch (error: any) {
-      return AnalyticsController.handleAnalyticsError(error, res);
-    }
-  }
+      res.json({ success: true, data: { completionTrend, overdueTrend } });
+    },
+  );
 
-  static async getProjectHealth(req: AuthRequest, res: Response) {
-    try {
-      if (!req.user?.id) {
-        return res.status(401).json({
-          success: false,
-          message: 'Unauthorized',
-        });
-      }
-
+  static getProjectHealth = asyncHandler(
+    async (req: AuthRequest, res: Response) => {
       const { workspaceId } = req.params;
-          await assertAnalyticsAccess(workspaceId, req.user.id); // ✅ add this
+      await AnalyticsAccess.assertAnalyticsAccess(req.user!.id, workspaceId);
 
-      const metrics = await AnalyticsQuery.getProjectHealthMetrics(workspaceId, req.user.id);
+      const metrics = await AnalyticsQuery.getProjectHealthMetrics(
+        workspaceId,
+        req.user!.id,
+      );
+      res.json({ success: true, data: metrics });
+    },
+  );
 
-      return res.json({
-        success: true,
-        data: metrics,
-      });
-    } catch (error: any) {
-      return AnalyticsController.handleAnalyticsError(error, res);
-    }
-  }
-
-  static async getMemberContribution(req: AuthRequest, res: Response) {
-    try {
-      if (!req.user?.id) {
-        return res.status(401).json({
-          success: false,
-          message: 'Unauthorized',
-        });
-      }
-
+  static getMemberContribution = asyncHandler(
+    async (req: AuthRequest, res: Response) => {
       const { workspaceId } = req.params;
-          await assertAnalyticsAccess(workspaceId, req.user.id); // ✅ add this
+      await AnalyticsAccess.assertAnalyticsAccess(req.user!.id, workspaceId);
 
-      const contributions = await AnalyticsQuery.getMemberContribution(workspaceId, req.user.id);
+      const contributions = await AnalyticsQuery.getMemberContribution(
+        workspaceId,
+        req.user!.id,
+      );
+      res.json({ success: true, data: contributions });
+    },
+  );
 
-      return res.json({
-        success: true,
-        data: contributions,
-      });
-    } catch (error: any) {
-      return AnalyticsController.handleAnalyticsError(error, res);
-    }
-  }
-
-  static async getTimeSummary(req: AuthRequest, res: Response) {
-    try {
-      if (!req.user?.id) {
-        return res.status(401).json({
-          success: false,
-          message: 'Unauthorized',
-        });
-      }
-
+  static getTimeSummary = asyncHandler(
+    async (req: AuthRequest, res: Response) => {
       const { workspaceId } = req.params;
-          await assertAnalyticsAccess(workspaceId, req.user.id); // ✅ add this
+      await AnalyticsAccess.assertAnalyticsAccess(req.user!.id, workspaceId);
 
-      const { days = '7' } = req.query;
-      const daysNum = parseInt(days as string);
-
+      const days = parseDays(req.query.days, 7);
       const summary = await AnalyticsQuery.getTimeTrackingSummary(
         workspaceId,
-        req.user.id,
-        daysNum
+        req.user!.id,
+        days,
       );
+      res.json({ success: true, data: summary });
+    },
+  );
 
-      return res.json({
-        success: true,
-        data: summary,
-      });
-    } catch (error: any) {
-      return AnalyticsController.handleAnalyticsError(error, res);
-    }
-  }
-
-  static async getActivityTrends(req: AuthRequest, res: Response) {
-    try {
-      if (!req.user?.id) {
-        return res.status(401).json({
-          success: false,
-          message: 'Unauthorized',
-        });
-      }
-
+  static getActivityTrends = asyncHandler(
+    async (req: AuthRequest, res: Response) => {
       const { workspaceId } = req.params;
-          await assertAnalyticsAccess(workspaceId, req.user.id); // ✅ add this
+      await AnalyticsAccess.assertAnalyticsAccess(req.user!.id, workspaceId);
 
-      const { days = '30' } = req.query;
-      const daysNum = parseInt(days as string);
+      const days = parseDays(req.query.days, 30);
 
       const [volumeTrend, mostActiveDay] = await Promise.all([
-        AnalyticsQuery.getActivityVolumeTrend(workspaceId, req.user.id, daysNum),
-        AnalyticsQuery.getMostActiveDay(workspaceId, req.user.id),
+        AnalyticsQuery.getActivityVolumeTrend(workspaceId, req.user!.id, days),
+        AnalyticsQuery.getMostActiveDay(workspaceId, req.user!.id),
       ]);
 
-      return res.json({
-        success: true,
-        data: {
-          volumeTrend,
-          mostActiveDay,
-        },
-      });
-    } catch (error: any) {
-      return AnalyticsController.handleAnalyticsError(error, res);
-    }
-  }
+      res.json({ success: true, data: { volumeTrend, mostActiveDay } });
+    },
+  );
 
-  static async getWorkload(req: AuthRequest, res: Response) {
-    try {
-      if (!req.user?.id) {
-        return res.status(401).json({
-          success: false,
-          message: 'Unauthorized',
-        });
-      }
+  static getWorkload = asyncHandler(async (req: AuthRequest, res: Response) => {
+    const { workspaceId } = req.params;
+    await AnalyticsAccess.assertAnalyticsAccess(req.user!.id, workspaceId);
 
-      const { workspaceId } = req.params;
-          await assertAnalyticsAccess(workspaceId, req.user.id); // ✅ add this
-
-      const tasksPerMember = await AnalyticsQuery.getTasksPerMember(workspaceId, req.user.id);
-
-      return res.json({
-        success: true,
-        data: tasksPerMember,
-      });
-    } catch (error: any) {
-      return AnalyticsController.handleAnalyticsError(error, res);
-    }
-  }
+    const tasksPerMember = await AnalyticsQuery.getTasksPerMember(
+      workspaceId,
+      req.user!.id,
+    );
+    res.json({ success: true, data: tasksPerMember });
+  });
 }

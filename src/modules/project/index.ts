@@ -5,13 +5,6 @@ export { ProjectAccess }   from './project.access.js';
 
 export { calculateProjectStats } from './project.stats.js';
 
-export {
-  ProjectError,
-  UnauthorizedError,
-  NotFoundError,
-  ValidationError,
-} from './project.types.js';
-
 export { default as projectRouter } from './project.routes.js';
 
 export type {

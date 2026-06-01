@@ -1,12 +1,12 @@
-import { prisma } from '../../lib/prisma.js';
-import { NotFoundError } from './project.types.js';
+import { prisma }        from '../../lib/prisma.js';
+import { NotFoundError } from '../../errors/index.js';
 import {
   projectListInclude,
   projectDetailInclude,
   projectWorkspaceListSelect,
 } from './project.selects.js';
-import { ProjectAccess } from './project.access.js';
-import { calculateProjectStats } from './project.stats.js';
+import { ProjectAccess }          from './project.access.js';
+import { calculateProjectStats }  from './project.stats.js';
 
 export const ProjectQuery = {
   async getUserProjects(userId: string) {
@@ -16,10 +16,7 @@ export const ProjectQuery = {
           { members: { some: { userId } } },
           {
             workspace: {
-              OR: [
-                { ownerId: userId },
-                { members: { some: { userId } } },
-              ],
+              OR: [{ ownerId: userId }, { members: { some: { userId } } }],
             },
           },
         ],
@@ -37,7 +34,7 @@ export const ProjectQuery = {
           where: {
             userId,
             workspaceId: { in: nonOwnerWorkspaceIds },
-            role: { in: ['OWNER', 'ADMIN'] },
+            role:        { in: ['OWNER', 'ADMIN'] },
           },
           select: { workspaceId: true },
         })
@@ -68,16 +65,13 @@ export const ProjectQuery = {
       where: {
         id: projectId,
         workspace: {
-          OR: [
-            { ownerId: userId },
-            { members: { some: { userId } } },
-          ],
+          OR: [{ ownerId: userId }, { members: { some: { userId } } }],
         },
       },
       include: projectDetailInclude,
     });
 
-    if (!project) throw new NotFoundError('Project not found or access denied');
+    if (!project) throw new NotFoundError('Project', 'PROJECT_NOT_FOUND');
 
     const [stats, isAdmin] = await Promise.all([
       Promise.resolve(calculateProjectStats(project)),
@@ -86,24 +80,29 @@ export const ProjectQuery = {
 
     return { ...project, stats, isAdmin };
   },
+
   async getProjectBySlug(userId: string, slug: string) {
-  const project = await prisma.project.findFirst({
-    where: { slug: slug, workspace: {
-      OR: [
-        {ownerId: userId},
-        {members: {some: {userId}}},
-      ],
-    } },
-    include: projectDetailInclude,
-  });
-  if (!project) throw new NotFoundError('Project not found');
-  const [stats, isAdmin] = await Promise.all([
-    Promise.resolve(calculateProjectStats(project)),
-    ProjectAccess.isProjectAdmin(userId, project)
-  ])
-  return {...project, isAdmin, stats: {
-    ...stats,
-    totalAnnouncement: project._count.announcement
-  }};
-},
+    const project = await prisma.project.findFirst({
+      where: {
+        slug,
+        workspace: {
+          OR: [{ ownerId: userId }, { members: { some: { userId } } }],
+        },
+      },
+      include: projectDetailInclude,
+    });
+
+    if (!project) throw new NotFoundError('Project');
+
+    const [stats, isAdmin] = await Promise.all([
+      Promise.resolve(calculateProjectStats(project)),
+      ProjectAccess.isProjectAdmin(userId, project),
+    ]);
+
+    return {
+      ...project,
+      isAdmin,
+      stats: { ...stats, totalAnnouncement: project._count.announcement },
+    };
+  },
 };

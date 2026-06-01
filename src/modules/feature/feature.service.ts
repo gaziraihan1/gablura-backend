@@ -1,5 +1,6 @@
 import { FeatureRepository }  from './feature.repository.js';
 import { isFocuraAdmin }      from '../../config/admin.config.js';
+import { NotFoundError, ForbiddenError } from '../../errors/index.js';
 import type {
   CreateFeatureRequestInput,
   UpdateFeatureStatusInput,
@@ -18,46 +19,43 @@ export const FeatureService = {
 
   async getOne(id: string, userId: string) {
     const feature = await FeatureRepository.findById(id, userId);
-    if (!feature) throw new Error('NOT_FOUND: Feature request not found');
+    if (!feature) throw new NotFoundError('Feature request');
     return feature;
   },
 
   async updateStatus(id: string, userId: string, input: UpdateFeatureStatusInput) {
     if (!isFocuraAdmin(userId))
-      throw new Error('FORBIDDEN: Only Focura admins can update feature status');
+      throw new ForbiddenError('Only Focura admins can update feature status');
 
     const feature = await FeatureRepository.findById(id, null);
-    if (!feature) throw new Error('NOT_FOUND: Feature request not found');
+    if (!feature) throw new NotFoundError('Feature request');
 
     return FeatureRepository.updateStatus(id, input);
   },
 
   async delete(id: string, userId: string) {
     if (!isFocuraAdmin(userId))
-      throw new Error('FORBIDDEN: Only Focura admins can delete feature requests');
+      throw new ForbiddenError('Only Focura admins can delete feature requests');
 
     const feature = await FeatureRepository.findById(id, null);
-    if (!feature) throw new Error('NOT_FOUND: Feature request not found');
+    if (!feature) throw new NotFoundError('Feature request');
 
     await FeatureRepository.delete(id);
-    return { success: true };
   },
 
   async vote(id: string, userId: string, type: VoteType) {
     const feature = await FeatureRepository.findById(id, null);
-    if (!feature) throw new Error('NOT_FOUND: Feature request not found');
+    if (!feature) throw new NotFoundError('Feature request');
 
-    
-    const action = await FeatureRepository.vote(id, userId, type);
+    const action  = await FeatureRepository.vote(id, userId, type);
     const updated = await FeatureRepository.findById(id, userId);
     return { action, feature: updated };
   },
+
   async removeVote(id: string, userId: string) {
-  const feature = await FeatureRepository.findById(id, null);
-  if (!feature) throw new Error('NOT_FOUND: Feature request not found');
+    const feature = await FeatureRepository.findById(id, null);
+    if (!feature) throw new NotFoundError('Feature request');
 
-  await FeatureRepository.removeVote(id, userId);
-
-  return { success: true };
-}
+    await FeatureRepository.removeVote(id, userId);
+  },
 };

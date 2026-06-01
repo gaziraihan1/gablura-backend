@@ -234,6 +234,20 @@ describe("POST /api/v1/features/:featureId/vote", () => {
   });
 });
 
+describe('PATCH /api/v1/features/:id/status', () => {
+  it('403 — non-admin cannot update status', async () => {
+    const user = await createUser(); // regular user, not admin
+    const feature = await createFeatureRequest(user.id);
+
+    const res = await request(app)
+      .patch(`/api/v1/features/${feature.id}/status`)
+      .set(await authWithCsrfHeaders(user))
+      .send({ status: FeatureStatus.APPROVED });
+
+    expect(res.status).toBe(403);
+  });
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // DELETE /api/v1/features/:featureId/vote  —  Remove vote
 // ─────────────────────────────────────────────────────────────────────────────

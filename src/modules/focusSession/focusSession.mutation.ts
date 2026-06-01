@@ -1,19 +1,23 @@
-import { prisma } from '../../lib/prisma.js';
+import { prisma }          from '../../lib/prisma.js';
 import type {
   CreateFocusSessionInput,
   CompleteFocusSessionInput,
   CancelFocusSessionInput,
 } from './focusSession.types.js';
-import { FocusSessionError } from './focusSession.types.js';
 import { FocusSessionQuery } from './focusSession.query.js';
 import { sessionWithIdTitle } from './focusSession.selects.js';
+import { ConflictError, NotFoundError, BadRequestError } from '../../errors/index.js';
 
 export const FocusSessionMutation = {
   async startSession(input: CreateFocusSessionInput) {
     const active = await FocusSessionQuery.getActiveSession(input.userId);
-
     if (active) {
-      throw new Error(FocusSessionError.USER_HAS_ACTIVE_SESSION);
+      // Carry the active session in meta so the controller can return it to the client
+      throw new ConflictError(
+        'You already have an active focus session',
+        'USER_HAS_ACTIVE_SESSION',
+        { activeSession: active },
+      );
     }
 
     return prisma.focusSession.create({
@@ -33,21 +37,16 @@ export const FocusSessionMutation = {
     onComplete?: (session: { startedAt: Date; workspaceId?: string }) => Promise<void>,
   ) {
     const session = await prisma.focusSession.findFirst({
-      where: { id: input.sessionId, userId: input.userId },
+      where:   { id: input.sessionId, userId: input.userId },
       include: { task: true },
     });
 
-    if (!session) {
-      throw new Error(FocusSessionError.SESSION_NOT_FOUND);
-    }
-
-    if (session.completed) {
-      throw new Error(FocusSessionError.SESSION_ALREADY_COMPLETED);
-    }
+    if (!session) throw new NotFoundError('Focus session', 'SESSION_NOT_FOUND');
+    if (session.completed) throw new BadRequestError('Focus session already completed', 'SESSION_ALREADY_COMPLETED');
 
     const updated = await prisma.focusSession.update({
-      where: { id: input.sessionId },
-      data:  { completed: true, endedAt: new Date() },
+      where:   { id: input.sessionId },
+      data:    { completed: true, endedAt: new Date() },
       include: { task: true },
     });
 
@@ -68,12 +67,9 @@ export const FocusSessionMutation = {
       where: { id: input.sessionId, userId: input.userId },
     });
 
-    if (!session) {
-      throw new Error(FocusSessionError.SESSION_NOT_FOUND);
-    }
+    if (!session) throw new NotFoundError('Focus session', 'SESSION_NOT_FOUND');
 
     await prisma.focusSession.delete({ where: { id: input.sessionId } });
-
     return session;
   },
 };
