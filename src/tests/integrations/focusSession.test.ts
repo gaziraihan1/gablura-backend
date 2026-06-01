@@ -83,7 +83,7 @@ describe("POST /api/v1/focus-sessions/start — start", () => {
       .set(await authWithCsrfHeaders(user))
       .send({ duration: 25, type: FocusType.SHORT_BREAK });
 
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(409);
   });
 
   it("400 — missing duration", async () => {

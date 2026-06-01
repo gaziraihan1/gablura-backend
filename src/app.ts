@@ -204,7 +204,5 @@ app.use("/api/v1/admin", authenticate, requireCsrfToken(), adminRouter);
 app.use(notFoundHandler);  // catches unmatched routes → forwards to errorHandler
 app.use(errorHandler); 
 
-// ── Global error handler ───────────────────────────────────
-app.use(errorHandler);
 
 export default app;

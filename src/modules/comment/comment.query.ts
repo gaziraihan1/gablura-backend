@@ -1,3 +1,4 @@
+import { NotFoundError } from '../../errors/AppError.js';
 import { prisma } from '../../lib/prisma.js';
 import { commentFullInclude } from './comment.selects.js';
 
@@ -35,7 +36,7 @@ export const CommentQuery = {
         },
         select: { id: true },
       });
-      if (!taskExists) throw new Error('Task not found or access denied');
+      if (!taskExists) throw new NotFoundError('Task');
     }
 
     return comments;

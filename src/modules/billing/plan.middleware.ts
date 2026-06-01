@@ -6,6 +6,7 @@ import { Response, NextFunction } from "express";
 import { prisma } from "../../lib/prisma.js";
 import { AuthRequest } from "../../middleware/auth.js";
 import { BillingService } from "./billing.service.js";
+import { PlanLimitError } from "../../errors/AppError.js";
 
 // ---------------------------------------------------------------------------
 // Generic guard factory
@@ -21,9 +22,7 @@ function planGuard(checker: LimitChecker) {
       const { allowed, reason } = await checker(req);
 
       if (!allowed) {
-        const error = new Error(reason || 'Plan limit exceeded');
-        (error as any).code = 'PLAN_LIMIT_EXCEEDED';
-        return next(error);
+        return next(new PlanLimitError(reason || 'Plan limit exceeded'));
       }
 
       next();

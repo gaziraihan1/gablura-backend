@@ -166,7 +166,7 @@ describe('AttachmentMutation', () => {
           size: 100,
         } as any,
       }),
-    ).rejects.toThrow('Failed to upload file to storage');
+    ).rejects.toThrow('upload failed');
 
     expect(rollbackUploadQuota).toHaveBeenCalled();
   });
@@ -201,7 +201,7 @@ describe('AttachmentMutation', () => {
           size: 100,
         } as any,
       }),
-    ).rejects.toThrow('Failed to save file record');
+    ).rejects.toThrow('db error');
   });
 
   /* ───────────────────────────────

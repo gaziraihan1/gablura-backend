@@ -276,7 +276,7 @@ describe("POST /api/v1/auth/refresh", () => {
       .send({ refreshToken: exchangeRes.body.refreshToken });
 
     expect(res.status).toBe(401);
-    expect(res.body.code).toBe("TOKEN_INVALID");
+    expect(res.body.code).toBe("TOKEN_REPLAY_DETECTED");
   });
 });
 

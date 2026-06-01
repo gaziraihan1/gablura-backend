@@ -1,3 +1,4 @@
+import { NotFoundError } from '../../errors/AppError.js';
 import { prisma } from '../../lib/prisma.js';
 import type {
   CreateFeatureRequestInput,
@@ -163,9 +164,7 @@ return 'updated';
     where: { userId_featureRequestId: { userId, featureRequestId } },
   });
 
-  if (!existing) {
-    throw new Error('NOT_FOUND: Vote not found');
-  }
+  if (!existing) throw new NotFoundError("Vote")
 
   await prisma.featureVote.delete({
     where: { userId_featureRequestId: { userId, featureRequestId } },

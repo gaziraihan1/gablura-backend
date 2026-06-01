@@ -102,5 +102,8 @@ export const errorHandler = (
  *   app.use(errorHandler);
  */
 export const notFoundHandler = (req: Request, _res: Response, next: NextFunction): void => {
-  next(new NotFoundError(`Route ${req.method} ${req.path}`));
+  next(new NotFoundError(`Route ${req.method} ${req.path}`, 'NOT_FOUND', {
+    path: req.path,
+    method: req.method,
+  }));
 };

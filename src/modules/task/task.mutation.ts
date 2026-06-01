@@ -88,7 +88,6 @@ type OnCommentAdded = (data: {
 
 export const TaskMutation = {
   async createTask(data: CreateTaskInput, onCreated?: OnTaskCreated) {
-    await ProjectAccess.assertProjectNotArchived(data?.projectId!);
     // ── Validation ────────────────────────────────────────────────────────────
     if (!data.title?.trim()) throw new Error("Task title is required");
     if (
@@ -108,6 +107,8 @@ export const TaskMutation = {
     let finalWorkspaceId: string | null = null;
 
     if (data.projectId) {
+    await ProjectAccess.assertProjectNotArchived(data.projectId);
+
       const project = await prisma.project.findFirst({
         where: {
           id: data.projectId,

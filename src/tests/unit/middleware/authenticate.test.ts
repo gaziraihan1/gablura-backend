@@ -10,7 +10,8 @@ vi.mock("../../../lib/prisma.js", () => ({
 }));
 
 // Mock ioredis client — used by session binding and revocation in auth.ts
-const mockRedisGet = vi.fn(async (): Promise<string | null> => null);const mockRedisSetex = vi.fn(async () => "OK");
+const mockRedisGet = vi.fn(async (): Promise<string | null> => null);
+const mockRedisSetex = vi.fn(async () => "OK");
 
 vi.mock("../../../redis/redis.client.js", () => ({
   getRedisClient: vi.fn(() => ({
@@ -21,7 +22,7 @@ vi.mock("../../../redis/redis.client.js", () => ({
 }));
 
 vi.mock("../../../lib/auth/sessionBinding.js", () => ({
-  getClientIp:           vi.fn(() => "127.0.0.1"),
+  getClientIp:            vi.fn(() => "127.0.0.1"),
   validateSessionBinding: vi.fn(() => ({ valid: true })),
 }));
 
@@ -34,13 +35,15 @@ vi.mock("../../../lib/auth/auditLog.js", () => ({
   auditLog: vi.fn(),
 }));
 
-import { authenticate } from "../../../middleware/auth.js";
+import { authenticate, authorize } from "../../../middleware/auth.js";
 import { prisma } from "../../../lib/prisma.js";
 import {
   generateTestToken,
   expiredAuthHeaders,
   invalidAuthHeaders,
 } from "../../helpers/auth.js";
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const mockUser = {
   id: "user-test-001",
@@ -68,7 +71,16 @@ function makeRes(): Response {
   } as unknown as Response;
 }
 
-const next: NextFunction = vi.fn();
+function makeNext() {
+  return vi.fn() as unknown as NextFunction;
+}
+
+/** Extract the first argument passed to next() and assert it's an AppError. */
+function getNextError(next: ReturnType<typeof makeNext>) {
+  const calls = vi.mocked(next).mock.calls;
+  expect(calls).toHaveLength(1);
+  return calls[0][0] as any;
+}
 
 function getTestPrivateKey(): string {
   const keyPath = process.env.TEST_JWT_PRIVATE_KEY_PATH;
@@ -76,9 +88,10 @@ function getTestPrivateKey(): string {
   return readFileSync(keyPath, "utf-8");
 }
 
+// ─── Tests ────────────────────────────────────────────────────────────────────
+
 beforeEach(() => {
   vi.clearAllMocks();
-  // Default: no stored session metadata, token not revoked
   mockRedisGet.mockResolvedValue(null);
   mockRedisSetex.mockResolvedValue("OK" as any);
 });
@@ -88,12 +101,13 @@ describe("authenticate middleware", () => {
   it("calls next() and attaches req.user for a valid token", async () => {
     vi.mocked(prisma.user.findUnique).mockResolvedValue(mockUser as any);
 
-    const req = makeReq(`Bearer ${generateTestToken(mockUser)}`);
-    const res = makeRes();
-
-    await authenticate(req, res, next);
+    const next = makeNext();
+    const req  = makeReq(`Bearer ${generateTestToken(mockUser)}`);
+    await authenticate(req, makeRes(), next);
 
     expect(next).toHaveBeenCalledOnce();
+    // next() called with no arguments = success
+    expect(vi.mocked(next).mock.calls[0][0]).toBeUndefined();
     expect(req.user?.id).toBe(mockUser.id);
     expect(req.user?.email).toBe(mockUser.email);
     expect(req.user?.role).toBe(mockUser.role);
@@ -101,43 +115,48 @@ describe("authenticate middleware", () => {
   });
 
   it("returns 401 NO_TOKEN when Authorization header is absent", async () => {
-    const res = makeRes();
-    await authenticate(makeReq(undefined), res, next);
-    expect(res.status).toHaveBeenCalledWith(401);
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: "NO_TOKEN" }));
-    expect(next).not.toHaveBeenCalled();
+    const next = makeNext();
+    await authenticate(makeReq(undefined), makeRes(), next);
+
+    const err = getNextError(next);
+    expect(err.statusCode).toBe(401);
+    expect(err.code).toBe("NO_TOKEN");
   });
 
   it("returns 401 NO_TOKEN when Authorization is not Bearer scheme", async () => {
-    const res = makeRes();
-    await authenticate(makeReq("Basic dXNlcjpwYXNz"), res, next);
-    expect(res.status).toHaveBeenCalledWith(401);
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: "NO_TOKEN" }));
-    expect(next).not.toHaveBeenCalled();
+    const next = makeNext();
+    await authenticate(makeReq("Basic dXNlcjpwYXNz"), makeRes(), next);
+
+    const err = getNextError(next);
+    expect(err.statusCode).toBe(401);
+    expect(err.code).toBe("NO_TOKEN");
   });
 
   it("returns 401 NO_TOKEN for empty Bearer string", async () => {
-    const res = makeRes();
-    await authenticate(makeReq("Bearer "), res, next);
-    expect(res.status).toHaveBeenCalledWith(401);
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: "NO_TOKEN" }));
-    expect(next).not.toHaveBeenCalled();
+    const next = makeNext();
+    await authenticate(makeReq("Bearer "), makeRes(), next);
+
+    const err = getNextError(next);
+    expect(err.statusCode).toBe(401);
+    expect(err.code).toBe("NO_TOKEN");
   });
 
   it("returns 401 INVALID_TOKEN for a completely malformed token", async () => {
-    const res = makeRes();
-    await authenticate(makeReq(invalidAuthHeaders().Authorization), res, next);
-    expect(res.status).toHaveBeenCalledWith(401);
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: "INVALID_TOKEN" }));
-    expect(next).not.toHaveBeenCalled();
+    const next = makeNext();
+    await authenticate(makeReq(invalidAuthHeaders().Authorization), makeRes(), next);
+
+    const err = getNextError(next);
+    expect(err.statusCode).toBe(401);
+    expect(err.code).toBe("INVALID_TOKEN");
   });
 
   it("returns 401 TOKEN_EXPIRED for an expired token", async () => {
-    const res = makeRes();
-    await authenticate(makeReq(expiredAuthHeaders(mockUser).Authorization), res, next);
-    expect(res.status).toHaveBeenCalledWith(401);
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: "TOKEN_EXPIRED" }));
-    expect(next).not.toHaveBeenCalled();
+    const next = makeNext();
+    await authenticate(makeReq(expiredAuthHeaders(mockUser).Authorization), makeRes(), next);
+
+    const err = getNextError(next);
+    expect(err.statusCode).toBe(401);
+    expect(err.code).toBe("TOKEN_EXPIRED");
   });
 
   it("returns 401 TOKEN_VERSION_MISMATCH for token with wrong version", async () => {
@@ -145,16 +164,20 @@ describe("authenticate middleware", () => {
     const { default: jwt } = await import("jsonwebtoken");
 
     const token = jwt.sign(
-      { sub: mockUser.id, email: mockUser.email, role: mockUser.role, type: "access", version: 99, jti: "test-jti", sessionId: "test-session" },
+      {
+        sub: mockUser.id, email: mockUser.email, role: mockUser.role,
+        type: "access", version: 99, jti: "test-jti", sessionId: "test-session",
+      },
       privateKey,
       { algorithm: "RS256", issuer: "focura-app", audience: "focura-backend" },
     );
 
-    const res = makeRes();
-    await authenticate(makeReq(`Bearer ${token}`), res, next);
-    expect(res.status).toHaveBeenCalledWith(401);
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: "TOKEN_VERSION_MISMATCH" }));
-    expect(next).not.toHaveBeenCalled();
+    const next = makeNext();
+    await authenticate(makeReq(`Bearer ${token}`), makeRes(), next);
+
+    const err = getNextError(next);
+    expect(err.statusCode).toBe(401);
+    expect(err.code).toBe("TOKEN_VERSION_MISMATCH");
   });
 
   it("returns 401 INVALID_TOKEN_TYPE for refresh token used as access token", async () => {
@@ -162,119 +185,120 @@ describe("authenticate middleware", () => {
     const { default: jwt } = await import("jsonwebtoken");
 
     const token = jwt.sign(
-      { sub: mockUser.id, email: mockUser.email, role: mockUser.role, type: "refresh", version: 1, jti: "test-jti", sessionId: "test-session" },
+      {
+        sub: mockUser.id, email: mockUser.email, role: mockUser.role,
+        type: "refresh", version: 1, jti: "test-jti", sessionId: "test-session",
+      },
       privateKey,
       { algorithm: "RS256", issuer: "focura-app", audience: "focura-backend" },
     );
 
-    const res = makeRes();
-    await authenticate(makeReq(`Bearer ${token}`), res, next);
-    expect(res.status).toHaveBeenCalledWith(401);
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: "INVALID_TOKEN_TYPE" }));
-    expect(next).not.toHaveBeenCalled();
+    const next = makeNext();
+    await authenticate(makeReq(`Bearer ${token}`), makeRes(), next);
+
+    const err = getNextError(next);
+    expect(err.statusCode).toBe(401);
+    expect(err.code).toBe("INVALID_TOKEN_TYPE");
   });
 
-  // Revocation check always runs now — no env var gate needed
   it("returns 401 TOKEN_REVOKED when isAccessTokenRevoked returns true", async () => {
     const { isAccessTokenRevoked } = await import("../../../lib/auth/tokenRevocation.js");
     vi.mocked(isAccessTokenRevoked).mockResolvedValueOnce(true);
 
-    const res = makeRes();
-    await authenticate(makeReq(`Bearer ${generateTestToken(mockUser)}`), res, next);
+    const next = makeNext();
+    await authenticate(makeReq(`Bearer ${generateTestToken(mockUser)}`), makeRes(), next);
 
-    expect(res.status).toHaveBeenCalledWith(401);
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: "TOKEN_REVOKED" }));
-    expect(next).not.toHaveBeenCalled();
+    const err = getNextError(next);
+    expect(err.statusCode).toBe(401);
+    expect(err.code).toBe("TOKEN_REVOKED");
   });
 
   it("returns 401 USER_NOT_FOUND when user was deleted after token issued", async () => {
     vi.mocked(prisma.user.findUnique).mockResolvedValue(null);
 
-    const res = makeRes();
-    await authenticate(makeReq(`Bearer ${generateTestToken(mockUser)}`), res, next);
+    const next = makeNext();
+    await authenticate(makeReq(`Bearer ${generateTestToken(mockUser)}`), makeRes(), next);
 
-    expect(res.status).toHaveBeenCalledWith(401);
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: "USER_NOT_FOUND" }));
-    expect(next).not.toHaveBeenCalled();
+    const err = getNextError(next);
+    expect(err.statusCode).toBe(401);
+    expect(err.code).toBe("USER_NOT_FOUND");
   });
 
   it("returns 403 EMAIL_NOT_VERIFIED for user with null emailVerified", async () => {
     vi.mocked(prisma.user.findUnique).mockResolvedValue({ ...mockUser, emailVerified: null } as any);
 
-    const res = makeRes();
-    await authenticate(makeReq(`Bearer ${generateTestToken(mockUser)}`), res, next);
+    const next = makeNext();
+    await authenticate(makeReq(`Bearer ${generateTestToken(mockUser)}`), makeRes(), next);
 
-    expect(res.status).toHaveBeenCalledWith(403);
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: "EMAIL_NOT_VERIFIED" }));
-    expect(next).not.toHaveBeenCalled();
+    const err = getNextError(next);
+    expect(err.statusCode).toBe(403);
+    expect(err.code).toBe("EMAIL_NOT_VERIFIED");
   });
 
   it("returns 403 ACCOUNT_BANNED for a banned user", async () => {
-    vi.mocked(prisma.user.findUnique).mockResolvedValue({ ...mockUser, bannedAt: new Date(), banReason: "ToS violation" } as any);
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      ...mockUser, bannedAt: new Date(), banReason: "ToS violation",
+    } as any);
 
-    const res = makeRes();
-    await authenticate(makeReq(`Bearer ${generateTestToken(mockUser)}`), res, next);
+    const next = makeNext();
+    await authenticate(makeReq(`Bearer ${generateTestToken(mockUser)}`), makeRes(), next);
 
-    expect(res.status).toHaveBeenCalledWith(403);
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: "ACCOUNT_BANNED" }));
-    expect(next).not.toHaveBeenCalled();
+    const err = getNextError(next);
+    expect(err.statusCode).toBe(403);
+    expect(err.code).toBe("ACCOUNT_BANNED");
   });
 
-  // Session binding uses getRedisClient().get() now — mock mockRedisGet directly
   it("returns 401 SESSION_HIJACK_DETECTED when session binding fails", async () => {
-  const fakeMetadata = JSON.stringify({
-    ip: "1.2.3.4",
-    userAgent: "OtherBrowser/1.0",
-    lastActivity: Date.now(),
+    const fakeMetadata = JSON.stringify({
+      ip: "1.2.3.4",
+      userAgent: "OtherBrowser/1.0",
+      lastActivity: Date.now(),
+    });
+    mockRedisGet.mockResolvedValueOnce(fakeMetadata);
+
+    const { validateSessionBinding } = await import("../../../lib/auth/sessionBinding.js");
+    vi.mocked(validateSessionBinding).mockReturnValueOnce({ valid: false, reason: "IP address changed" });
+
+    const { revokeAllRefreshTokens } = await import("../../../lib/auth/tokenRevocation.js");
+
+    const next  = makeNext();
+    const token = generateTestToken(mockUser, { sessionId: "bound-session" });
+    await authenticate(makeReq(`Bearer ${token}`), makeRes(), next);
+
+    const err = getNextError(next);
+    expect(err.statusCode).toBe(401);
+    expect(err.code).toBe("SESSION_HIJACK_DETECTED");
+    expect(revokeAllRefreshTokens).toHaveBeenCalledWith(mockUser.id);
   });
 
-  mockRedisGet.mockResolvedValueOnce(fakeMetadata);
+  // ─── authorize() ────────────────────────────────────────────────────────────
 
-  const { validateSessionBinding } = await import("../../../lib/auth/sessionBinding.js");
-  vi.mocked(validateSessionBinding).mockReturnValueOnce({
-    valid: false,
-    reason: "IP address changed",
+  it("authorize() — passes when user has required role", () => {
+    const next = makeNext();
+    const req  = { user: { id: "1", email: "a@b.com", role: "ADMIN" } } as AuthRequest;
+    authorize("ADMIN", "USER")(req, makeRes(), next);
+
+    expect(next).toHaveBeenCalledOnce();
+    expect(vi.mocked(next).mock.calls[0][0]).toBeUndefined();
   });
 
-  const { revokeAllRefreshTokens } = await import("../../../lib/auth/tokenRevocation.js");
+  it("authorize() — returns 403 FORBIDDEN when user lacks required role", () => {
+    const next = makeNext();
+    const req  = { user: { id: "1", email: "a@b.com", role: "USER" } } as AuthRequest;
+    authorize("ADMIN")(req, makeRes(), next);
 
-  const token = generateTestToken(mockUser, { sessionId: "bound-session" });
-  const res = makeRes();
-
-  await authenticate(makeReq(`Bearer ${token}`), res, next);
-
-  expect(res.status).toHaveBeenCalledWith(401);
-  expect(res.json).toHaveBeenCalledWith(
-    expect.objectContaining({ code: "SESSION_HIJACK_DETECTED" })
-  );
-
-  expect(revokeAllRefreshTokens).toHaveBeenCalledWith(mockUser.id);
-  expect(next).not.toHaveBeenCalled();
-});
-
-  it("authorize() — passes when user has required role", async () => {
-    const { authorize } = await import("../../../middleware/auth.js");
-    const req = { user: { id: "1", email: "a@b.com", role: "ADMIN" } } as AuthRequest;
-    const authorizeNext: NextFunction = vi.fn();
-    authorize("ADMIN", "USER")(req, makeRes(), authorizeNext);
-    expect(authorizeNext).toHaveBeenCalledOnce();
+    const err = getNextError(next);
+    expect(err.statusCode).toBe(403);
+    expect(err.code).toBe("FORBIDDEN");
   });
 
-  it("authorize() — returns 403 FORBIDDEN when user lacks required role", async () => {
-    const { authorize } = await import("../../../middleware/auth.js");
-    const req = { user: { id: "1", email: "a@b.com", role: "USER" } } as AuthRequest;
-    const res = makeRes();
-    authorize("ADMIN")(req, res, vi.fn());
-    expect(res.status).toHaveBeenCalledWith(403);
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: "FORBIDDEN" }));
-  });
+  it("authorize() — returns 401 NOT_AUTHENTICATED when req.user is missing", () => {
+    const next = makeNext();
+    const req  = { headers: {} } as AuthRequest;
+    authorize("ADMIN")(req, makeRes(), next);
 
-  it("authorize() — returns 401 NOT_AUTHENTICATED when req.user is missing", async () => {
-    const { authorize } = await import("../../../middleware/auth.js");
-    const req = { headers: {} } as AuthRequest;
-    const res = makeRes();
-    authorize("ADMIN")(req, res, vi.fn());
-    expect(res.status).toHaveBeenCalledWith(401);
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: "NOT_AUTHENTICATED" }));
+    const err = getNextError(next);
+    expect(err.statusCode).toBe(401);
+    expect(err.code).toBe("NOT_AUTHENTICATED");
   });
 });

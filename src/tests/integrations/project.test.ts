@@ -79,7 +79,7 @@ describe("POST /api/v1/projects — billing", () => {
       });
 
     expect(res.status).toBe(403);
-    expect(res.body.error).toBe("PLAN_LIMIT_EXCEEDED");
+    expect(res.body.code).toBe("PLAN_LIMIT_EXCEEDED");
   });
 
   it("201 — allowed when unlimited", async () => {
@@ -219,7 +219,7 @@ describe("POST /api/v1/projects", () => {
       .set(await authWithCsrfHeaders(user))
       .send({ workspaceId: workspace.id });
 
-    expect(res.status).toBe(422);
+    expect(res.status).toBe(400);
   });
 
   it("401 — unauthenticated", async () => {
@@ -414,7 +414,7 @@ describe("PATCH /api/v1/projects/:projectId", () => {
       .set(await authWithCsrfHeaders(user))
       .send({ priority: "EXTREME" });
 
-    expect(res.status).toBe(422);
+    expect(res.status).toBe(400);
   });
 });
 

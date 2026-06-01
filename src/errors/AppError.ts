@@ -99,8 +99,8 @@ export class PlanLimitError extends AppError {
 // ─── 404 ──────────────────────────────────────────────────────────────────────
 
 export class NotFoundError extends AppError {
-  constructor(resource = "Resource", code = "NOT_FOUND") {
-    super(`${resource} not found`, 404, code);
+  constructor(resource = "Resource", code = "NOT_FOUND", meta?: Record<string, unknown>) {
+    super(`${resource} not found`, 404, code, meta);
   }
 }
 
