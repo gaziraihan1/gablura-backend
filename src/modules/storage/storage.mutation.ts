@@ -11,6 +11,7 @@ import {
   getStorageLimits,
 } from "../attachment/attatchment.quota.service.js";
 import { WorkspacePlan } from "../attachment/attachment.quota.types.js";
+import { ForbiddenError, NotFoundError } from "../../errors/AppError.js";
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -44,14 +45,12 @@ export const StorageMutation = {
     });
 
     if (files.length === 0) {
-      return { success: false, message: "No files found in this workspace", deletedCount: 0, freedMB: 0 };
+      throw new NotFoundError("Files", "NOT_FOUND")
     }
 
     const deletable = files.filter((f) => f.uploadedById === userId || isAdmin);
 
-    if (deletable.length === 0) {
-      return { success: false, message: "You do not have permission to delete these files", deletedCount: 0, freedMB: 0 };
-    }
+    if (deletable.length === 0) throw new ForbiddenError("You do not have permission to delete these files")
 
     const totalBytes = deletable.reduce((sum, f) => sum + f.size, 0);
 
@@ -98,7 +97,7 @@ export const StorageMutation = {
       },
     });
 
-    if (!file) return { success: false, message: "File not found", freedMB: 0 };
+    if (!file) throw new NotFoundError("Files", "NOT_FOUND")
 
     const isOwner = file.uploadedById === userId;
     const isAdmin =
@@ -106,7 +105,7 @@ export const StorageMutation = {
       file.workspace?.members[0]?.role === "ADMIN";
 
     if (!isOwner && !isAdmin) {
-      return { success: false, message: "You do not have permission to delete this file", freedMB: 0 };
+      throw new ForbiddenError("You do not have permission to delete these files")
     }
 
     await prisma.file.delete({ where: { id: fileId } });

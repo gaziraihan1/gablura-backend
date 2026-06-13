@@ -7,6 +7,7 @@ export const SubtaskActivity = {
     parentTaskId: string;
     userId:      string;
     workspaceId: string;
+    workspaceSlug: string;
   }): Promise<void> {
     try {
       await prisma.activity.create({
@@ -16,6 +17,7 @@ export const SubtaskActivity = {
           entityId:    params.subtaskId,
           userId:      params.userId,
           workspaceId: params.workspaceId,
+          workspaceSlug: params.workspaceSlug,
           taskId:      params.parentTaskId,
           metadata: {
             subtaskTitle: params.subtaskTitle,
@@ -35,6 +37,7 @@ export const SubtaskActivity = {
     parentTaskId: string;
     userId:       string;
     workspaceId:  string;
+    workspaceSlug: string;
     changes:      Record<string, any>;
   }): Promise<void> {
     try {
@@ -45,6 +48,7 @@ export const SubtaskActivity = {
           entityId:    params.subtaskId,
           userId:      params.userId,
           workspaceId: params.workspaceId,
+          workspaceSlug: params.workspaceSlug,
           taskId:      params.parentTaskId,
           metadata: {
             subtaskTitle: params.subtaskTitle,
@@ -65,6 +69,7 @@ export const SubtaskActivity = {
     parentTaskId: string;
     userId:       string;
     workspaceId:  string;
+    workspaceSlug: string;
     oldStatus:    string;
     newStatus:    string;
   }): Promise<void> {
@@ -76,6 +81,7 @@ export const SubtaskActivity = {
           entityId:    params.subtaskId,
           userId:      params.userId,
           workspaceId: params.workspaceId,
+          workspaceSlug: params.workspaceSlug,
           taskId:      params.parentTaskId,
           metadata: {
             subtaskTitle: params.subtaskTitle,
@@ -97,6 +103,7 @@ export const SubtaskActivity = {
     parentTaskId: string;
     userId:       string;
     workspaceId:  string;
+    workspaceSlug: string;
   }): Promise<void> {
     try {
       await prisma.activity.create({
@@ -106,6 +113,7 @@ export const SubtaskActivity = {
           entityId:    params.subtaskId,
           userId:      params.userId,
           workspaceId: params.workspaceId,
+          workspaceSlug: params.workspaceSlug,
           taskId:      params.parentTaskId,
           metadata: {
             subtaskTitle: params.subtaskTitle,

@@ -7,6 +7,8 @@ import { WorkspaceAccess } from "./workspace.access.js";
 import type { WorkspaceStats } from "./workspace.types.js";
 import { projectWorkspaceListSelect } from "../project/project.selects.js";
 import { CacheClient, CACHE_KEYS, CACHE_TTL } from "../../lib/redis/cache.client.js";
+import { NotFoundError, ForbiddenError } from "../../errors/AppError.js";
+
 
 export const WorkspaceQuery = {
   async getUserWorkspaces(userId: string) {
@@ -34,7 +36,7 @@ export const WorkspaceQuery = {
       },
       include: workspaceDetailInclude,
     });
-    if (!workspace) throw new Error("Workspace not found");
+if (!workspace) throw new NotFoundError("Workspace");
 
     await CacheClient.set(cacheKey, workspace, CACHE_TTL.WORKSPACE_METADATA);
 
@@ -56,7 +58,7 @@ export const WorkspaceQuery = {
       },
       include: workspaceDetailInclude,
     });
-    if (!workspace) throw new Error("Workspace not found");
+if (!workspace) throw new NotFoundError("Workspace");
 
     await CacheClient.set(cacheKey, workspace, CACHE_TTL.WORKSPACE_METADATA);
 
@@ -75,9 +77,9 @@ export const WorkspaceQuery = {
   },
 
   async getStats(workspaceId: string, userId: string): Promise<WorkspaceStats> {
-    await WorkspaceAccess.assertMember(workspaceId, userId);
-    return WorkspaceQuery.computeStats(workspaceId);
-  },
+  await WorkspaceAccess.assertViewer(workspaceId, userId); // relaxed
+  return WorkspaceQuery.computeStats(workspaceId);
+},
 
   async getOverview(slug: string, userId: string) {
     // Try cache first
@@ -94,8 +96,8 @@ export const WorkspaceQuery = {
       include: workspaceDetailInclude,
     });
 
-    if (!workspace) throw new Error("Workspace not found");
-    if (workspace.deletedAt) throw new Error("Workspace suspended");
+    if (!workspace) throw new NotFoundError("Workspace");
+if (workspace.deletedAt) throw new ForbiddenError("This workspace has been suspended", "WORKSPACE_SUSPENDED");
 
     const [stats, projects] = await Promise.all([
       WorkspaceQuery.computeStats(workspace.id),
@@ -168,7 +170,7 @@ export const WorkspaceQuery = {
         },
       },
     });
-    if (!invitation) throw new Error("Invitation not found");
+if (!invitation) throw new NotFoundError("Invitation");
     return invitation;
   },
 };

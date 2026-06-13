@@ -1,25 +1,14 @@
-import { prisma } from '../../../lib/prisma.js';
+import { prisma }          from '../../../lib/prisma.js';
 import type { CreateSubtaskInput, UpdateSubtaskInput } from './subtask.types.js';
-import { SubtaskAccess } from './subtask.access.js';
-import { getTimeStatus } from '../index.js';
-
-// ─── Subtask select shape (reuse from task.selects) ──────────────────────────
+import { SubtaskAccess }   from './subtask.access.js';
+import { getTimeStatus }   from '../index.js';
+import { BadRequestError, ForbiddenError, NotFoundError } from '../../../errors/index.js';
 
 const subtaskInclude = {
-  createdBy: {
-    select: { id: true, name: true, email: true, image: true },
-  },
-  assignees: {
-    include: {
-      user: { select: { id: true, name: true, email: true, image: true } },
-    },
-  },
-  _count: {
-    select: { comments: true, files: true },
-  },
+  createdBy: { select: { id: true, name: true, email: true, image: true } },
+  assignees: { include: { user: { select: { id: true, name: true, email: true, image: true } } } },
+  _count:    { select: { comments: true, files: true } },
 } as const;
-
-// ─── Callback types ───────────────────────────────────────────────────────────
 
 type OnSubtaskCreated = (data: {
   subtask:      any;
@@ -43,31 +32,19 @@ type OnSubtaskDeleted = (data: {
   workspaceId?: string;
 }) => Promise<void>;
 
-// ─── Mutations ────────────────────────────────────────────────────────────────
-
 export const SubtaskMutation = {
-  async createSubtask(
-    data:       CreateSubtaskInput,
-    onCreated?: OnSubtaskCreated,
-  ) {
-    if (!data.title?.trim()) throw new Error('BAD_REQUEST: Subtask title is required');
+  async createSubtask(data: CreateSubtaskInput, onCreated?: OnSubtaskCreated) {
+    if (!data.title?.trim()) throw new BadRequestError('Subtask title is required');
 
-    // Assert parent access and assignee/creator requirement
-    const parent = await SubtaskAccess.assertCanCreateSubtask(
-      data.parentId,
-      data.createdById,
-    );
+    const parent = await SubtaskAccess.assertCanCreateSubtask(data.parentId, data.createdById);
 
-    // Guard: subtasks cannot have subtasks (max depth = 1)
-    if (parent.depth >= 1) {
-      throw new Error('BAD_REQUEST: Cannot create subtasks on a subtask');
-    }
+    if (parent.depth >= 1) throw new BadRequestError('Cannot create subtasks on a subtask');
 
     const subtask = await prisma.task.create({
       data: {
         title:          data.title,
         description:    data.description,
-        status:         (data.status as any) ?? 'TODO',
+        status:         (data.status   as any) ?? 'TODO',
         priority:       (data.priority as any) ?? 'MEDIUM',
         dueDate:        data.dueDate ?? null,
         estimatedHours: data.estimatedHours,
@@ -77,9 +54,7 @@ export const SubtaskMutation = {
         workspaceId:    parent.workspaceId,
         projectId:      parent.projectId,
         ...(data.assigneeIds?.length && {
-          assignees: {
-            create: data.assigneeIds.map((userId) => ({ userId })),
-          },
+          assignees: { create: data.assigneeIds.map((userId) => ({ userId })) },
         }),
       },
       include: subtaskInclude,
@@ -99,34 +74,28 @@ export const SubtaskMutation = {
     return { ...subtask, timeTracking: getTimeStatus(subtask) };
   },
 
-  async updateSubtask(
-    subtaskId:  string,
-    userId:     string,
-    data:       UpdateSubtaskInput,
-    onUpdated?: OnSubtaskUpdated,
-  ) {
+  async updateSubtask(subtaskId: string, userId: string, data: UpdateSubtaskInput, onUpdated?: OnSubtaskUpdated) {
     const permission = await SubtaskAccess.checkEditPermission(subtaskId, userId);
     if (!permission.canEdit) {
-      throw new Error(permission.reason || 'FORBIDDEN: Cannot edit this subtask');
+      throw new ForbiddenError(permission.reason || 'Cannot edit this subtask');
     }
 
     const existing = await prisma.task.findUnique({
       where:  { id: subtaskId },
       select: { status: true, parentId: true, workspaceId: true },
     });
-    if (!existing) throw new Error('NOT_FOUND: Subtask not found');
+    if (!existing) throw new NotFoundError('Subtask');
 
-    const wasCompleted =
-      data.status === 'COMPLETED' && existing.status !== 'COMPLETED';
+    const wasCompleted = data.status === 'COMPLETED' && existing.status !== 'COMPLETED';
 
     const updateData: any = {};
-    if (data.title       !== undefined) updateData.title          = data.title;
-    if (data.description !== undefined) updateData.description    = data.description;
-    if (data.status      !== undefined) updateData.status         = data.status as any;
-    if (data.priority    !== undefined) updateData.priority       = data.priority as any;
-    if (data.dueDate     !== undefined) updateData.dueDate        = data.dueDate;
+    if (data.title          !== undefined) updateData.title          = data.title;
+    if (data.description    !== undefined) updateData.description    = data.description;
+    if (data.status         !== undefined) updateData.status         = data.status as any;
+    if (data.priority       !== undefined) updateData.priority       = data.priority as any;
+    if (data.dueDate        !== undefined) updateData.dueDate        = data.dueDate;
     if (data.estimatedHours !== undefined) updateData.estimatedHours = data.estimatedHours;
-    if (wasCompleted)                   updateData.completedAt    = new Date();
+    if (wasCompleted)                      updateData.completedAt    = new Date();
 
     const subtask = await prisma.task.update({
       where:   { id: subtaskId },
@@ -150,15 +119,9 @@ export const SubtaskMutation = {
     return { ...subtask, timeTracking: getTimeStatus(subtask) };
   },
 
-  async updateSubtaskStatus(
-    subtaskId:  string,
-    userId:     string,
-    status:     string,
-    onUpdated?: OnSubtaskUpdated,
-  ) {
-    if (!status) throw new Error('BAD_REQUEST: Status is required');
+  async updateSubtaskStatus(subtaskId: string, userId: string, status: string, onUpdated?: OnSubtaskUpdated) {
+    if (!status) throw new BadRequestError('Status is required');
 
-    // Status can be changed by creator, assignees, or workspace admin
     const subtask = await prisma.task.findFirst({
       where: {
         id:    subtaskId,
@@ -169,9 +132,7 @@ export const SubtaskMutation = {
           {
             project: {
               workspace: {
-                members: {
-                  some: { userId, role: { in: ['OWNER', 'ADMIN'] } },
-                },
+                members: { some: { userId, role: { in: ['OWNER', 'ADMIN'] } } },
               },
             },
           },
@@ -180,18 +141,13 @@ export const SubtaskMutation = {
       select: { status: true, parentId: true, workspaceId: true, title: true },
     });
 
-    if (!subtask) {
-      throw new Error('FORBIDDEN: You do not have permission to change this subtask status');
-    }
+    if (!subtask) throw new ForbiddenError('You do not have permission to change this subtask status');
 
     const wasCompleted = status === 'COMPLETED' && subtask.status !== 'COMPLETED';
 
     const updated = await prisma.task.update({
-      where: { id: subtaskId },
-      data: {
-        status: status as any,
-        ...(wasCompleted && { completedAt: new Date() }),
-      },
+      where:   { id: subtaskId },
+      data:    { status: status as any, ...(wasCompleted && { completedAt: new Date() }) },
       include: subtaskInclude,
     });
 
@@ -211,14 +167,9 @@ export const SubtaskMutation = {
     return { ...updated, timeTracking: getTimeStatus(updated) };
   },
 
-  async deleteSubtask(
-    subtaskId:  string,
-    userId:     string,
-    onDeleted?: OnSubtaskDeleted,
-  ) {
+  async deleteSubtask(subtaskId: string, userId: string, onDeleted?: OnSubtaskDeleted) {
     const subtask = await SubtaskAccess.assertDeletePermission(subtaskId, userId);
 
-    // Fetch extra data needed for callback before deletion
     const full = await prisma.task.findUnique({
       where:  { id: subtaskId },
       select: { title: true, parentId: true, workspaceId: true, status: true, priority: true },

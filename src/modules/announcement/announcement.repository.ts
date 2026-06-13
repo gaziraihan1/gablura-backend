@@ -1,17 +1,17 @@
-import { prisma } from '../../lib/prisma.js';
+import { prisma } from "../../lib/prisma.js";
 import type {
   CreateAnnouncementInput,
   UpdateAnnouncementInput,
   AnnouncementFilterParams,
   PaginatedAnnouncementsResult,
   AnnouncementResult,
-} from './announcement.types.js';
+} from "./announcement.types.js";
 
 // ─── Include shape ────────────────────────────────────────────────────────────
 
 const announcementInclude = {
   createdBy: { select: { id: true, name: true, image: true } },
-  project:   { select: { id: true, name: true } },
+  project: { select: { id: true, name: true } },
   targets: {
     select: {
       userId: true,
@@ -33,14 +33,14 @@ function mapAnnouncement(raw: any): AnnouncementResult {
     isPinned: raw.isPinned,
     createdAt: raw.createdAt,
     updatedAt: raw.updatedAt,
-    workspaceId: raw.workspaceId,
+    workspaceSlug: raw.workspaceSlug,
     projectId: raw.projectId ?? null,
     createdById: raw.createdById,
     project: raw.project ?? null,
 
     createdBy: {
       id: raw.createdBy.id,
-      name: raw.createdBy.name ?? 'Unknown',
+      name: raw.createdBy.name ?? "Unknown",
       image: raw.createdBy.image ?? null,
     },
 
@@ -49,7 +49,7 @@ function mapAnnouncement(raw: any): AnnouncementResult {
       userId: t.userId,
       user: {
         id: t.user.id,
-        name: t.user.name ?? 'Unknown',
+        name: t.user.name ?? "Unknown",
         image: t.user.image ?? null,
       },
     })),
@@ -60,27 +60,21 @@ function mapAnnouncement(raw: any): AnnouncementResult {
 
 function buildAccessFilter(
   userId: string,
-  visibility: AnnouncementFilterParams['visibility'],
+  visibility: AnnouncementFilterParams["visibility"],
 ) {
   const basePrivate = {
-    visibility: 'PRIVATE' as const,
-    OR: [
-      { createdById: userId },
-      { targets: { some: { userId } } },
-    ],
+    visibility: "PRIVATE" as const,
+    OR: [{ createdById: userId }, { targets: { some: { userId } } }],
   };
 
-  if (visibility === 'PRIVATE') return basePrivate;
+  if (visibility === "PRIVATE") return basePrivate;
 
-  if (visibility === 'PUBLIC') {
-    return { visibility: 'PUBLIC' as const };
+  if (visibility === "PUBLIC") {
+    return { visibility: "PUBLIC" as const };
   }
 
   return {
-    OR: [
-      { visibility: 'PUBLIC' as const },
-      basePrivate,
-    ],
+    OR: [{ visibility: "PUBLIC" as const }, basePrivate],
   };
 }
 
@@ -104,11 +98,11 @@ function buildProjectFilter(
       { projectId: null },
       {
         projectId: { not: null },
-        visibility: 'PUBLIC' as const,
+        visibility: "PUBLIC" as const,
       },
       {
         projectId: { not: null },
-        visibility: 'PRIVATE' as const,
+        visibility: "PRIVATE" as const,
         project: { members: { some: { userId } } },
       },
     ],
@@ -125,12 +119,11 @@ export const AnnouncementRepository = {
         content: input.content,
         visibility: input.visibility,
         isPinned: input.isPinned ?? false,
-        workspaceId: input.workspaceId,
+        workspaceSlug: input.workspaceSlug,
         projectId: input.projectId ?? null,
         createdById: input.createdById,
 
-        ...(input.visibility === 'PRIVATE' &&
-        input.targetIds?.length
+        ...(input.visibility === "PRIVATE" && input.targetIds?.length
           ? {
               targets: {
                 create: input.targetIds.map((userId) => ({
@@ -164,7 +157,7 @@ export const AnnouncementRepository = {
 
     const where = {
       AND: [
-        { workspaceId: params.workspaceId },
+        { workspaceSlug: params.workspaceSlug },
 
         ...(params.isPinned !== undefined
           ? [{ isPinned: params.isPinned }]
@@ -180,9 +173,9 @@ export const AnnouncementRepository = {
         where,
         include: announcementInclude,
         orderBy: [
-          { isPinned: 'desc' },
-          { createdAt: 'desc' },
-          { id: 'desc' }, // FIX: stable ordering for tests
+          { isPinned: "desc" },
+          { createdAt: "desc" },
+          { id: "desc" }, // FIX: stable ordering for tests
         ],
         skip,
         take: pageSize,
@@ -222,12 +215,40 @@ export const AnnouncementRepository = {
   async delete(id: string): Promise<void> {
     await prisma.announcement.delete({ where: { id } });
   },
-
-  async isWorkspaceMember(workspaceId: string, userId: string) {
-    return prisma.workspaceMember.findFirst({
-      where: { workspaceId, userId },
-      select: { role: true },
+  async isWorkspaceGuest(workspaceSlug: string, userId: string) {
+    const member = await prisma.workspaceMember.findFirst({
+      where: {
+        userId,
+        workspace: {
+          slug: workspaceSlug,
+        },
+      },
+      select: {
+        role: true,
+      },
     });
+    return member?.role === "GUEST";
+  },
+
+  async isWorkspaceMember(workspaceSlug: string, userId: string) {
+    return prisma.workspaceMember.findFirst({
+      where: {
+        userId,
+        workspace: {
+          slug: workspaceSlug,
+        },
+      },
+      select: {
+        role: true,
+      },
+    });
+  },
+  async isPUblicWorkspace(workspaceSlug: string): Promise<boolean> {
+    const workspace = await prisma.workspace.findUnique({
+      where: { slug: workspaceSlug },
+      select: { isPublic: true },
+    });
+    return workspace?.isPublic ?? false;
   },
 
   async isProjectMember(projectId: string, userId: string) {

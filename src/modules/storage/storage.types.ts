@@ -1,21 +1,3 @@
-export class StorageError extends Error {
-  constructor(message: string, public readonly code: string) {
-    super(message);
-    this.name = 'StorageError';
-  }
-}
-
-export class UnauthorizedError extends StorageError {
-  constructor(message = 'Unauthorized access') {
-    super(message, 'UNAUTHORIZED');
-  }
-}
-
-export class NotFoundError extends StorageError {
-  constructor(message = 'Resource not found') {
-    super(message, 'NOT_FOUND');
-  }
-}
 
 export interface StorageInfo {
   usedMB: number;

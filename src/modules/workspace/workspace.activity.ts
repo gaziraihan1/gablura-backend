@@ -3,6 +3,7 @@ import { prisma } from "../../lib/prisma.js";
 export const WorkspaceActivity = {
   async logCreated(params: {
     workspaceId: string;
+    workspaceSlug: string;
     userId: string;
     workspaceName: string;
   }): Promise<void> {
@@ -14,6 +15,7 @@ export const WorkspaceActivity = {
           entityId: params.workspaceId,
           userId: params.userId,
           workspaceId: params.workspaceId,
+          workspaceSlug: params.workspaceSlug,
           metadata: { workspaceName: params.workspaceName },
         },
       });
@@ -24,6 +26,7 @@ export const WorkspaceActivity = {
 
   async logUpdated(params: {
     workspaceId: string;
+    workspaceSlug: string;
     userId: string;
   }): Promise<void> {
     try {
@@ -32,6 +35,7 @@ export const WorkspaceActivity = {
           action: "UPDATED",
           entityType: "WORKSPACE",
           entityId: params.workspaceId,
+          workspaceSlug: params.workspaceSlug,
           userId: params.userId,
           workspaceId: params.workspaceId,
         },

@@ -15,28 +15,30 @@ import { NotFoundError, ForbiddenError, BadRequestError } from '../../errors/ind
 
 type OnAnnouncementCreated = (data: {
   announcement: any;
-  workspaceId:  string;
+  workspaceSlug:  string;
   creatorName:  string;
 }) => Promise<void>;
 
 type OnAnnouncementDeleted = (data: {
   announcement: any;
-  workspaceId:  string;
+  workspaceSlug:  string;
 }) => Promise<void>;
 
 export const AnnouncementService = {
   async create(input: CreateAnnouncementInput, onCreated?: OnAnnouncementCreated) {
     const member = await AnnouncementRepository.isWorkspaceMember(
-      input.workspaceId,
+      input.workspaceSlug,
       input.createdById,
     );
-    if (!member) throw new ForbiddenError('You are not a member of this workspace');
-
+    
+    if (!member) {
+      throw new ForbiddenError('You are not a member of this workspace');
+    }
     const workspaceRole = member.role as WorkspaceRole;
-
+    
     if (input.projectId) {
       const project = await prisma.project.findFirst({
-        where:  { id: input.projectId, workspaceId: input.workspaceId },
+        where:  { id: input.projectId, workspaceSlug : input.workspaceSlug },
         select: { id: true },
       });
       if (!project) throw new BadRequestError('Invalid project for workspace');
@@ -61,7 +63,7 @@ export const AnnouncementService = {
 
       const checks = await Promise.all(
         input.targetIds.map((uid) =>
-          AnnouncementRepository.isWorkspaceMember(input.workspaceId, uid),
+          AnnouncementRepository.isWorkspaceMember(input.workspaceSlug, uid),
         ),
       );
       const invalid = input.targetIds.filter((_, i) => !checks[i]);
@@ -74,7 +76,7 @@ export const AnnouncementService = {
 
     onCreated?.({
       announcement,
-      workspaceId: input.workspaceId,
+      workspaceSlug: input.workspaceSlug,
       creatorName: announcement.createdBy.name ?? 'Someone',
     }).catch(() => {});
 
@@ -83,16 +85,23 @@ export const AnnouncementService = {
 
   async getMany(params: AnnouncementFilterParams) {
     const member = await AnnouncementRepository.isWorkspaceMember(
-      params.workspaceId,
+      params.workspaceSlug,
       params.userId,
     );
-    if (!member) throw new ForbiddenError('You are not a member of this workspace');
+    const guest = await AnnouncementRepository.isWorkspaceGuest(
+      params.workspaceSlug,
+      params.userId,
+    );
+    const isPublic = await AnnouncementRepository.isPUblicWorkspace(params.workspaceSlug);
+    if (!member && !isPublic && !guest) throw new ForbiddenError('You do not have access to this workspace');
 
-    const workspaceRole = member.role as WorkspaceRole;
+  
+
+    const workspaceRole = member?.role as WorkspaceRole;
 
     if (params.projectId !== undefined) {
       const project = await prisma.project.findFirst({
-        where:  { id: params.projectId!, workspaceId: params.workspaceId },
+        where:  { id: params.projectId!, workspaceSlug : params.workspaceSlug },
         select: { id: true },
       });
       if (!project) throw new ForbiddenError('Invalid project access');
@@ -125,7 +134,7 @@ export const AnnouncementService = {
     if (!announcement) throw new NotFoundError('Announcement');
 
     const member = await AnnouncementRepository.isWorkspaceMember(
-      announcement.workspaceId,
+      announcement.workspaceSlug,
       userId,
     );
     if (!member) throw new ForbiddenError('Not a workspace member');
@@ -148,7 +157,7 @@ export const AnnouncementService = {
 
     await AnnouncementRepository.delete(id);
 
-    onDeleted?.({ announcement, workspaceId: announcement.workspaceId }).catch(() => {});
+    onDeleted?.({ announcement, workspaceSlug: announcement.workspaceSlug }).catch(() => {});
   },
 
   async togglePin(id: string, userId: string) {
@@ -156,7 +165,7 @@ export const AnnouncementService = {
     if (!announcement) throw new NotFoundError('Announcement');
 
     const member = await AnnouncementRepository.isWorkspaceMember(
-      announcement.workspaceId,
+      announcement.workspaceSlug,
       userId,
     );
     if (!member) throw new ForbiddenError('Not a workspace member');

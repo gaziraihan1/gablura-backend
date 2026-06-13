@@ -39,6 +39,7 @@ export type TaskActivityFilters = Pick<ActivityFilters, 'limit' | 'offset'>;
 
 export interface ClearActivitiesFilters {
   workspaceId?: string;
+  workspaceSlug?: string;   // ← added
   before?: Date;
 }
 
@@ -48,6 +49,7 @@ export interface CreateActivityParams {
   entityId: string;
   userId: string;
   workspaceId: string;
+  workspaceSlug: string;   // ← added
   taskId?: string;
   metadata?: Record<string, any>;
 }

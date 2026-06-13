@@ -151,6 +151,7 @@ export async function notifyTaskAssignees(
 
 interface NotifyWorkspaceMembersOptions {
   workspaceId: string;
+  workspaceSlug?: string; // Optional, only used for activity log metadata
   senderId: string;
   type: NotificationType;
   title: string;

@@ -8,11 +8,6 @@ export {
   getCategoryFromMimeType,
 } from "./storage.utils.js";
 
-export {
-  StorageError,
-  UnauthorizedError,
-  NotFoundError,
-} from "./storage.types.js";
 
 export { default as storageRouter } from "./storage.routes.js";
 

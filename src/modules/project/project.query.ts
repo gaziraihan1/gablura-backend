@@ -16,7 +16,7 @@ export const ProjectQuery = {
           { members: { some: { userId } } },
           {
             workspace: {
-              OR: [{ ownerId: userId }, { members: { some: { userId } } }],
+              OR: [{ ownerId: userId }, { members: { some: { userId } } }, {isPublic: true}],
             },
           },
         ],
@@ -65,7 +65,7 @@ export const ProjectQuery = {
       where: {
         id: projectId,
         workspace: {
-          OR: [{ ownerId: userId }, { members: { some: { userId } } }],
+          OR: [{ ownerId: userId }, { members: { some: { userId } } }, {isPublic: true}],
         },
       },
       include: projectDetailInclude,
@@ -86,7 +86,7 @@ export const ProjectQuery = {
       where: {
         slug,
         workspace: {
-          OR: [{ ownerId: userId }, { members: { some: { userId } } }],
+          OR: [{ ownerId: userId }, { members: { some: { userId } } }, {isPublic: true}],
         },
       },
       include: projectDetailInclude,

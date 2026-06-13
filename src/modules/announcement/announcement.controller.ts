@@ -12,18 +12,24 @@ import {
   listAnnouncementsSchema,
 } from "./announcement.validation.js";
 
+
 export const createAnnouncement = asyncHandler(
   async (req: AuthRequest, res: Response) => {
+    
     const parsed = createAnnouncementSchema.safeParse(req.body);
     if (!parsed.success)
       throw new ValidationError("Validation error", parsed.error.issues);
 
-    const { workspaceId } = req.params;
+    const { workspaceSlug } = req.params;
+    const workspace = await prisma.workspace.findUniqueOrThrow({
+  where: { slug: workspaceSlug },
+  select: { id: true },
+});
 
     const announcement = await AnnouncementService.create(
-      { ...parsed.data, workspaceId, createdById: req.user!.id },
-      async ({ announcement, workspaceId: wsId, creatorName }) => {
-        const actionUrl = `/dashboard/workspaces/${workspaceId}/announcements/${announcement.id}`;
+      { ...parsed.data, workspaceSlug, createdById: req.user!.id },
+      async ({ announcement, workspaceSlug: wsSlug, creatorName }) => {
+        const actionUrl = `/dashboard/workspaces/${workspaceSlug}/announcements/${announcement.id}`;
 
         void prisma.activity
           .create({
@@ -32,7 +38,8 @@ export const createAnnouncement = asyncHandler(
               entityType: "ANNOUNCEMENT",
               entityId: announcement.id,
               userId: req.user!.id,
-              workspaceId: wsId,
+              workspaceId: workspace.id,
+              workspaceSlug: wsSlug,
               metadata: {
                 announcementTitle: announcement.title,
                 visibility: announcement.visibility,
@@ -46,7 +53,8 @@ export const createAnnouncement = asyncHandler(
 
         if (announcement.visibility === "PUBLIC") {
           void notifyWorkspaceMembers({
-            workspaceId: wsId,
+            workspaceSlug: wsSlug,
+            workspaceId: workspace.id,
             senderId: req.user!.id,
             type: "PROJECT_UPDATE",
             title: "📢 New Announcement",
@@ -87,13 +95,16 @@ export const createAnnouncement = asyncHandler(
 
 export const getAnnouncements = asyncHandler(
   async (req: AuthRequest, res: Response) => {
-    const { workspaceId } = req.params;
+    const { workspaceSlug } = req.params;
+    console.log("PARAM KEYS:", Object.keys(req.params));
+console.log("PARAMS:", req.params);
+    console.log(workspaceSlug)
     const parsed = listAnnouncementsSchema.safeParse(req.query);
     if (!parsed.success)
       throw new ValidationError("Validation error", parsed.error.issues);
 
     const result = await AnnouncementService.getMany({
-      workspaceId,
+      workspaceSlug,
       userId: req.user!.id,
       ...parsed.data,
     });
@@ -114,13 +125,13 @@ export const getAnnouncement = asyncHandler(
 
 export const getProjectAnnouncements = asyncHandler(
   async (req: AuthRequest, res: Response) => {
-    const { workspaceId, projectId } = req.params;
+    const { workspaceSlug, projectId } = req.params;
     const parsed = listAnnouncementsSchema.safeParse(req.query);
     if (!parsed.success)
       throw new ValidationError("Validation error", parsed.error.issues);
 
     const result = await AnnouncementService.getMany({
-      workspaceId,
+      workspaceSlug,
       projectId,
       userId: req.user!.id,
       ...parsed.data,
@@ -135,7 +146,7 @@ export const deleteAnnouncement = asyncHandler(
     await AnnouncementService.delete(
       req.params.id,
       req.user!.id,
-      async ({ announcement, workspaceId }) => {
+      async ({ announcement, workspaceSlug }) => {
         void prisma.activity
           .create({
             data: {
@@ -143,7 +154,8 @@ export const deleteAnnouncement = asyncHandler(
               entityType: "ANNOUNCEMENT",
               entityId: announcement.id,
               userId: req.user!.id,
-              workspaceId,
+              workspaceId: announcement.workspaceId,
+              workspaceSlug,
               metadata: { announcementTitle: announcement.title },
             },
           })

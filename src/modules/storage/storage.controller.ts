@@ -4,54 +4,28 @@ import type { AuthRequest } from '../../middleware/auth.js';
 import { StorageQuery }    from './storage.query.js';
 import { StorageMutation } from './storage.mutation.js';
 import { StorageAccess }   from './storage.access.js';
-import { StorageError, UnauthorizedError, NotFoundError } from './storage.types.js';
 import {
   largestFilesQuerySchema,
   bulkDeleteSchema,
   checkUploadSchema,
 } from './storage.validators.js';
 import { CacheClient, CACHE_KEYS, CACHE_TTL, StorageCache } from '../../lib/redis/cache.client.js';
+import { asyncHandler } from '../../errors/asyncHandler.js';
+import { UnauthorizedError } from '../../errors/AppError.js';
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
-function requireUserId(req: AuthRequest, res: Response): string | null {
-  if (!req.user?.id) {
-    res.status(401).json({ success: false, message: 'Unauthorized' });
-    return null;
-  }
+function requireUserId(req: AuthRequest): string {
+  if (!req.user?.id) throw new UnauthorizedError();
   return req.user.id;
 }
 
-function handleError(error: unknown, res: Response, label: string): void {
-  if (error instanceof z.ZodError) {
-    res.status(400).json({
-      success: false,
-      message: 'Validation error',
-      errors:  error.issues.map((e) => ({ field: e.path.join('.'), message: e.message })),
-    });
-    return;
-  }
-  if (error instanceof UnauthorizedError) {
-    res.status(403).json({ success: false, message: (error as Error).message });
-    return;
-  }
-  if (error instanceof NotFoundError) {
-    res.status(404).json({ success: false, message: (error as Error).message });
-    return;
-  }
-  if (error instanceof StorageError) {
-    res.status(400).json({ success: false, message: (error as Error).message });
-    return;
-  }
-  console.error(`${label} error:`, error);
-  res.status(500).json({ success: false, message: `Failed to ${label}` });
-}
 
 // ─── Read handlers (cache-aside) ──────────────────────────────────────────────
 
-export const getWorkspacesSummary = async (req: AuthRequest, res: Response) => {
-  try {
-    const userId = requireUserId(req, res);
+export const getWorkspacesSummary = asyncHandler(async (req: AuthRequest, res: Response) => {
+  
+    const userId = requireUserId(req);
     if (!userId) return;
 
     const cacheKey = CACHE_KEYS.storageWorkspacesSummary(userId);
@@ -61,15 +35,11 @@ export const getWorkspacesSummary = async (req: AuthRequest, res: Response) => {
       CACHE_TTL.STORAGE_WORKSPACES_SUMMARY,
     );
 
-    res.json({ success: true, data });
-  } catch (error) {
-    handleError(error, res, 'fetch workspaces summary');
-  }
-};
+    res.json({ success: true, data })}) 
 
-export const getWorkspaceOverview = async (req: AuthRequest, res: Response) => {
-  try {
-    const userId = requireUserId(req, res);
+
+export const getWorkspaceOverview = asyncHandler (async (req: AuthRequest, res: Response) => {
+    const userId = requireUserId(req);
     if (!userId) return;
 
     const { workspaceId } = req.params;
@@ -101,14 +71,10 @@ export const getWorkspaceOverview = async (req: AuthRequest, res: Response) => {
     );
 
     res.json({ success: true, data });
-  } catch (error) {
-    handleError(error, res, 'fetch workspace storage overview');
-  }
-};
+});
 
-export const getWorkspaceInfo = async (req: AuthRequest, res: Response) => {
-  try {
-    const userId = requireUserId(req, res);
+export const getWorkspaceInfo = asyncHandler (async (req: AuthRequest, res: Response) => {
+    const userId = requireUserId(req);
     if (!userId) return;
 
     const { workspaceId } = req.params;
@@ -121,14 +87,10 @@ export const getWorkspaceInfo = async (req: AuthRequest, res: Response) => {
     );
 
     res.json({ success: true, data });
-  } catch (error) {
-    handleError(error, res, 'fetch workspace storage info');
-  }
-};
+});
 
-export const getMyContribution = async (req: AuthRequest, res: Response) => {
-  try {
-    const userId = requireUserId(req, res);
+export const getMyContribution = asyncHandler(async (req: AuthRequest, res: Response) => {
+    const userId = requireUserId(req);
     if (!userId) return;
 
     const { workspaceId } = req.params;
@@ -141,14 +103,10 @@ export const getMyContribution = async (req: AuthRequest, res: Response) => {
     );
 
     res.json({ success: true, data });
-  } catch (error) {
-    handleError(error, res, 'fetch your contribution');
-  }
-};
+})
 
-export const getUserContributions = async (req: AuthRequest, res: Response) => {
-  try {
-    const userId = requireUserId(req, res);
+export const getUserContributions = asyncHandler( async (req: AuthRequest, res: Response) => {
+    const userId = requireUserId(req);
     if (!userId) return;
 
     const { workspaceId } = req.params;
@@ -161,14 +119,10 @@ export const getUserContributions = async (req: AuthRequest, res: Response) => {
     );
 
     res.json({ success: true, data });
-  } catch (error) {
-    handleError(error, res, 'fetch user contributions');
-  }
-};
+})
 
-export const getLargestFiles = async (req: AuthRequest, res: Response) => {
-  try {
-    const userId = requireUserId(req, res);
+export const getLargestFiles = asyncHandler (async (req: AuthRequest, res: Response) => {
+    const userId = requireUserId(req);
     if (!userId) return;
 
     const { workspaceId } = req.params;
@@ -182,43 +136,27 @@ export const getLargestFiles = async (req: AuthRequest, res: Response) => {
     );
 
     res.json({ success: true, data });
-  } catch (error) {
-    handleError(error, res, 'fetch largest files');
-  }
-};
+});
 
 // ─── Mutation handlers (invalidate after write) ───────────────────────────────
 
-export const bulkDelete = async (req: AuthRequest, res: Response) => {
-  try {
-    const userId = requireUserId(req, res);
-    if (!userId) return;
+export const bulkDelete = asyncHandler(async (req, res) => {
+  const userId = requireUserId(req);
+  const { workspaceId } = req.params;
+  const { fileIds } = bulkDeleteSchema.parse(req.body);
 
-    const { workspaceId } = req.params;
-    const { fileIds } = bulkDeleteSchema.parse(req.body);
-    const result = await StorageMutation.bulkDeleteFiles(fileIds, workspaceId, userId);
+  // StorageMutation now throws on failure — no result.success check needed
+  const result = await StorageMutation.bulkDeleteFiles(fileIds, workspaceId, userId);
+  await StorageCache.invalidateAll(workspaceId, userId);
 
-    if (!result.success) {
-      res.status(400).json({ success: false, message: result.message });
-      return;
-    }
-
-    // Invalidate all storage cache for this workspace + the user's summary list
-    await StorageCache.invalidateAll(workspaceId, userId);
-
-    res.json({
-      success: true,
-      message: result.message,
-      data:    { deletedCount: result.deletedCount, freedMB: result.freedMB },
-    });
-  } catch (error) {
-    handleError(error, res, 'delete files');
-  }
-};
-
-export const deleteFile = async (req: AuthRequest, res: Response) => {
-  try {
-    const userId = requireUserId(req, res);
+  res.json({
+    success: true,
+    message: result.message,
+    data: { deletedCount: result.deletedCount, freedMB: result.freedMB },
+  });
+});
+export const deleteFile = asyncHandler( async (req: AuthRequest, res: Response) => {
+    const userId = requireUserId(req);
     if (!userId) return;
 
     const result = await StorageMutation.deleteFile(req.params.fileId, userId);
@@ -243,14 +181,10 @@ export const deleteFile = async (req: AuthRequest, res: Response) => {
     }
 
     res.json({ success: true, message: result.message, data: { freedMB: result.freedMB } });
-  } catch (error) {
-    handleError(error, res, 'delete file');
-  }
-};
+})
 
-export const checkUpload = async (req: AuthRequest, res: Response) => {
-  try {
-    const userId = requireUserId(req, res);
+export const checkUpload = asyncHandler(async (req: AuthRequest, res: Response) => {
+    const userId = requireUserId(req);
     if (!userId) return;
 
     const { fileSize } = checkUploadSchema.parse(req.body);
@@ -262,7 +196,4 @@ export const checkUpload = async (req: AuthRequest, res: Response) => {
       data:    result,
       message: result.allowed ? 'Upload allowed' : result.reason,
     });
-  } catch (error) {
-    handleError(error, res, 'check upload');
-  }
-};
+})

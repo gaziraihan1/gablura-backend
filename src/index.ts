@@ -185,13 +185,13 @@ app.use("/api/v1/auth", logoutRoutes); // Auth routes handle their own CSRF
 // Authenticated Routes WITH CSRF Protection
 // ============================================================================
 app.use(
-  "/api/v1/workspaces/:workspaceId/projects/:projectId/announcements",
+  "/api/v1/workspaces/:workspaceSlug/projects/:projectId/announcements",
   authenticate,
   requireCsrfToken(),
   projectAnnouncementRouter,
 );
 app.use(
-  "/api/v1/workspaces/:workspaceId/announcements",
+  "/api/v1/workspaces/:workspaceSlug/announcements",
   authenticate,
   requireCsrfToken(),
   workspaceAnnouncementRouter,

@@ -10,6 +10,7 @@ import type {
   WorkspaceRole,
 } from "./workspace.types.js";
 import { WorkspaceCache } from "../../lib/redis/cache.client.js";
+import { ConflictError, BadRequestError, ForbiddenError, NotFoundError, PlanLimitError } from "../../errors/AppError.js";
 
 type OnWorkspaceCreated = (data: { workspace: any }) => Promise<void>;
 type OnWorkspaceUpdated = (data: { workspaceId: string }) => Promise<void>;
@@ -102,15 +103,18 @@ export const WorkspaceMutation = {
     role: WorkspaceRole,
     onInvited?: OnMemberInvited,
   ) {
-    const inviter = await WorkspaceAccess.assertAdmin(workspaceId, inviterId);
+    const inviter = await WorkspaceAccess.assertAdmin(workspaceId, inviterId); // already throws ForbiddenError
+
     const existing = await prisma.workspaceInvitation.findFirst({
       where: { workspaceId, email, status: "PENDING" },
     });
-    if (existing) throw new Error("User already invited");
+    if (existing) throw new ConflictError("User has already been invited");
+
     const member = await prisma.workspaceMember.findFirst({
       where: { workspaceId, user: { email } },
     });
-    if (member) throw new Error("User is already a member");
+    if (member) throw new ConflictError("User is already a member");
+
 
     const token = crypto.randomBytes(32).toString("hex");
     const expiresAt = new Date();
@@ -150,19 +154,20 @@ export const WorkspaceMutation = {
       where: { token },
       include: { workspace: true },
     });
-    if (!invitation) throw new Error("Invalid invitation token");
-    if (invitation.status !== "PENDING")
-      throw new Error("Invitation already used");
+    if (!invitation) throw new BadRequestError("Invalid invitation token", "INVALID_TOKEN");
+    if (invitation.status !== "PENDING") throw new BadRequestError("Invitation has already been used", "INVITATION_USED");
     if (invitation.expiresAt < new Date()) {
       await prisma.workspaceInvitation.update({
         where: { id: invitation.id },
         data: { status: "EXPIRED" },
       });
-      throw new Error("Invitation expired");
+      throw new BadRequestError("Invitation has expired", "INVITATION_EXPIRED");
     }
+
     const user = await prisma.user.findUnique({ where: { id: userId } });
     if (user?.email !== invitation.email)
-      throw new Error("Invitation email does not match");
+      throw new BadRequestError("This invitation was sent to a different email address", "EMAIL_MISMATCH");
+
 
     await prisma.workspaceMember.create({
       data: {
@@ -199,7 +204,8 @@ if (invitation.workspaceId) {
     memberId: string,
     onRemoved?: OnMemberRemoved,
   ) {
-    await WorkspaceAccess.assertAdmin(workspaceId, removerId);
+    await WorkspaceAccess.assertAdmin(workspaceId, removerId); // throws ForbiddenError
+
     const member = await prisma.workspaceMember.findUnique({
       where: { id: memberId },
       include: {
@@ -207,10 +213,10 @@ if (invitation.workspaceId) {
         workspace: { select: { name: true } },
       },
     });
-    if (member) {
-      await prisma.workspaceMember.delete({ where: { id: memberId } });
-      if (onRemoved) onRemoved({ member }).catch(console.error);
-    }
+    if (!member) throw new NotFoundError("Member");
+
+    await prisma.workspaceMember.delete({ where: { id: memberId } });
+    if (onRemoved) onRemoved({ member }).catch(console.error);
   },
 
   async updateMemberRole(
@@ -224,7 +230,8 @@ if (invitation.workspaceId) {
       where: { workspaceId, userId: updaterId, role: "OWNER" },
       include: { workspace: { select: { name: true } } },
     });
-    if (!updater) throw new Error("Unauthorized");
+    if (!updater) throw new ForbiddenError("Only the workspace owner can change roles");
+
     const member = await prisma.workspaceMember.update({
       where: { id: memberId },
       data: { role },
@@ -248,14 +255,13 @@ if (invitation.workspaceId) {
   },
 
   async leaveWorkspace(workspaceId: string, userId: string) {
-    const member = await prisma.workspaceMember.findFirst({
+   const member = await prisma.workspaceMember.findFirst({
       where: { workspaceId, userId },
     });
-    if (!member) throw new Error("Not a member of this workspace");
+    if (!member) throw new BadRequestError("You are not a member of this workspace", "NOT_MEMBER");
     if (member.role === "OWNER")
-      throw new Error(
-        "Owner cannot leave workspace. Transfer ownership first.",
-      );
+      throw new BadRequestError("Transfer ownership before leaving", "OWNER_CANNOT_LEAVE");
+
     await prisma.workspaceMember.delete({ where: { id: member.id } });
   },
 };

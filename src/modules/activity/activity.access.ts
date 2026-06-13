@@ -14,6 +14,13 @@ export const ActivityAccess = {
     });
     return !!workspace;
   },
+  async isPublicWorkspace(workspaceId: string): Promise<boolean> {
+    const workspace = await prisma.workspace.findUnique({
+      where: { id: workspaceId },
+      select: { isPublic: true },
+    });
+    return workspace?.isPublic ?? false;
+  },
 
   async canAccessTask(userId: string, taskId: string): Promise<boolean> {
     const task = await prisma.task.findFirst({

@@ -31,7 +31,7 @@ router.get('/:workspaceId/attachments/stats', getAttachmentStats);
 router.get('/:workspaceId/storage', getWorkspaceStorage);
 
 // Announcements (nested router)
-router.use('/:workspaceId/announcements', workspaceAnnouncementRouter);
+router.use('/:workspaceSlug/announcements', workspaceAnnouncementRouter);
 
 // Leave workspace
 router.post('/:id/leave', WorkspaceController.leaveWorkspace);

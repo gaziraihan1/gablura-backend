@@ -1,24 +1,35 @@
+import { Prisma } from '@prisma/client';
 import { prisma } from '../../lib/prisma.js';
+
+async function resolveWorkspaceSlug(workspaceId: string): Promise<string> {
+  const ws = await prisma.workspace.findUniqueOrThrow({
+    where:  { id: workspaceId },
+    select: { slug: true },
+  });
+  return ws.slug;
+}
 
 export const TaskActivity = {
   async logCreated(params: {
-    taskId:        string;
-    taskTitle:     string;
-    userId:        string;
-    workspaceId:   string;
+    taskId:         string;
+    taskTitle:      string;
+    userId:         string;
+    workspaceId:    string;
     focusRequired?: boolean;
-    energyType?:   string | null;
-    intent?:       string | null;
+    energyType?:    string | null;
+    intent?:        string | null;
   }): Promise<void> {
     try {
+      const workspaceSlug = await resolveWorkspaceSlug(params.workspaceId);
       await prisma.activity.create({
         data: {
-          action:      'CREATED',
-          entityType:  'TASK',
-          entityId:    params.taskId,
-          userId:      params.userId,
-          workspaceId: params.workspaceId,
-          taskId:      params.taskId,
+          action:        'CREATED',
+          entityType:    'TASK',
+          entityId:      params.taskId,
+          userId:        params.userId,
+          workspaceId:   params.workspaceId,
+          workspaceSlug,
+          taskId:        params.taskId,
           metadata: {
             taskTitle:     params.taskTitle,
             focusRequired: params.focusRequired,
@@ -41,14 +52,16 @@ export const TaskActivity = {
     newStatus:   string;
   }): Promise<void> {
     try {
+      const workspaceSlug = await resolveWorkspaceSlug(params.workspaceId);
       await prisma.activity.create({
         data: {
-          action:      'STATUS_CHANGED',
-          entityType:  'TASK',
-          entityId:    params.taskId,
-          userId:      params.userId,
-          workspaceId: params.workspaceId,
-          taskId:      params.taskId,
+          action:        'STATUS_CHANGED',
+          entityType:    'TASK',
+          entityId:      params.taskId,
+          userId:        params.userId,
+          workspaceId:   params.workspaceId,
+          workspaceSlug,
+          taskId:        params.taskId,
           metadata: {
             taskTitle: params.taskTitle,
             oldStatus: params.oldStatus,
@@ -66,21 +79,23 @@ export const TaskActivity = {
     taskTitle:   string;
     userId:      string;
     workspaceId: string;
-    changes:     Record<string, any>;
+    changes:     Record<string, unknown>;
   }): Promise<void> {
     try {
+      const workspaceSlug = await resolveWorkspaceSlug(params.workspaceId);
       await prisma.activity.create({
         data: {
-          action:      'UPDATED',
-          entityType:  'TASK',
-          entityId:    params.taskId,
-          userId:      params.userId,
-          workspaceId: params.workspaceId,
-          taskId:      params.taskId,
+          action:        'UPDATED',
+          entityType:    'TASK',
+          entityId:      params.taskId,
+          userId:        params.userId,
+          workspaceId:   params.workspaceId,
+          workspaceSlug,
+          taskId:        params.taskId,
           metadata: {
-            taskTitle: params.taskTitle,
-            changes:   params.changes,
-          },
+  taskTitle: params.taskTitle,
+  changes:   params.changes as Prisma.InputJsonValue,
+},
         },
       });
     } catch (error) {
@@ -97,13 +112,15 @@ export const TaskActivity = {
     priority:    string;
   }): Promise<void> {
     try {
+      const workspaceSlug = await resolveWorkspaceSlug(params.workspaceId);
       await prisma.activity.create({
         data: {
-          action:      'DELETED',
-          entityType:  'TASK',
-          entityId:    params.taskId,
-          userId:      params.userId,
-          workspaceId: params.workspaceId,
+          action:        'DELETED',
+          entityType:    'TASK',
+          entityId:      params.taskId,
+          userId:        params.userId,
+          workspaceId:   params.workspaceId,
+          workspaceSlug,
           metadata: {
             taskTitle: params.taskTitle,
             status:    params.status,

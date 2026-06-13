@@ -1,6 +1,7 @@
-import { prisma } from '../../lib/prisma.js';
-import type { EditPermissionResult } from './task.types.js';
-import { taskPermissionInclude } from './task.selects.js';
+import { prisma }                              from '../../lib/prisma.js';
+import { NotFoundError, ForbiddenError }       from '../../errors/index.js';
+import type { EditPermissionResult }           from './task.types.js';
+import { taskPermissionInclude }               from './task.selects.js';
 
 export const TaskAccess = {
   async checkEditPermission(
@@ -8,28 +9,24 @@ export const TaskAccess = {
     userId: string,
   ): Promise<EditPermissionResult & { task?: any }> {
     const task = await prisma.task.findFirst({
-      where: { id: taskId },
+      where:   { id: taskId },
       include: taskPermissionInclude,
     });
 
-    if (!task) {
-      return { canEdit: false, reason: 'Task not found' };
-    }
+    if (!task) return { canEdit: false, reason: 'Task not found' };
 
-    const isOwner       = task.createdById === userId;
+    const isOwner        = task.createdById === userId;
     const isPersonalTask = !task.projectId;
 
     if (isPersonalTask) {
-      if (!isOwner) {
-        return { canEdit: false, reason: 'Only the task owner can edit personal tasks' };
-      }
+      if (!isOwner) return { canEdit: false, reason: 'Only the task owner can edit personal tasks' };
       return { canEdit: true, task };
     }
 
-    const projectMember = task.project?.members?.find((m) => m.userId === userId);
+    const projectMember    = task.project?.members?.find((m) => m.userId === userId);
     const isProjectManager = projectMember?.role === 'MANAGER';
 
-    const workspaceMember = task.project?.workspace?.members?.find((m) => m.userId === userId);
+    const workspaceMember  = task.project?.workspace?.members?.find((m) => m.userId === userId);
     const isWorkspaceAdmin = workspaceMember?.role === 'OWNER' || workspaceMember?.role === 'ADMIN';
 
     const canEdit = isOwner || isProjectManager || isWorkspaceAdmin;
@@ -51,13 +48,13 @@ export const TaskAccess = {
         OR: [
           { createdById: userId },
           { assignees: { some: { userId } } },
-          { project: {members: { some: { userId } } } },
+          { project: { members: { some: { userId } } } },
           {
             project: {
               workspace: {
                 OR: [
                   { ownerId: userId },
-                  { members: { some: { userId, role: "ADMIN" } } },
+                  { members: { some: { userId, role: 'ADMIN' } } },
                 ],
               },
             },
@@ -66,10 +63,7 @@ export const TaskAccess = {
       },
     });
 
-    if (!task) {
-      throw new Error('Task not found');
-    }
-
+    if (!task) throw new NotFoundError('Task', 'TASK_NOT_FOUND');
     return task;
   },
 
@@ -82,12 +76,7 @@ export const TaskAccess = {
           {
             project: {
               workspace: {
-                members: {
-                  some: {
-                    userId,
-                    role: { in: ['OWNER', 'ADMIN'] },
-                  },
-                },
+                members: { some: { userId, role: { in: ['OWNER', 'ADMIN'] } } },
               },
             },
           },
@@ -95,10 +84,7 @@ export const TaskAccess = {
       },
     });
 
-    if (!task) {
-      throw new Error('You do not have permission to delete this task');
-    }
-
+    if (!task) throw new ForbiddenError('You do not have permission to delete this task');
     return task;
   },
 };
