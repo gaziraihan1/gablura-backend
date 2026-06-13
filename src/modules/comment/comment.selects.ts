@@ -32,6 +32,7 @@ export const taskForActivitySelect = {
   project: {
     select: {
       workspaceId: true,
+      workspace: true,
     },
   },
   assignees: {

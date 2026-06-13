@@ -9,6 +9,7 @@ export const CommentActivity = {
     taskTitle:      string;
     userId:         string;
     workspaceId:    string;
+    workspaceSlug?: string;
     commentPreview: string;
   }): Promise<void> {
     try {
@@ -19,6 +20,7 @@ export const CommentActivity = {
           entityId:    params.commentId,
           userId:      params.userId,
           workspaceId: params.workspaceId,
+          workspaceSlug: params.workspaceSlug || '', // Optional: you can include this if you have it available in params
           taskId:      params.taskId,
           metadata: {
             taskTitle:      params.taskTitle,
@@ -37,6 +39,7 @@ export const CommentActivity = {
     taskTitle:   string;
     userId:      string;
     workspaceId: string;
+    workspaceSlug?: string;
     oldContent:  string;
     newContent:  string;
   }): Promise<void> {
@@ -48,6 +51,7 @@ export const CommentActivity = {
           entityId:    params.commentId,
           userId:      params.userId,
           workspaceId: params.workspaceId,
+          workspaceSlug: params.workspaceSlug || "", // Optional: you can include this if you have it available in params
           taskId:      params.taskId,
           metadata: {
             taskTitle:  params.taskTitle,
@@ -67,6 +71,7 @@ export const CommentActivity = {
     taskTitle:      string;
     userId:         string;
     workspaceId:    string;
+    workspaceSlug?: string;
     commentContent: string;
   }): Promise<void> {
     try {
@@ -77,6 +82,7 @@ export const CommentActivity = {
           entityId:    params.commentId,
           userId:      params.userId,
           workspaceId: params.workspaceId,
+          workspaceSlug:params.workspaceSlug || '', // Optional: you can include this if you have it available in params
           taskId:      params.taskId,
           metadata: {
             taskTitle:      params.taskTitle,

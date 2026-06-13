@@ -292,7 +292,7 @@ export interface CreateAnnouncementOptions {
 }
 
 export async function createAnnouncement(
-  workspaceId: string,
+  workspaceSlug: string,
   createdById: string,
   opts: CreateAnnouncementOptions = {}
 ): Promise<Announcement> {
@@ -302,7 +302,7 @@ export async function createAnnouncement(
       content: opts.content ?? faker.lorem.paragraph(),
       visibility: opts.visibility ?? AnnouncementVisibility.PUBLIC,
       isPinned: opts.isPinned ?? false,
-      workspaceId,
+      workspaceSlug,
       createdById,
       projectId: opts.projectId ?? null,
     },
@@ -371,6 +371,7 @@ export async function createActivity(
       entityId: opts.entityId ?? faker.string.uuid(),
       userId,
       workspaceId,
+      workspaceSlug: (await prisma.workspace.findUnique({ where: { id: workspaceId } }))?.slug ?? 'unknown',
       taskId: opts.taskId ?? null,
       metadata: opts.metadata ?? {},
     },

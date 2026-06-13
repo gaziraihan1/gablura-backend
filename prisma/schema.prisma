@@ -249,6 +249,8 @@ model Workspace {
   invitations     WorkspaceInvitation[]
   members         WorkspaceMember[]
 
+  @@unique([id, slug])
+
   @@index([ownerId])
   @@index([slug])
   @@index([plan])
@@ -355,12 +357,13 @@ model Project {
   createdAt    DateTime           @default(now())
   updatedAt    DateTime           @updatedAt
   workspaceId  String?
+  workspaceSlug String?
   createdById  String
   slug         String
   announcement Announcement[]
   files        File[]
   createdBy    User               @relation("ProjectCreator", fields: [createdById], references: [id])
-  workspace    Workspace?         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspace    Workspace?         @relation(fields: [workspaceId, workspaceSlug], references: [id, slug], onDelete: Cascade)
   favorites    ProjectFavorite[]
   members      ProjectMember[]
   milestones   ProjectMilestone[]
@@ -370,7 +373,7 @@ model Project {
   tasks        Task[]
 
   @@unique([workspaceId, slug])
-  @@index([workspaceId])
+  @@index([workspaceId, workspaceSlug])
   @@index([createdById])
   @@index([status])
 }

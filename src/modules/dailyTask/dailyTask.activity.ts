@@ -8,6 +8,7 @@ export const DailyTaskActivity = {
     taskId: string;
     taskTitle: string;
     workspaceId: string;
+    workspaceSlug?: string;
     type: DailyTaskType;
   }): Promise<void> {
     try {
@@ -18,6 +19,7 @@ export const DailyTaskActivity = {
           entityId:    params.taskId,
           userId:      params.userId,
           workspaceId: params.workspaceId,
+          workspaceSlug: params.workspaceSlug || "",
           taskId:      params.taskId,
           metadata: {
             taskTitle:      params.taskTitle,
@@ -36,6 +38,7 @@ export const DailyTaskActivity = {
     taskId: string;
     taskTitle: string;
     workspaceId: string;
+    workspaceSlug?: string;
     type: DailyTaskType;
   }): Promise<void> {
     try {
@@ -46,6 +49,7 @@ export const DailyTaskActivity = {
           entityId:    params.taskId,
           userId:      params.userId,
           workspaceId: params.workspaceId,
+          workspaceSlug: "",
           taskId:      params.taskId,
           metadata: {
             taskTitle:      params.taskTitle,

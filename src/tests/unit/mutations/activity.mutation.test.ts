@@ -24,6 +24,7 @@ describe('ActivityMutation.createActivity', () => {
       entityId: task.id,
       userId: user.id,
       workspaceId: workspace.id,
+      workspaceSlug: workspace.slug,
       taskId: task.id,
       metadata: { test: true },
     });
@@ -44,6 +45,7 @@ describe('ActivityMutation.createActivity', () => {
       entityId: 'random-id',
       userId: user.id,
       workspaceId: workspace.id,
+      workspaceSlug: workspace.slug,
     });
 
     expect(result.metadata).toEqual({});
@@ -61,6 +63,7 @@ describe('ActivityMutation.deleteActivity', () => {
         entityId: 'test-id',
         userId: user.id,
         workspaceId: workspace.id,
+        workspaceSlug: workspace.slug,
         metadata: {},
       },
     });
@@ -87,6 +90,7 @@ describe('ActivityMutation.deleteActivity', () => {
         entityId: 'test-id',
         userId: user1.id,
         workspaceId: workspace.id,
+        workspaceSlug: workspace.slug,
         metadata: {},
       },
     });
@@ -109,6 +113,7 @@ describe('ActivityMutation.clearUserActivities', () => {
           entityId: '1',
           userId: user.id,
           workspaceId: workspace.id,
+          workspaceSlug: workspace.slug,
         },
         {
           action: ActivityType.UPDATED,
@@ -116,6 +121,7 @@ describe('ActivityMutation.clearUserActivities', () => {
           entityId: '2',
           userId: user.id,
           workspaceId: workspace.id,
+          workspaceSlug: workspace.slug,
         },
       ],
     });
@@ -142,6 +148,7 @@ describe('ActivityMutation.clearUserActivities', () => {
         entityId: '1',
         userId: user.id,
         workspaceId: ws2.workspace.id,
+        workspaceSlug: ws2.workspace.slug,
       },
     });
 
@@ -152,6 +159,7 @@ describe('ActivityMutation.clearUserActivities', () => {
         entityId: '2',
         userId: user.id,
         workspaceId: ws2.workspace.id,
+        workspaceSlug: ws2.workspace.slug,
       },
     });
 
@@ -178,6 +186,7 @@ describe('ActivityMutation.clearUserActivities', () => {
       entityId: 'old',
       userId: user.id,
       workspaceId: workspace.id,
+      workspaceSlug: workspace.slug,
       createdAt: oldDate,
     },
   });
@@ -189,6 +198,7 @@ describe('ActivityMutation.clearUserActivities', () => {
       entityId: 'new',
       userId: user.id,
       workspaceId: workspace.id,
+      workspaceSlug: workspace.slug,
       createdAt: futureDate, // 👈 key fix
     },
   });
