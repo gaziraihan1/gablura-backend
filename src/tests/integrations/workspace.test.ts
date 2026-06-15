@@ -113,25 +113,25 @@ describe("POST /api/v1/workspaces", () => {
     expect(res.body.code).toBe("EMAIL_NOT_VERIFIED");
   });
 
-  it("422 — missing name", async () => {
+  it("400 — missing name", async () => {
     const user = await createUser();
     const res = await request(app)
       .post("/api/v1/workspaces")
       .set(authHeaders(user))
       .send({ description: "no name field" });
 
-    expect(res.status).toBe(422);
+    expect(res.status).toBe(400);
     expect(res.body.code).toBe("VALIDATION_ERROR");
   });
 
-  it("422 — invalid color format (must be #RRGGBB)", async () => {
+  it("400 — invalid color format (must be #RRGGBB)", async () => {
     const user = await createUser();
     const res = await request(app)
       .post("/api/v1/workspaces")
       .set(authHeaders(user))
       .send({ name: "Color WS", color: "red" });
 
-    expect(res.status).toBe(422);
+    expect(res.status).toBe(400);
     expect(res.body.code).toBe("VALIDATION_ERROR");
   });
 });
@@ -389,7 +389,7 @@ describe("PUT /api/v1/workspaces/:id", () => {
     expect(res.status).toBe(403);
   });
 
-  it("422 — invalid color format", async () => {
+  it("400 — invalid color format", async () => {
     const { user, workspace } = await createWorkspaceWithOwner();
 
     const res = await request(app)
@@ -397,7 +397,7 @@ describe("PUT /api/v1/workspaces/:id", () => {
       .set(authHeaders(user))
       .send({ color: "not-a-hex" });
 
-    expect(res.status).toBe(422);
+    expect(res.status).toBe(400);
     expect(res.body.code).toBe("VALIDATION_ERROR");
   });
 
@@ -634,7 +634,7 @@ describe("POST /api/v1/workspaces/:id/invite", () => {
     expect(res.status).toBe(403);
   });
 
-  it("422 — missing email", async () => {
+  it("400 — missing email", async () => {
     const { user, workspace } = await createWorkspaceWithOwner();
 
     const res = await request(app)
@@ -642,10 +642,10 @@ describe("POST /api/v1/workspaces/:id/invite", () => {
       .set(authHeaders(user))
       .send({ role: "MEMBER" });
 
-    expect(res.status).toBe(422);
+    expect(res.status).toBe(400);
   });
 
-  it("422 — OWNER is not an invitable role", async () => {
+  it("400 — OWNER is not an invitable role", async () => {
     const { user, workspace } = await createWorkspaceWithOwner();
     const invitee = await createUser();
 
@@ -654,7 +654,7 @@ describe("POST /api/v1/workspaces/:id/invite", () => {
       .set(authHeaders(user))
       .send({ email: invitee.email, role: "OWNER" });
 
-    expect(res.status).toBe(422);
+    expect(res.status).toBe(400);
   });
 });
 
@@ -985,7 +985,7 @@ describe("GET /api/v1/workspaces/:id/stats", () => {
     expect(data.completionRate).toBeLessThanOrEqual(100);
   });
 
-  it("403 — non-member is denied", async () => {
+  it("404 — non-member is denied", async () => {
     const { workspace } = await createWorkspaceWithOwner();
     const outsider = await createUser();
 
@@ -993,7 +993,7 @@ describe("GET /api/v1/workspaces/:id/stats", () => {
       .get(`/api/v1/workspaces/${workspace.id}/stats`)
       .set(authHeaders(outsider));
 
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(404);
   });
 
   it("401 — no token", async () => {

@@ -87,7 +87,8 @@ export const taskPermissionInclude = {
   project: {
     include: {
       workspace: {
-        include: {
+        select: {                          // ✅ switch to select so ownerId is explicit
+          ownerId: true,
           members: {
             select: { role: true, userId: true },
           },

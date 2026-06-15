@@ -165,6 +165,7 @@ export interface CreateProjectOptions {
 
 export async function createProject(
   workspaceId: string,
+  // workspaceSlug: string,
   createdById: string,
   opts: CreateProjectOptions = {}
 ): Promise<Project> {
@@ -178,6 +179,7 @@ export async function createProject(
       priority: opts.priority ?? Priority.MEDIUM,
       workspaceId,
       createdById,
+      workspaceSlug: (await prisma.workspace.findUnique({ where: { id: workspaceId } }))?.slug ?? 'unknown',
     },
   });
 }

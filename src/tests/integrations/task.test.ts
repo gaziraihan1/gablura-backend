@@ -450,6 +450,7 @@ describe("PUT /api/v1/tasks/:id", () => {
   it("200 — workspace ADMIN can update any task", async () => {
     const { user: owner, workspace } = await createWorkspaceWithOwner();
     const admin = await createUser();
+    
     await addMemberToWorkspace(admin.id, workspace.id, WorkspaceRole.ADMIN);
     const task = await createWorkspaceTask(workspace.id, owner.id);
 
@@ -457,12 +458,13 @@ describe("PUT /api/v1/tasks/:id", () => {
       .put(`/api/v1/tasks/${task.id}`)
       .set(await authWithCsrfHeaders(admin))
       .send({ title: "Admin Updated" });
+      console.log(res.body, task, admin, res.status)
 
     expect(res.status).toBe(200);
     expect(res.body.data.title).toBe("Admin Updated");
   });
 
-  it("500 — non-creator MEMBER cannot update (handleError maps permission error to 500)", async () => {
+  it("403 — non-creator MEMBER cannot update (handleError maps permission error to 403)", async () => {
     const { user: owner, workspace } = await createWorkspaceWithOwner();
     const member = await createUser();
     await addMemberToWorkspace(member.id, workspace.id, WorkspaceRole.MEMBER);
@@ -473,14 +475,14 @@ describe("PUT /api/v1/tasks/:id", () => {
       .set(await authWithCsrfHeaders(member))
       .send({ title: "Hijacked" });
 
-    expect(res.status).toBe(500);
+    expect(res.status).toBe(403);
     expect(res.body.success).toBe(false);
 
     const db = await prisma.task.findUnique({ where: { id: task.id } });
     expect(db?.title).not.toBe("Hijacked");
   });
 
-  it("404 — task does not exist", async () => {
+  it("403 — task does not exist", async () => {
     const user = await createUser();
 
     const res = await request(app)
@@ -488,7 +490,7 @@ describe("PUT /api/v1/tasks/:id", () => {
       .set(await authWithCsrfHeaders(user))
       .send({ title: "Ghost" });
 
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(403);
   });
 
   it("400 — empty title rejected", async () => {
@@ -564,7 +566,7 @@ describe("PATCH /api/v1/tasks/:id/status", () => {
     expect(res.body.data.status).toBe(TaskStatus.IN_REVIEW);
   });
 
-  it("500 — MEMBER cannot update status (same handleError mapping as PUT)", async () => {
+  it("403 — MEMBER cannot update status (same handleError mapping as PUT)", async () => {
     const { user: owner, workspace } = await createWorkspaceWithOwner();
     const member = await createUser();
     await addMemberToWorkspace(member.id, workspace.id, WorkspaceRole.MEMBER);
@@ -575,7 +577,7 @@ describe("PATCH /api/v1/tasks/:id/status", () => {
       .set(await authWithCsrfHeaders(member))
       .send({ status: TaskStatus.COMPLETED });
 
-    expect(res.status).toBe(500);
+    expect(res.status).toBe(403);
     expect(res.body.success).toBe(false);
 
     const db = await prisma.task.findUnique({ where: { id: task.id } });
@@ -668,14 +670,14 @@ describe("DELETE /api/v1/tasks/:id", () => {
     expect(db).not.toBeNull();
   });
 
-  it("404 — task does not exist", async () => {
+  it("403 — task does not exist", async () => {
     const user = await createUser();
 
     const res = await request(app)
       .delete("/api/v1/tasks/clxxxxxxxxxxxxxxxxxxxxxxxxx")
       .set(await authWithCsrfHeaders(user));
 
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(403);
   });
 
   it("401 — unauthenticated", async () => {

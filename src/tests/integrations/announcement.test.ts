@@ -42,7 +42,7 @@ describe('POST workspace announcements', () => {
     const { user, workspace } = await createWorkspaceWithOwner();
 
     const res = await request(app)
-      .post(wsAnnouncementsUrl(workspace.id))
+      .post(wsAnnouncementsUrl(workspace.slug))
       .set(await authWithCsrfHeaders(user))
       .send({
         title: 'Q2 Planning Update',
@@ -53,9 +53,10 @@ describe('POST workspace announcements', () => {
     expect(res.status).toBe(201);
 
     const body = res.body.data;
+    console.log(body);
 
     expect(body.title).toBe('Q2 Planning Update');
-    expect(body.workspaceId).toBe(workspace.id);
+    expect(body.workspaceSlug).toBe(workspace.slug);
     expect(body.isPinned).toBe(false);
 
     const db = await prisma.announcement.findUnique({
@@ -71,7 +72,7 @@ describe('POST workspace announcements', () => {
     await addMemberToWorkspace(admin.id, workspace.id, WorkspaceRole.ADMIN);
 
     const res = await request(app)
-      .post(wsAnnouncementsUrl(workspace.id))
+      .post(wsAnnouncementsUrl(workspace.slug))
       .set(await authWithCsrfHeaders(admin))
       .send({
         title: 'Admin Notice',
@@ -87,7 +88,7 @@ describe('POST workspace announcements', () => {
     await addMemberToWorkspace(member.id, workspace.id, WorkspaceRole.MEMBER);
 
     const res = await request(app)
-      .post(wsAnnouncementsUrl(workspace.id))
+      .post(wsAnnouncementsUrl(workspace.slug))
       .set(await authWithCsrfHeaders(member))
       .send({
         title: 'Member Notice',
@@ -102,7 +103,7 @@ describe('POST workspace announcements', () => {
     const outsider = await createUser();
 
     const res = await request(app)
-      .post(wsAnnouncementsUrl(workspace.id))
+      .post(wsAnnouncementsUrl(workspace.slug))
       .set(await authWithCsrfHeaders(outsider))
       .send({ title: 'Sneaky', content: 'Hacking in.' });
 
@@ -113,7 +114,7 @@ describe('POST workspace announcements', () => {
     const { user, workspace } = await createWorkspaceWithOwner();
 
     const res = await request(app)
-      .post(wsAnnouncementsUrl(workspace.id))
+      .post(wsAnnouncementsUrl(workspace.slug))
       .set(await authWithCsrfHeaders(user))
       .send({ content: 'Content without title' });
 
@@ -124,7 +125,7 @@ describe('POST workspace announcements', () => {
     const { user, workspace } = await createWorkspaceWithOwner();
 
     const res = await request(app)
-      .post(wsAnnouncementsUrl(workspace.id))
+      .post(wsAnnouncementsUrl(workspace.slug))
       .set(await authWithCsrfHeaders(user))
       .send({ title: 'Title without content' });
 
@@ -135,7 +136,7 @@ describe('POST workspace announcements', () => {
     const { workspace } = await createWorkspaceWithOwner();
 
     const res = await request(app)
-      .post(wsAnnouncementsUrl(workspace.id))
+      .post(wsAnnouncementsUrl(workspace.slug))
       .send({ title: 'No auth', content: 'Will fail' });
 
     expect(res.status).toBe(401);
@@ -148,7 +149,7 @@ describe('POST workspace announcements', () => {
 describe('GET workspace announcements', () => {
   it('200 — members see PUBLIC announcements', async () => {
     const { user, workspace } = await createWorkspaceWithOwner();
-    await createAnnouncement(workspace.id, user.id, {
+    await createAnnouncement(workspace.slug, user.id, {
       title: 'Public Notice',
     });
 
@@ -156,7 +157,7 @@ describe('GET workspace announcements', () => {
     await addMemberToWorkspace(member.id, workspace.id, WorkspaceRole.MEMBER);
 
     const res = await request(app)
-      .get(wsAnnouncementsUrl(workspace.id))
+      .get(wsAnnouncementsUrl(workspace.slug))
       .set(authHeaders(member));
 
     expect(res.status).toBe(200);
@@ -172,13 +173,13 @@ describe('GET workspace announcements', () => {
     const member = await createUser();
     await addMemberToWorkspace(member.id, workspace.id, WorkspaceRole.MEMBER);
 
-    await createAnnouncement(workspace.id, owner.id, {
+    await createAnnouncement(workspace.slug, owner.id, {
       title: 'Secret Announcement',
       visibility: AnnouncementVisibility.PRIVATE,
     });
 
     const res = await request(app)
-      .get(wsAnnouncementsUrl(workspace.id))
+      .get(wsAnnouncementsUrl(workspace.slug))
       .set(authHeaders(member));
 
     expect(res.status).toBe(200);
@@ -195,22 +196,22 @@ describe('GET workspace announcements', () => {
     const { user: other, workspace: otherWs } =
       await createWorkspaceWithOwner();
 
-    await createAnnouncement(workspace.id, user.id, {
+    await createAnnouncement(workspace.slug, user.id, {
       title: 'My WS Announcement',
     });
 
-    await createAnnouncement(otherWs.id, other.id, {
+    await createAnnouncement(otherWs.slug, other.id, {
       title: 'Other WS Announcement',
     });
 
     const res = await request(app)
-      .get(wsAnnouncementsUrl(workspace.id))
+      .get(wsAnnouncementsUrl(workspace.slug))
       .set(authHeaders(user));
 
     const list = res.body.data;
 
     expect(
-      list.every((a: any) => a.workspaceId === workspace.id),
+      list.every((a: any) => a.workspaceSlug === workspace.slug),
     ).toBe(true);
   });
 
@@ -219,7 +220,7 @@ describe('GET workspace announcements', () => {
     const outsider = await createUser();
 
     const res = await request(app)
-      .get(wsAnnouncementsUrl(workspace.id))
+      .get(wsAnnouncementsUrl(workspace.slug))
       .set(authHeaders(outsider));
 
     expect(res.status).toBe(403);
@@ -232,7 +233,7 @@ describe('GET workspace announcements', () => {
 describe('PATCH announcement — pin/unpin', () => {
   it('200 — OWNER can pin', async () => {
     const { user, workspace } = await createWorkspaceWithOwner();
-    const ann = await createAnnouncement(workspace.id, user.id);
+    const ann = await createAnnouncement(workspace.slug, user.id);
 
     const res = await request(app)
       .patch(`${announcementUrl(ann.id)}/pin`) // ✅ FIXED
@@ -246,7 +247,7 @@ describe('PATCH announcement — pin/unpin', () => {
 
   it('403 — MEMBER cannot pin', async () => {
     const { user: owner, workspace } = await createWorkspaceWithOwner();
-    const ann = await createAnnouncement(workspace.id, owner.id);
+    const ann = await createAnnouncement(workspace.slug, owner.id);
 
     const member = await createUser();
     await addMemberToWorkspace(member.id, workspace.id, WorkspaceRole.MEMBER);
@@ -265,7 +266,7 @@ describe('PATCH announcement — pin/unpin', () => {
 describe('DELETE workspace announcement', () => {
   it('200 — creator deletes', async () => {
     const { user, workspace } = await createWorkspaceWithOwner();
-    const ann = await createAnnouncement(workspace.id, user.id);
+    const ann = await createAnnouncement(workspace.slug, user.id);
 
     const res = await request(app)
       .delete(announcementUrl(ann.id)) // ✅ FIXED
@@ -282,7 +283,7 @@ describe('DELETE workspace announcement', () => {
 
   it('403 — MEMBER cannot delete', async () => {
     const { user: owner, workspace } = await createWorkspaceWithOwner();
-    const ann = await createAnnouncement(workspace.id, owner.id);
+    const ann = await createAnnouncement(workspace.slug, owner.id);
 
     const member = await createUser();
     await addMemberToWorkspace(member.id, workspace.id, WorkspaceRole.MEMBER);
@@ -301,25 +302,26 @@ describe('DELETE workspace announcement', () => {
 describe('Project announcements', () => {
   it('200 — project GET scoped correctly', async () => {
     const { user, workspace } = await createWorkspaceWithOwner();
+    console.log(workspace)
     const project = await createProject(workspace.id, user.id);
 
-    await createAnnouncement(workspace.id, user.id, {
+    await createAnnouncement(workspace.slug, user.id, {
       title: 'WS Level',
     });
 
-    await createAnnouncement(workspace.id, user.id, {
+    await createAnnouncement(workspace.slug, user.id, {
       title: 'Project Level',
       projectId: project.id,
     });
 
     const res = await request(app)
-      .get(projectAnnouncementsUrl(workspace.id, project.id))
+      .get(projectAnnouncementsUrl(workspace.slug, project.id)) // ✅ FIXED
       .set(authHeaders(user));
 
 
     const list = res.body.data;
-    console.log(res.status, list)
+    console.log(res.status, list, res.body, project);
 
-    expect(list.every((a: any) => a.projectId === project.id)).toBe(true);
+    expect(list.every((a: any) => a.project.id === project.id)).toBe(true);
   });
 });

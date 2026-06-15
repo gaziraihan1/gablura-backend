@@ -86,36 +86,40 @@ export const TaskQuery = {
   },
 
   async getTaskById(taskId: string, userId: string) {
-    const task = await prisma.task.findFirst({
-      where: {
-        id: taskId,
-        OR: [
-          { createdById: userId },
-          { assignees: { some: { userId } } },
-          { project:   { workspace: { members: { some: { userId } } } } },
-          { workspace: { members: { some: { userId } } } },
-        ],
-      },
-      include: taskDetailInclude,
-    });
+  const task = await prisma.task.findFirst({
+    where: {
+      id: taskId,
+      OR: [
+        { createdById: userId },
+        { assignees:  { some: { userId } } },
+        { project:    { workspace: { members: { some: { userId } } } } },
+        { project:    { workspace: { ownerId: userId } } },   // ✅ add
+        { workspace:  { members: { some: { userId } } } },
+        { workspace:  { ownerId: userId } },                   // ✅ add
+      ],
+    },
+    include: taskDetailInclude,
+  });
 
-    if (!task) throw new NotFoundError('Task');
-    return { ...task, timeTracking: getTimeStatus(task) };
-  },
+  if (!task) throw new NotFoundError('Task');
+  return { ...task, timeTracking: getTimeStatus(task) };
+},
 
   async getTaskOverview(taskId: string, userId: string) {
     const task = await prisma.task.findFirst({
-      where: {
-        id: taskId,
-        OR: [
-          { createdById: userId },
-          { assignees: { some: { userId } } },
-          { project:   { workspace: { members: { some: { userId } } } } },
-          { workspace: { members: { some: { userId } } } },
-        ],
-      },
-      include: taskDetailInclude,
-    });
+    where: {
+      id: taskId,
+      OR: [
+        { createdById: userId },
+        { assignees:  { some: { userId } } },
+        { project:    { workspace: { members: { some: { userId } } } } },
+        { project:    { workspace: { ownerId: userId } } },   // ✅ add
+        { workspace:  { members: { some: { userId } } } },
+        { workspace:  { ownerId: userId } },                   // ✅ add
+      ],
+    },
+    include: taskDetailInclude,
+  });
 
     if (!task) throw new NotFoundError('Task');
 
