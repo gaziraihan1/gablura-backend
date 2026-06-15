@@ -6,7 +6,7 @@ import type {
   AddProjectMemberDto,
   UpdateProjectMemberRoleDto,
 } from './project.types.js';
-import { BadRequestError } from '../../errors/index.js';
+import { BadRequestError, NotFoundError } from '../../errors/index.js';
 import { projectListInclude, projectMemberInclude } from './project.selects.js';
 import { ProjectAccess }   from './project.access.js';
 import { SlugService }     from '../../services/slug.service.js';
@@ -15,38 +15,40 @@ import { WorkspaceCache, AnalyticsCache } from '../../lib/redis/cache.client.js'
 
 export const ProjectMutation = {
   async createProject(data: CreateProjectDto) {
-    await ProjectAccess.assertWorkspaceAccess(data.createdById, data.workspaceId);
-    const slug = await SlugService.generateProjectSlug(data.name, data.workspaceId);
+  await ProjectAccess.assertWorkspaceAccess(data.createdById, data.workspaceId);
 
-    const [project, workspace] = await Promise.all([
-      prisma.project.create({
-        data: {
-          name:        data.name,
-          slug,
-          description: data.description,
-          color:       data.color    ?? '#667eea',
-          icon:        data.icon,
-          status:      data.status   ?? 'ACTIVE',
-          priority:    data.priority ?? 'MEDIUM',
-          startDate:   data.startDate,
-          dueDate:     data.dueDate,
-          workspace:   { connect: { id: data.workspaceId } },
-          createdBy:   { connect: { id: data.createdById } },
-        },
-        include: projectListInclude,
-      }),
-      prisma.workspace.findUnique({
-        where:  { id: data.workspaceId },
-        select: { slug: true },
-      }),
-    ]);
+  // Must fetch workspace FIRST so we can set both FK columns
+  const workspace = await prisma.workspace.findUnique({
+    where:  { id: data.workspaceId },
+    select: { id: true, slug: true, name: true, ownerId: true },
+  });
+  if (!workspace) throw new NotFoundError('Workspace');
 
-    WorkspaceCache.invalidateWorkspace(data.workspaceId, workspace?.slug).catch(() => {});
-    AnalyticsCache.invalidateWorkspace(data.workspaceId).catch(() => {});
+  const slug = await SlugService.generateProjectSlug(data.name, data.workspaceId);
 
-    return project;
-  },
+  const project = await prisma.project.create({
+    data: {
+      name:        data.name,
+      slug,
+      description: data.description,
+      color:       data.color    ?? '#667eea',
+      icon:        data.icon,
+      status:      data.status   ?? 'ACTIVE',
+      priority:    data.priority ?? 'MEDIUM',
+      startDate:   data.startDate,
+      dueDate:     data.dueDate,
+      // Use composite connect so BOTH workspaceId AND workspaceSlug are set
+      workspace:   { connect: { id_slug: { id: workspace.id, slug: workspace.slug } } },
+      createdBy:   { connect: { id: data.createdById } },
+    },
+    include: projectListInclude,
+  });
 
+  WorkspaceCache.invalidateWorkspace(data.workspaceId, workspace.slug).catch(() => {});
+  AnalyticsCache.invalidateWorkspace(data.workspaceId).catch(() => {});
+
+  return project;
+},
   async updateProject(userId: string, projectId: string, data: UpdateProjectDto) {
     await ProjectAccess.assertProjectAdminAccess(userId, projectId);
 

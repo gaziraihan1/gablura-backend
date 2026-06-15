@@ -82,27 +82,40 @@ export const ProjectQuery = {
   },
 
   async getProjectBySlug(userId: string, slug: string) {
-    const project = await prisma.project.findFirst({
+  // First find the project by slug alone
+  const project = await prisma.project.findFirst({
+    where: { slug },
+    include: projectDetailInclude,
+  });
+
+  if (!project) throw new NotFoundError('Project');
+
+  // Then verify access separately using workspaceId directly
+  if (project.workspaceId) {
+    const hasAccess = await prisma.workspace.findFirst({
       where: {
-        slug,
-        workspace: {
-          OR: [{ ownerId: userId }, { members: { some: { userId } } }, {isPublic: true}],
-        },
+        id: project.workspaceId,
+        OR: [
+          { ownerId: userId },
+          { members: { some: { userId } } },
+          { isPublic: true },
+        ],
       },
-      include: projectDetailInclude,
+      select: { id: true },
     });
+    console.log(hasAccess ? "User has access to the project" : "User does NOT have access to the project"); // Debugging log
+    if (!hasAccess) throw new NotFoundError('Project');
+  }
 
-    if (!project) throw new NotFoundError('Project');
+  const [stats, isAdmin] = await Promise.all([
+    Promise.resolve(calculateProjectStats(project)),
+    ProjectAccess.isProjectAdmin(userId, project),
+  ]);
 
-    const [stats, isAdmin] = await Promise.all([
-      Promise.resolve(calculateProjectStats(project)),
-      ProjectAccess.isProjectAdmin(userId, project),
-    ]);
-
-    return {
-      ...project,
-      isAdmin,
-      stats: { ...stats, totalAnnouncement: project._count.announcement },
-    };
-  },
+  return {
+    ...project,
+    isAdmin,
+    stats: { ...stats, totalAnnouncement: project._count.announcement },
+  };
+},
 };

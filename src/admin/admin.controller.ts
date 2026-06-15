@@ -100,6 +100,7 @@ export const getAdminProjects = async (req: AuthRequest, res: Response) => {
   try {
     const params = paginationSchema.parse(req.query);
     const result = await AdminRepository.getProjects(params);
+    console.log("Admin projects result:", result); // Debugging log
     res.json({ success: true, ...result });
   } catch (e) {
     handleError(res, "fetch projects", e);

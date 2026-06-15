@@ -50,7 +50,7 @@ export const getTaskOverview = asyncHandler(async (req: AuthRequest, res: Respon
 
 export const createTask = asyncHandler(async (req: AuthRequest, res: Response) => {
   const parsed = createTaskSchema.safeParse(req.body);
-  if (!parsed.success) throw new ValidationError('Validation error', parsed.error.issues);
+  if (!parsed.success) throw new ValidationError('Validate before submitting (filled the form)', parsed.error.issues);
 
   const data = parsed.data;
   const task = await TaskMutation.createTask(

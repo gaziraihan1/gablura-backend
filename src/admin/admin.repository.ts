@@ -586,6 +586,7 @@ export const AdminRepository = {
       taskMap[t.projectId] ??= {};
       taskMap[t.projectId][t.status] = t._count.status;
     });
+    console.log("Task breakdown map:", rows); // Debugging log
 
     return {
       data: rows

@@ -77,11 +77,22 @@ type OnCommentAdded = (data: { taskId: string; taskTitle: string; workspaceId?: 
 export const TaskMutation = {
   async createTask(data: CreateTaskInput, onCreated?: OnTaskCreated) {
     if (!data.title?.trim())        throw new BadRequestError('Task title is required');
+    if(data.title.length > 200) throw new BadRequestError('Task title cannot exceed 200 characters');
     if (data.focusLevel !== undefined && (data.focusLevel < 1 || data.focusLevel > 5)) {
       throw new BadRequestError('Focus level must be between 1 and 5');
     }
     if (data.distractionCost !== undefined && data.distractionCost < 0) {
       throw new BadRequestError('Distraction cost cannot be negative');
+    }
+    if(data.dueDate && data.startDate && new Date(data.startDate) > new Date(data.dueDate)) {
+      throw new BadRequestError('Start date cannot be after due date');
+    }
+    if(data.startDate === undefined) {
+      throw new BadRequestError('Start date is required');
+    }
+   
+    if(data.dueDate === undefined) {
+      throw new BadRequestError('Due date is required');
     }
     if (data.assigneeIds && data.assigneeIds.length > 5) {
       throw new BadRequestError('Too many assignees reduce task focus');
