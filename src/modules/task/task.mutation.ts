@@ -87,13 +87,13 @@ export const TaskMutation = {
     if(data.dueDate && data.startDate && new Date(data.startDate) > new Date(data.dueDate)) {
       throw new BadRequestError('Start date cannot be after due date');
     }
-    if(data.startDate === undefined) {
-      throw new BadRequestError('Start date is required');
-    }
+    // if(data.startDate === undefined) {
+    //   throw new BadRequestError('Start date is required');
+    // }
    
-    if(data.dueDate === undefined) {
-      throw new BadRequestError('Due date is required');
-    }
+    // if(data.dueDate === undefined) {
+    //   throw new BadRequestError('Due date is required');
+    // }
     if (data.assigneeIds && data.assigneeIds.length > 5) {
       throw new BadRequestError('Too many assignees reduce task focus');
     }

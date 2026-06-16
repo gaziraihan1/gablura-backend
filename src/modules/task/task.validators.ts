@@ -52,8 +52,8 @@ export const createTaskSchema = z.object({
   projectId: z.string().optional(),
   status: taskStatusEnum.optional(),
   priority: taskPriorityEnum.optional(),
-  dueDate: z.coerce.date({error: "Due date is required" }),
-  startDate: z.coerce.date({ error: "Start date is required" }),
+  dueDate: z.coerce.date().optional(),
+  startDate: z.coerce.date().optional(),
   estimatedHours: z.number().min(0).optional(),
   assigneeIds: z
     .array(z.string())
