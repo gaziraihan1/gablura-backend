@@ -44,6 +44,7 @@ import { adminRouter } from "./admin/admin.routes.js";
 import { prisma } from "./lib/prisma.js";
 import { templatesRouter } from "./modules/templates/index.js";
 import { errorHandler, notFoundHandler } from "./errors/errorHandler.js";
+import { adminResourceRouter, publicResourceRouter } from "./modules/resource/index.js";
 
 dotenv.config();
 
@@ -209,6 +210,8 @@ app.use(
   requireCsrfToken(),
   announcementRouter,
 );
+app.use("/api/v1/admin/resources", authenticate, requireCsrfToken(),adminResourceRouter ); // Admin routes for resources
+app.use("/api/v1/resources", publicResourceRouter ); // Public routes for resources (if any)
 app.use("/api/v1/projects", authenticate, requireCsrfToken(), projectRoutes);
 app.use("/api/v1/tasks", authenticate, requireCsrfToken(), taskRouter);
 app.use("/api/v1/daily-tasks", authenticate, requireCsrfToken(), dailyTaskRouter);

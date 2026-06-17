@@ -212,6 +212,8 @@ model User {
   userWorkSchedule       UserWorkSchedule?
   ownedWorkspaces        Workspace[]            @relation("WorkspaceOwner")
   workspaceMembers       WorkspaceMember[]
+  popularResourcesCreated PopularResource[] @relation("PopularResourceCreatedBy")
+  productUpdatesCreated   ProductUpdate[]   @relation("ProductUpdateCreatedBy")
 
   @@index([stripeCustomerId])
 }
@@ -618,6 +620,69 @@ model AnnouncementTarget {
   @@index([announcementId])
   @@index([userId])
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// Append this block to your existing schema.prisma (same datasource /
+// generator). Then add the two relation fields noted at the bottom inside
+// your existing `model User { ... }`.
+// ─────────────────────────────────────────────────────────────────────────
+
+enum ResourceStatus {
+  DRAFT
+  PUBLIC
+  ARCHIVE
+}
+
+/// Popular Resource — shown in the public "Popular resources" section.
+model PopularResource {
+  id          String         @id @default(cuid())
+
+  /// Admin-assigned, human-readable identifier — the "ID" field from the
+  /// create form (e.g. "getting-started-guide"). Kept separate from the
+  /// Prisma primary key above so admins get a stable, readable value
+  /// without colliding with Prisma's own id generation/relations.
+  slug        String         @unique
+
+  title       String
+  description String         @db.Text
+  image       String
+  category    String
+  status      ResourceStatus @default(DRAFT)
+
+  createdById String
+  createdBy   User           @relation("PopularResourceCreatedBy", fields: [createdById], references: [id])
+
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@index([status])
+  @@index([category])
+  @@map("popular_resources")
+}
+
+model ProductUpdate {
+  id          String         @id @default(cuid())
+
+  /// Same rationale as PopularResource.slug above.
+  slug        String         @unique
+
+  title       String
+  date        DateTime
+  description String         @db.Text
+  version     String
+  status      ResourceStatus @default(DRAFT)
+
+  createdById String
+  createdBy   User           @relation("ProductUpdateCreatedBy", fields: [createdById], references: [id])
+
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@index([status])
+  @@index([date])
+  @@map("product_updates")
+}
+
 
 model UserCapacity {
   id                 String   @id @default(cuid())
