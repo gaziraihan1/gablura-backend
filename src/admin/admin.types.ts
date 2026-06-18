@@ -144,6 +144,7 @@ export interface AdminUser {
     featureRequests: number;
   };
 }
+export type WorkspacePlan = "FREE" | "PRO" | "BUSINESS" | "ENTERPRISE"
 
 export interface AdminUserDetail {
   id: string;

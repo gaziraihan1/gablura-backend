@@ -10,6 +10,7 @@ import type {
   AdminBilling,
   AdminPaginationParams,
   PaginatedAdminResult,
+  WorkspacePlan
 } from './admin.types.js';
 
 function paginate(page = 1, pageSize = 20) {
@@ -303,6 +304,19 @@ export const AdminRepository = {
       _count: raw._count,
     };
   },
+  async updateWorkspaceLimits(
+  workspaceId: string,
+  data: { plan: WorkspacePlan; maxMembers: number; maxStorage: number },
+): Promise<{ id: string; slug: string; name: string; plan: WorkspacePlan; maxMembers: number; maxStorage: number }> {
+  return prisma.workspace.update({
+    where: { id: workspaceId },
+    data,
+    select: {
+      id: true, slug: true, name: true,
+      plan: true, maxMembers: true, maxStorage: true,
+    },
+  });
+},
 
   // ── Users list ─────────────────────────────────────────────────────────────
   async getUsers(
