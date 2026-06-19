@@ -10,13 +10,13 @@ import {
 // ─── Storage Limits per Plan ──────────────────────────────────────────────────
 
 const GB = 1024 * 1024 * 1024;
-const TB = 1024 * GB;
+const EP = 200 * GB;
 
 export function getStorageLimits(plan: WorkspacePlan): StorageLimits {
   switch (plan) {
     case "ENTERPRISE":
       return {
-        maxStorageBytes:        TB,
+        maxStorageBytes:        EP,
         maxFileSizeBytes:       500 * 1024 * 1024, // 500 MB per file
         maxDailyUploadsPerUser: null,
         uploadsPerMinute:       null,
@@ -25,7 +25,7 @@ export function getStorageLimits(plan: WorkspacePlan): StorageLimits {
 
     case "BUSINESS":
       return {
-        maxStorageBytes:        100 * GB,
+        maxStorageBytes:        50 * GB,
         maxFileSizeBytes:       100 * 1024 * 1024, // 100 MB per file
         maxDailyUploadsPerUser: null,
         uploadsPerMinute:       30,
