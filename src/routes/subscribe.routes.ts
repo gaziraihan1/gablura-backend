@@ -1,17 +1,10 @@
-import { Ratelimit } from "@upstash/ratelimit";
 import { Router } from "express";
-import { redis } from "../lib/redis.js";
 import { prisma } from "../lib/prisma.js";
+import { ratelimit } from "../lib/rateLimit.js";
 
 
 const router = Router();
-const ratelimit = new Ratelimit({
-  redis,
-  limiter: {
-    requests: 10,
-    window: "10 m",
-  } as any,
-});
+
 router.post("/", async (req, res) => {
   const identifier = req.ip ?? "anonymous";
 

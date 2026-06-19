@@ -1,14 +1,10 @@
-import { redis } from './../../lib/redis.js';
 import { Router } from "express";
 import { prisma } from "../../lib/prisma.js";
 import { authenticate } from "../../middleware/auth.js";
 import { requireFocuraAdmin } from "../../middleware/focuraAdmin.js";
-import { Ratelimit } from "@upstash/ratelimit";
+import { ratelimit } from "../../lib/rateLimit.js";
 
-const ratelimit = new Ratelimit({
-  redis,
-  limiter: Ratelimit.slidingWindow(10, "10 m"),
-});
+
 const router = Router();
 
 router.post("/", async (req, res) => {
