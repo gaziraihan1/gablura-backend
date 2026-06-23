@@ -32,6 +32,18 @@ const createInMemoryRedisMock = () => ({
   }),
   decr:   vi.fn().mockResolvedValue(0),
   incr:   vi.fn().mockResolvedValue(1),
+  incrby: vi.fn(async (key: string, n: number) => {
+    const cur = parseInt(redisStore.get(key) ?? '0', 10);
+    const next = cur + n;
+    redisStore.set(key, String(next));
+    return next;
+  }),
+  decrby: vi.fn(async (key: string, n: number) => {
+    const cur = parseInt(redisStore.get(key) ?? '0', 10);
+    const next = Math.max(0, cur - n);
+    redisStore.set(key, String(next));
+    return next;
+  }),
   zrem:   vi.fn().mockResolvedValue(1),
   zcard:  vi.fn().mockResolvedValue(0),
   zadd:   vi.fn().mockResolvedValue(1),
@@ -173,6 +185,9 @@ afterEach(async () => {
       // Table doesn't exist in this schema version — skip
     }
   }
+});
+afterEach(() => {
+  process.env.FOCURA_ADMIN_IDS = '';
 });
 
 afterAll(async () => {

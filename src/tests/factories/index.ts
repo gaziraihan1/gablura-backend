@@ -80,8 +80,30 @@ export async function createUser(opts: CreateUserOptions = {}): Promise<User> {
 }
 
 /** Creates a User with role ADMIN */
+/**
+ * Registers a userId into the FOCURA_ADMIN_IDS env var so that
+ * isFocuraAdmin() returns true for this user in the current process.
+ *
+ * Called automatically by createAdminUser(). You can also call it
+ * directly when you need an existing user to pass the admin guard:
+ *
+ *   const user = await createUser();
+ *   registerFocuraAdmin(user.id);
+ */
+export function registerFocuraAdmin(userId: string): void {
+  const current = process.env.FOCURA_ADMIN_IDS ?? '';
+  const ids = current.split(',').map((s) => s.trim()).filter(Boolean);
+  if (!ids.includes(userId)) {
+    ids.push(userId);
+    process.env.FOCURA_ADMIN_IDS = ids.join(',');
+  }
+}
+
+/** Creates a User with role ADMIN and registers their ID in FOCURA_ADMIN_IDS */
 export async function createAdminUser(opts: CreateUserOptions = {}): Promise<User> {
-  return createUser({ ...opts, role: UserRole.ADMIN });
+  const user = await createUser({ ...opts, role: UserRole.ADMIN });
+  registerFocuraAdmin(user.id);
+  return user;
 }
 
 /** Creates an unverified user (will get 403 EMAIL_NOT_VERIFIED from middleware) */

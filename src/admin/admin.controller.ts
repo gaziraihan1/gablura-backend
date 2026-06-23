@@ -1,7 +1,7 @@
 import { Response } from "express";
 import { z } from "zod";
 import type { AuthRequest } from "../middleware/auth.js";
-import { asyncHandler, ValidationError } from "../errors/index.js";
+import { asyncHandler, NotFoundError, ValidationError } from "../errors/index.js";
 import {
   paginationSchema,
   updateWorkspaceLimitsSchema,
@@ -59,7 +59,7 @@ export const getAdminWorkspaceDetail = asyncHandler(
   async (req: AuthRequest, res: Response) => {
     assertFocuraAdmin(req.user!.id);
     const workspace = await queryWorkspaceDetailBySlug(req.params.slug);
-    if (!workspace) throw new Error("NOT_FOUND: Workspace");
+    if (!workspace) throw new NotFoundError("NOT_FOUND: Workspace");
     res.json({ success: true, data: workspace });
   },
 );
@@ -77,7 +77,7 @@ export const getAdminUserDetail = asyncHandler(
   async (req: AuthRequest, res: Response) => {
     assertFocuraAdmin(req.user!.id);
     const user = await queryUserDetail(req.params.id);
-    if (!user) throw new Error("NOT_FOUND: User");
+    if (!user) throw new NotFoundError("NOT_FOUND: User");
     res.json({ success: true, data: user });
   },
 );
