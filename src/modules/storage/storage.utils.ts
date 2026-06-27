@@ -17,13 +17,13 @@ export function getCategoryFromMimeType(mimeType: string): string {
   if (mimeType.startsWith("image/")) return "Images";
   if (mimeType.startsWith("video/")) return "Videos";
   if (mimeType.includes("pdf")) return "PDFs";
-  if (mimeType.includes("word") || mimeType.includes("document"))
-    return "Documents";
   if (mimeType.includes("sheet") || mimeType.includes("excel"))
     return "Spreadsheets";
   if (mimeType.includes("presentation") || mimeType.includes("powerpoint"))
     return "Presentations";
-  if (mimeType.includes("zip") || mimeType.includes("archive"))
+  if (mimeType.includes("word") || mimeType.includes("document"))
+    return "Documents";
+  if (mimeType.includes("zip") || mimeType.includes("archive") || mimeType.includes("rar"))
     return "Archives";
   return "Other";
 }

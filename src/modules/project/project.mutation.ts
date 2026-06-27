@@ -11,7 +11,7 @@ import { projectListInclude, projectMemberInclude } from './project.selects.js';
 import { ProjectAccess }   from './project.access.js';
 import { SlugService }     from '../../services/slug.service.js';
 import { ProjectStatus }   from '@prisma/client';
-import { WorkspaceCache, AnalyticsCache } from '../../lib/redis/cache.client.js';
+import { WorkspaceCache, AnalyticsCache, ProjectCache } from '../../lib/redis/cache.client.js';
 
 export const ProjectMutation = {
   async createProject(data: CreateProjectDto) {
@@ -44,8 +44,13 @@ export const ProjectMutation = {
     include: projectListInclude,
   });
 
-  WorkspaceCache.invalidateWorkspace(data.workspaceId, workspace.slug).catch(() => {});
-  AnalyticsCache.invalidateWorkspace(data.workspaceId).catch(() => {});
+  // Invalidate caches in a non-blocking way
+  Promise.all([
+    ProjectCache.invalidateWorkspaceProjects(data.workspaceId),
+    ProjectCache.invalidateUserProjects(data.createdById),
+    WorkspaceCache.invalidateWorkspace(data.workspaceId, workspace.slug),
+    AnalyticsCache.invalidateWorkspace(data.workspaceId),
+  ]).catch(() => {});
 
   return project;
 },
@@ -56,12 +61,13 @@ export const ProjectMutation = {
     if (data.status === ProjectStatus.COMPLETED) updateData.completedAt = new Date();
     if (data.status && data.status !== ProjectStatus.COMPLETED) updateData.completedAt = null;
 
-    // Fetch workspace slug before updating (workspaceId won't change)
+    // Fetch workspace info before updating
     const existing = await prisma.project.findUnique({
   where:  { id: projectId },
-  select: { 
-    workspaceId: true, 
-    workspace: { select: { slug: true } } 
+  select: {
+    workspaceId: true,
+    workspace: { select: { slug: true } },
+    slug: true,
   },
 });
 
@@ -71,11 +77,17 @@ export const ProjectMutation = {
       include: projectListInclude,
     });
 
-    if (existing?.workspaceId && existing?.workspace?.slug) {
+    if (existing?.workspaceId) {
   const workspaceId = existing.workspaceId as string;
-  const slug = existing.workspace.slug as string;
-  WorkspaceCache.invalidateWorkspace(workspaceId, slug).catch(() => {});
-  AnalyticsCache.invalidateWorkspace(workspaceId).catch(() => {});
+  const slug = existing?.workspace?.slug || existing.slug;
+  // Invalidate caches in a non-blocking way
+  Promise.all([
+    ProjectCache.invalidateProject(projectId, slug),
+    ProjectCache.invalidateWorkspaceProjects(workspaceId),
+    ProjectCache.invalidateUserProjects(userId),
+    WorkspaceCache.invalidateWorkspace(workspaceId, slug),
+    AnalyticsCache.invalidateWorkspace(workspaceId),
+  ]).catch(() => {});
 }
 
     return project;
@@ -87,19 +99,26 @@ export const ProjectMutation = {
     // Must fetch before delete — row won't exist after
     const project = await prisma.project.findUnique({
   where:  { id: projectId },
-  select: { 
-    workspaceId: true, 
-    workspace: { select: { slug: true } } 
+  select: {
+    workspaceId: true,
+    workspace: { select: { slug: true } },
+    slug: true,
   },
 });
 
 await prisma.project.delete({ where: { id: projectId } });
 
-if (project?.workspaceId && project?.workspace?.slug) {
+if (project?.workspaceId) {
   const workspaceId = project.workspaceId as string;
-  const slug = project.workspace.slug as string;
-  WorkspaceCache.invalidateWorkspace(workspaceId, slug).catch(() => {});
-  AnalyticsCache.invalidateWorkspace(workspaceId).catch(() => {});
+  const slug = project?.workspace?.slug || project.slug;
+  // Invalidate caches in a non-blocking way
+  Promise.all([
+    ProjectCache.invalidateProject(projectId, slug),
+    ProjectCache.invalidateWorkspaceProjects(workspaceId),
+    ProjectCache.invalidateUserProjects(userId),
+    WorkspaceCache.invalidateWorkspace(workspaceId, slug),
+    AnalyticsCache.invalidateWorkspace(workspaceId),
+  ]).catch(() => {});
 }
   },
 
@@ -118,10 +137,15 @@ if (project?.workspaceId && project?.workspace?.slug) {
     });
     if (existing) throw new BadRequestError('User is already a project member');
 
-    return prisma.projectMember.create({
+    const member = await prisma.projectMember.create({
       data:    { projectId, userId: data.userId, role: data.role ?? 'COLLABORATOR' },
       include: projectMemberInclude,
     });
+
+    // Invalidate project cache (non-blocking)
+    ProjectCache.invalidateProject(projectId).catch(() => {});
+
+    return member;
   },
 
   async updateProjectMemberRole(
@@ -132,11 +156,16 @@ if (project?.workspaceId && project?.workspace?.slug) {
   ) {
     await ProjectAccess.assertProjectAdminAccess(userId, projectId);
 
-    return prisma.projectMember.update({
+    const member = await prisma.projectMember.update({
       where:   { projectId_userId: { projectId, userId: memberId } },
       data:    { role: data.role },
       include: projectMemberInclude,
     });
+
+    // Invalidate project cache (non-blocking)
+    ProjectCache.invalidateProject(projectId).catch(() => {});
+
+    return member;
   },
 
   async removeProjectMember(userId: string, projectId: string, memberId: string): Promise<void> {
@@ -145,5 +174,8 @@ if (project?.workspaceId && project?.workspace?.slug) {
     await prisma.projectMember.delete({
       where: { projectId_userId: { projectId, userId: memberId } },
     });
+
+    // Invalidate project cache (non-blocking)
+    ProjectCache.invalidateProject(projectId).catch(() => {});
   },
 };

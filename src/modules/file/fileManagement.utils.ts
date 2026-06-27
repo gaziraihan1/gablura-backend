@@ -11,7 +11,9 @@ export function categorizeFileType(mimeType: string): string {
     mimeType.includes('document') ||
     mimeType.includes('word') ||
     mimeType.includes('sheet') ||
-    mimeType.includes('presentation')
+    mimeType.includes('presentation') ||
+    mimeType.includes('excel') ||
+    mimeType.includes('powerpoint')
   ) {
     return 'Documents';
   }

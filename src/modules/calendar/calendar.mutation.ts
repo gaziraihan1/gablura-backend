@@ -1,10 +1,11 @@
 
 import { prisma } from '../../lib/prisma.js';
 import type { GoalCheckpoint, CreateGoalCheckpointInput } from './calendar.types.js';
+import { CalendarCache } from '../../lib/redis/cache.client.js';
 
 export const CalendarMutation = {
   async createGoalCheckpoint(data: CreateGoalCheckpointInput): Promise<GoalCheckpoint> {
-    return prisma.goalCheckpoint.create({
+    const goal = await prisma.goalCheckpoint.create({
       data: {
         userId:      data.userId,
         workspaceId: data.workspaceId,
@@ -13,6 +14,11 @@ export const CalendarMutation = {
         targetDate:  data.targetDate,
       },
     });
+
+    // Invalidate goal checkpoints cache
+    CalendarCache.invalidateGoalCheckpoints(data.userId, data.workspaceId).catch(() => {});
+
+    return goal;
   },
 
   async initializeUserSettings(userId: string): Promise<void> {
@@ -39,5 +45,8 @@ export const CalendarMutation = {
         },
       }),
     ]);
+
+    // Invalidate all calendar cache for user since capacity/schedule affects calculations
+    CalendarCache.invalidateUserCalendar(userId).catch(() => {});
   },
 };

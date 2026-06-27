@@ -10,9 +10,14 @@ import {
   activitySlimInclude,
   activityUserOnlyInclude,
 } from './activity.selects.js';
+import { CacheClient, CACHE_KEYS, CACHE_TTL } from '../../lib/redis/cache.client.js';
 
 export const ActivityQuery = {
-  async getUserActivities(userId: string, filters: ActivityFilters = {}) {
+  async getUserActivities(userId: string, filters: ActivityFilters = {}): Promise<any[]> {
+    const cacheKey = CACHE_KEYS.activityUserList(userId, filters.workspaceId);
+    const cached = await CacheClient.get<any[]>(cacheKey);
+    if (cached) return cached;
+
     const where: Record<string, unknown> = {
       OR: [
         { userId },
@@ -40,40 +45,57 @@ export const ActivityQuery = {
       where.createdAt = createdAt;
     }
 
-    return prisma.activity.findMany({
+    const result = await prisma.activity.findMany({
       where,
       include:  activityFullInclude,
       orderBy:  { createdAt: 'desc' },
       take:     filters.limit  ?? 50,
       skip:     filters.offset ?? 0,
     });
+
+    await CacheClient.set(cacheKey, result, CACHE_TTL.ACTIVITY_LIST);
+    return result;
   },
 
   async getWorkspaceActivities(
     workspaceId: string,
     filters: WorkspaceActivityFilters = {},
-  ) {
+  ): Promise<any[]> {
+    const cacheKey = CACHE_KEYS.activityWorkspaceList(workspaceId);
+    const cached = await CacheClient.get<any[]>(cacheKey);
+    if (cached) return cached;
+
     const where: Record<string, unknown> = { workspaceId };
 
     if (filters.action)     where.action     = filters.action;
     if (filters.entityType) where.entityType = filters.entityType;
 
-    return prisma.activity.findMany({
+    const result = await prisma.activity.findMany({
       where,
       include:  activitySlimInclude,
       orderBy:  { createdAt: 'desc' },
       take:     filters.limit  ?? 50,
       skip:     filters.offset ?? 0,
     });
+
+    await CacheClient.set(cacheKey, result, CACHE_TTL.ACTIVITY_FEED);
+    return result;
   },
 
-  async getTaskActivities(taskId: string, filters: TaskActivityFilters = {}) {
-    return prisma.activity.findMany({
+  async getTaskActivities(taskId: string, filters: TaskActivityFilters = {}): Promise<any[]> {
+    const cacheKey = CACHE_KEYS.activityTaskList(taskId);
+    const cached = await CacheClient.get<any[]>(cacheKey);
+    if (cached) return cached;
+
+    const result = await prisma.activity.findMany({
       where:    { taskId },
       include:  activityUserOnlyInclude,
       orderBy:  { createdAt: 'desc' },
       take:     filters.limit  ?? 50,
       skip:     filters.offset ?? 0,
     });
+
+    await CacheClient.set(cacheKey, result, CACHE_TTL.ACTIVITY_FEED);
+    return result;
   },
 };

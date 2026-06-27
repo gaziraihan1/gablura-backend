@@ -438,7 +438,10 @@ async function upsertInvoice(event: NormalisedInvoiceEvent) {
     },
   });
 
-  if (workspaceId) await BILLING_CACHE.invalidateWorkspace(workspaceId);
+  // Invalidate invoice cache when invoice is created/updated
+  if (workspaceId) {
+    await BILLING_CACHE.invalidateWorkspace(workspaceId, payerId);
+  }
 }
 
 // ---------------------------------------------------------------------------

@@ -1,6 +1,7 @@
 
 import { prisma } from '../../lib/prisma.js';
 import type { SystemCalendarEvent, GoalCheckpoint } from './calendar.types.js';
+import { CacheClient, CACHE_KEYS, CACHE_TTL } from '../../lib/redis/cache.client.js';
 
 export const CalendarQuery = {
   async getSystemEvents(
@@ -9,13 +10,23 @@ export const CalendarQuery = {
     startDate: Date,
     endDate: Date,
   ): Promise<SystemCalendarEvent[]> {
-    return prisma.systemCalendarEvent.findMany({
+    const startDateStr = startDate.toISOString().split('T')[0];
+    const endDateStr = endDate.toISOString().split('T')[0];
+    const cacheKey = CACHE_KEYS.calendarSystemEvents(userId, workspaceId, startDateStr, endDateStr);
+    
+    const cached = await CacheClient.get<SystemCalendarEvent[]>(cacheKey);
+    if (cached) return cached;
+
+    const events = await prisma.systemCalendarEvent.findMany({
       where: {
         OR: [{ userId }, { workspaceId }],
         date: { gte: startDate, lte: endDate },
       },
       orderBy: { date: 'asc' },
     });
+
+    await CacheClient.set(cacheKey, events, CACHE_TTL.CALENDAR_SYSTEM_EVENTS);
+    return events;
   },
 
   async getGoalCheckpoints(
@@ -24,7 +35,14 @@ export const CalendarQuery = {
     startDate: Date,
     endDate: Date,
   ): Promise<GoalCheckpoint[]> {
-    return prisma.goalCheckpoint.findMany({
+    const startDateStr = startDate.toISOString().split('T')[0];
+    const endDateStr = endDate.toISOString().split('T')[0];
+    const cacheKey = CACHE_KEYS.calendarGoalCheckpoints(userId, workspaceId, startDateStr, endDateStr);
+    
+    const cached = await CacheClient.get<GoalCheckpoint[]>(cacheKey);
+    if (cached) return cached;
+
+    const goals = await prisma.goalCheckpoint.findMany({
       where: {
         userId,
         ...(workspaceId ? { workspaceId } : {}),
@@ -32,5 +50,8 @@ export const CalendarQuery = {
       },
       orderBy: { targetDate: 'asc' },
     });
+
+    await CacheClient.set(cacheKey, goals, CACHE_TTL.CALENDAR_GOAL_CHECKPOINTS);
+    return goals;
   },
 };

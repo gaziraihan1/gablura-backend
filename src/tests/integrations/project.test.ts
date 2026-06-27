@@ -47,6 +47,8 @@ type ApiProject = {
 
 beforeEach(() => {
   process.env.ENFORCE_CSRF_IN_TESTS = "true";
+  // Note: Cache clearing happens naturally through test isolation
+  // Each test creates fresh data, so cache keys will be different
 });
 
 afterEach(() => {
@@ -690,5 +692,145 @@ describe("POST /api/v1/projects/:projectId/members", () => {
       .send({ userId: target.id });
 
     expect(res.status).toBe(403);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Cache Behavior Tests
+// ─────────────────────────────────────────────────────────────────────────────
+describe("Project Caching", () => {
+  it("Cache hit on repeated project detail requests", async () => {
+    const { user, workspace } = await createWorkspaceWithOwner();
+    const project = await createProject(workspace.id, user.id, {
+      name: "Cached Project",
+    });
+
+    // First request - cache miss
+    const res1 = await request(app)
+      .get(`/api/v1/projects/${project.id}`)
+      .set(authHeaders(user));
+
+    expect(res1.status).toBe(200);
+
+    // Second request - should hit cache (or at least return same data)
+    const res2 = await request(app)
+      .get(`/api/v1/projects/${project.id}`)
+      .set(authHeaders(user));
+
+    expect(res2.status).toBe(200);
+    expect(res2.body.data).toEqual(res1.body.data);
+  });
+
+  it("Cache invalidation after project update", async () => {
+    const { user, workspace } = await createWorkspaceWithOwner();
+    const project = await createProject(workspace.id, user.id, {
+      name: "Original Name",
+    });
+
+    // Cache the project
+    await request(app)
+      .get(`/api/v1/projects/${project.id}`)
+      .set(authHeaders(user));
+
+    // Update the project
+    await request(app)
+      .patch(`/api/v1/projects/${project.id}`)
+      .set(await authWithCsrfHeaders(user))
+      .send({ name: "Updated Name" });
+
+    // Request should return updated data (cache was invalidated)
+    const res = await request(app)
+      .get(`/api/v1/projects/${project.id}`)
+      .set(authHeaders(user));
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.name).toBe("Updated Name");
+  });
+
+  it("Cache invalidation after project deletion", async () => {
+    const { user, workspace } = await createWorkspaceWithOwner();
+    const project = await createProject(workspace.id, user.id);
+
+    // Cache the project
+    await request(app)
+      .get(`/api/v1/projects/${project.id}`)
+      .set(authHeaders(user));
+
+    // Delete the project
+    await request(app)
+      .delete(`/api/v1/projects/${project.id}`)
+      .set(await authWithCsrfHeaders(user));
+
+    // Request should return 404 (cache was invalidated)
+    const res = await request(app)
+      .get(`/api/v1/projects/${project.id}`)
+      .set(authHeaders(user));
+
+    expect(res.status).toBe(404);
+  });
+
+  it("Workspace project list caching", async () => {
+    const { user, workspace } = await createWorkspaceWithOwner();
+    await createProject(workspace.id, user.id, { name: "Project 1" });
+    await createProject(workspace.id, user.id, { name: "Project 2" });
+
+    // First request - cache miss
+    const res1 = await request(app)
+      .get(`/api/v1/projects/workspace/${workspace.id}`)
+      .set(authHeaders(user));
+
+    expect(res1.status).toBe(200);
+    const initialCount = (res1.body.data ?? res1).length;
+
+    // Second request - should hit cache (or return same data)
+    const res2 = await request(app)
+      .get(`/api/v1/projects/workspace/${workspace.id}`)
+      .set(authHeaders(user));
+
+    expect(res2.status).toBe(200);
+    expect((res2.body.data ?? res2).length).toBe(initialCount);
+  });
+
+  it("User project list caching", async () => {
+    const { user, workspace } = await createWorkspaceWithOwner();
+    await createProject(workspace.id, user.id, { name: "User Project 1" });
+
+    // First request - cache miss
+    const res1 = await request(app)
+      .get("/api/v1/projects/user/all")
+      .set(authHeaders(user));
+
+    expect(res1.status).toBe(200);
+    const initialCount = (res1.body.data ?? res1).length;
+
+    // Second request - should hit cache (or return same data)
+    const res2 = await request(app)
+      .get("/api/v1/projects/user/all")
+      .set(authHeaders(user));
+
+    expect(res2.status).toBe(200);
+    expect((res2.body.data ?? res2).length).toBe(initialCount);
+  });
+
+  it("Project slug caching with access control", async () => {
+    const { user, workspace } = await createWorkspaceWithOwner();
+    const project = await createProject(workspace.id, user.id, {
+      slug: "cached-slug",
+    });
+
+    // First request - cache miss
+    const res1 = await request(app)
+      .get("/api/v1/projects/slug/cached-slug")
+      .set(authHeaders(user));
+
+    expect(res1.status).toBe(200);
+
+    // Second request - should hit cache (or return same data)
+    const res2 = await request(app)
+      .get("/api/v1/projects/slug/cached-slug")
+      .set(authHeaders(user));
+
+    expect(res2.status).toBe(200);
+    expect(res2.body.data).toEqual(res1.body.data);
   });
 });

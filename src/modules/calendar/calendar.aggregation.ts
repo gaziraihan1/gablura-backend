@@ -7,12 +7,19 @@ import {
   generateDateRange,
   isReviewDay,
 } from "./calendar.utils.js";
+import { CacheClient, CACHE_KEYS, CACHE_TTL, CalendarCache } from "../../lib/redis/cache.client.js";
 
 export const CalendarAggregation = {
   async getOrComputeAggregates(
     filters: CalendarFilters,
   ): Promise<CalendarDayAggregate[]> {
     const { userId, workspaceId, startDate, endDate } = filters;
+    const startDateStr = startDate.toISOString().split('T')[0];
+    const endDateStr = endDate.toISOString().split('T')[0];
+    const cacheKey = CACHE_KEYS.calendarAggregates(userId, workspaceId, startDateStr, endDateStr);
+    
+    const cached = await CacheClient.get<CalendarDayAggregate[]>(cacheKey);
+    if (cached) return cached;
 
     const existing = await prisma.calendarDayAggregate.findMany({
       where: { userId, date: { gte: startDate, lte: endDate } },
@@ -27,7 +34,10 @@ export const CalendarAggregation = {
       (d) => !existingDates.has(d.toISOString().split("T")[0]),
     );
 
-    if (missingDates.length === 0) return existing;
+    if (missingDates.length === 0) {
+      await CacheClient.set(cacheKey, existing, CACHE_TTL.CALENDAR_AGGREGATES);
+      return existing;
+    }
 
     const rangeStart = missingDates[0];
     const rangeEnd = missingDates[missingDates.length - 1];
@@ -41,10 +51,13 @@ export const CalendarAggregation = {
       missingDates,
     );
 
-    return prisma.calendarDayAggregate.findMany({
+    const result = await prisma.calendarDayAggregate.findMany({
       where: { userId, date: { gte: startDate, lte: endDate } },
       orderBy: { date: "asc" },
     });
+
+    await CacheClient.set(cacheKey, result, CACHE_TTL.CALENDAR_AGGREGATES);
+    return result;
   },
 
   async computeRange(
@@ -202,5 +215,9 @@ export const CalendarAggregation = {
     date: Date,
   ): Promise<void> {
     await this.computeRangeBatched(userId, workspaceId, normalizeDate(date), endOfDay(date), [date]);
+    
+    // Invalidate aggregates and insights cache for this user/workspace
+    CalendarCache.invalidateAggregates(userId, workspaceId).catch(() => {});
+    CalendarCache.invalidateInsights(userId, workspaceId).catch(() => {});
   },
 };

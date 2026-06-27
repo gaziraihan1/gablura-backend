@@ -1,6 +1,7 @@
 import { prisma } from "../../lib/prisma.js";
 import { getPaymentProvider } from "../../payment/provider.registry.js";
 import { BILLING_CACHE } from "../../redis/redis.client.js";
+import { UserCache } from "../../lib/redis/cache.client.js";
 import { APP_URL, PLAN_LIMITS, PlanName } from "./plans.config.js";
 import {
   ForbiddenError,
@@ -8,6 +9,7 @@ import {
   ConflictError,
   BadRequestError,
 } from "../../errors/index.js";
+// ... (rest of the imports)
 import type {
   CreateCheckoutInput,
   CreatePortalInput,
@@ -34,6 +36,7 @@ async function ensureProviderCustomer(ownerId: string): Promise<string> {
     where: { id: ownerId },
     data: { stripeCustomerId: result.providerCustomerId },
   });
+  await UserCache.invalidateUser(ownerId);
   return result.providerCustomerId;
 }
 
@@ -125,7 +128,12 @@ export const BillingService = {
       trialEnd: sub.trialEnd,
       stripeSubscriptionId: sub.stripeSubscriptionId,
     };
-    await BILLING_CACHE.setSubscription(workspaceId, response);
+    
+    // Only cache if we have valid data
+    if (response.planName && response.status) {
+      await BILLING_CACHE.setSubscription(workspaceId, response);
+    }
+    
     return response;
   },
 
@@ -239,8 +247,23 @@ export const BillingService = {
       m.getRedisClient(),
     );
     const cacheKey = BILLING_CACHE.invoiceKey(workspaceId);
-    const raw = await redis.get(cacheKey);
-    if (raw) return JSON.parse(raw);
+    
+    try {
+      const raw = await redis.get(cacheKey);
+      if (raw) {
+        const cached = JSON.parse(raw);
+        // Validate cached data structure
+        if (Array.isArray(cached) && cached.length > 0) {
+          const firstInvoice = cached[0];
+          if (firstInvoice && firstInvoice.id && firstInvoice.amount) {
+            return cached;
+          }
+        }
+      }
+    } catch (error) {
+      console.error(`[BillingService] Error getting invoice cache for ${workspaceId}:`, error);
+      // Continue to fetch from DB
+    }
 
     const invoices = await prisma.invoice.findMany({
       where: { workspaceId },
@@ -262,11 +285,16 @@ export const BillingService = {
       createdAt: inv.createdAt,
     }));
 
-    await redis.setex(
-      cacheKey,
-      BILLING_CACHE.INVOICE_TTL,
-      JSON.stringify(result),
-    );
+    try {
+      await redis.setex(
+        cacheKey,
+        BILLING_CACHE.INVOICE_TTL,
+        JSON.stringify(result),
+      );
+    } catch (error) {
+      console.error(`[BillingService] Error setting invoice cache for ${workspaceId}:`, error);
+    }
+    
     return result;
   },
 

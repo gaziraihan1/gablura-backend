@@ -7,6 +7,7 @@ import type {
 import { FocusSessionQuery } from './focusSession.query.js';
 import { sessionWithIdTitle } from './focusSession.selects.js';
 import { ConflictError, NotFoundError, BadRequestError } from '../../errors/index.js';
+import { CalendarCache, FocusSessionCache } from '../../lib/redis/cache.client.js';
 
 export const FocusSessionMutation = {
   async startSession(input: CreateFocusSessionInput) {
@@ -20,7 +21,7 @@ export const FocusSessionMutation = {
       );
     }
 
-    return prisma.focusSession.create({
+    const session = await prisma.focusSession.create({
       data: {
         userId:    input.userId,
         taskId:    input.taskId,
@@ -30,6 +31,11 @@ export const FocusSessionMutation = {
       },
       include: sessionWithIdTitle,
     });
+
+    // Invalidate active session cache (new session started)
+    FocusSessionCache.invalidateActiveSession(input.userId).catch(() => {});
+
+    return session;
   },
 
   async completeSession(
@@ -49,6 +55,19 @@ export const FocusSessionMutation = {
       data:    { completed: true, endedAt: new Date() },
       include: { task: true },
     });
+
+    // Invalidate caches
+    const workspaceId = session.task?.workspaceId;
+    Promise.all([
+      // Focus session caches
+      FocusSessionCache.invalidateActiveSession(input.userId),
+      FocusSessionCache.invalidateHistory(input.userId),
+      FocusSessionCache.invalidateStats(input.userId),
+      FocusSessionCache.invalidateStreak(input.userId),
+      // Calendar caches (focus sessions affect aggregates)
+      CalendarCache.invalidateAggregates(input.userId, workspaceId ?? undefined),
+      CalendarCache.invalidateInsights(input.userId, workspaceId ?? undefined),
+    ]).catch((err) => console.error('[Cache] Failed to invalidate after session completion:', err));
 
     if (onComplete) {
       onComplete({
@@ -70,6 +89,11 @@ export const FocusSessionMutation = {
     if (!session) throw new NotFoundError('Focus session', 'SESSION_NOT_FOUND');
 
     await prisma.focusSession.delete({ where: { id: input.sessionId } });
+
+    // Invalidate caches
+    FocusSessionCache.invalidateActiveSession(input.userId).catch(() => {});
+    FocusSessionCache.invalidateHistory(input.userId).catch(() => {});
+
     return session;
   },
 };

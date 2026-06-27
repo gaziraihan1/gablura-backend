@@ -18,6 +18,7 @@ import { auditLog } from "../lib/auth/auditLog.js";
 import { acquireRefreshLock, releaseRefreshLock } from "../lib/auth/refreshLock.js";
 import { getClientIp } from "../lib/auth/sessionBinding.js";
 import { getRedisClient } from "../redis/redis.client.js";
+import { UserCache } from "../lib/redis/cache.client.js";
 import {
   asyncHandler,
   BadRequestError,
@@ -26,6 +27,7 @@ import {
 } from "../errors/index.js";
 
 const router = Router();
+// ... (rest of the file)
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 

@@ -36,7 +36,10 @@ function parseBody<T>(schema: { parse: (v: unknown) => T }, body: unknown): T {
     if (err?.issues) {
       throw new ValidationError(
         "Validation failed",
-        err.issues.map((e: any) => ({ path: e.path.join("."), message: e.message })),
+        err.issues.map((e: any) => ({
+          path: e.path.join("."),
+          message: e.message,
+        })),
       );
     }
     throw err;
@@ -47,75 +50,122 @@ function parseBody<T>(schema: { parse: (v: unknown) => T }, body: unknown): T {
 // ADMIN — Popular Resource
 // ════════════════════════════════════════════════════════════════════════
 
-export const adminListPopularResources = asyncHandler<AuthRequest>(async (req, res: Response) => {
-  const { status, category } = req.query as any;
-  const { page, limit } = parseListQuery(req.query, 8);
-  const result = await resourceQueries.findPopularResources({ status, category, page, limit });
-  res.json({ success: true, data: result });
-});
+export const adminListPopularResources = asyncHandler<AuthRequest>(
+  async (req, res: Response) => {
+    const { status, category } = req.query as any;
+    const { page, limit } = parseListQuery(req.query, 8);
+    const result = await resourceQueries.findPopularResources({
+      status,
+      category,
+      page,
+      limit,
+    });
+    res.json({ success: true, data: result });
+  },
+);
 
-export const adminGetPopularResource = asyncHandler<AuthRequest>(async (req, res: Response) => {
-  const slug = requireSlug(req.params.slug);
-  const resource = await resourceQueries.findPopularResourceBySlug(slug);
-  if (!resource) throw new NotFoundError("Popular resource");
-  res.json({ success: true, data: resource });
-});
+export const adminGetPopularResource = asyncHandler<AuthRequest>(
+  async (req, res: Response) => {
+    const slug = requireSlug(req.params.slug);
+    const resource = await resourceQueries.findPopularResourceBySlug(slug);
+    if (!resource) throw new NotFoundError("Popular resource");
+    res.json({ success: true, data: resource });
+  },
+);
 
-export const adminCreatePopularResource = asyncHandler<AuthRequest>(async (req, res: Response) => {
-  const data = parseBody(createPopularResourceSchema, req.body);
-  const resource = await resourceMutations.createPopularResource(data, req.user?.id!);
-  res.status(201).json({ success: true, data: resource, message: "Popular resource created" });
-});
+export const adminCreatePopularResource = asyncHandler<AuthRequest>(
+  async (req, res: Response) => {
+    const data = parseBody(createPopularResourceSchema, req.body);
+    const resource = await resourceMutations.createPopularResource(
+      data,
+      req.user?.id!,
+    );
+    res
+      .status(201)
+      .json({
+        success: true,
+        data: resource,
+        message: "Popular resource created",
+      });
+  },
+);
 
-export const adminUpdatePopularResource = asyncHandler<AuthRequest>(async (req, res: Response) => {
-  const slug = requireSlug(req.params.slug);
-  const data = parseBody(updatePopularResourceSchema, req.body);
-  const resource = await resourceMutations.updatePopularResource(slug, data);
-  res.json({ success: true, data: resource, message: "Popular resource updated" });
-});
+export const adminUpdatePopularResource = asyncHandler<AuthRequest>(
+  async (req, res: Response) => {
+    const slug = requireSlug(req.params.slug);
+    const data = parseBody(updatePopularResourceSchema, req.body);
+    const resource = await resourceMutations.updatePopularResource(slug, data);
+    res.json({
+      success: true,
+      data: resource,
+      message: "Popular resource updated",
+    });
+  },
+);
 
-export const adminDeletePopularResource = asyncHandler<AuthRequest>(async (req, res: Response) => {
-  const slug = requireSlug(req.params.slug);
-  await resourceMutations.deletePopularResource(slug);
-  res.status(204).send();
-});
+export const adminDeletePopularResource = asyncHandler<AuthRequest>(
+  async (req, res: Response) => {
+    const slug = requireSlug(req.params.slug);
+    await resourceMutations.deletePopularResource(slug);
+    res.status(204).send();
+  },
+);
 
 // ════════════════════════════════════════════════════════════════════════
 // ADMIN — Product Update
 // ════════════════════════════════════════════════════════════════════════
 
-export const adminListProductUpdates = asyncHandler<AuthRequest>(async (req, res: Response) => {
-  const { status } = req.query as any;
-  const { page, limit } = parseListQuery(req.query, 20);
-  const result = await resourceQueries.findProductUpdates({ status, page, limit });
-  res.json({ success: true, data: result });
-});
+export const adminListProductUpdates = asyncHandler<AuthRequest>(
+  async (req, res: Response) => {
+    const { status } = req.query as any;
+    const { page, limit } = parseListQuery(req.query, 20);
+    const result = await resourceQueries.findProductUpdates({
+      status,
+      page,
+      limit,
+    });
+    res.json({ success: true, data: result });
+  },
+);
 
-export const adminGetProductUpdate = asyncHandler<AuthRequest>(async (req, res: Response) => {
-  const slug = requireSlug(req.params.slug);
-  const update = await resourceQueries.findProductUpdateBySlug(slug);
-  if (!update) throw new NotFoundError("Product update");
-  res.json({ success: true, data: update });
-});
+export const adminGetProductUpdate = asyncHandler<AuthRequest>(
+  async (req, res: Response) => {
+    const slug = requireSlug(req.params.slug);
+    const update = await resourceQueries.findProductUpdateBySlug(slug);
+    if (!update) throw new NotFoundError("Product update");
+    res.json({ success: true, data: update });
+  },
+);
 
-export const adminCreateProductUpdate = asyncHandler<AuthRequest>(async (req, res: Response) => {
-  const data = parseBody(createProductUpdateSchema, req.body);
-  const update = await resourceMutations.createProductUpdate(data, req.user?.id!);
-  res.status(201).json({ success: true, data: update, message: "Product update created" });
-});
+export const adminCreateProductUpdate = asyncHandler<AuthRequest>(
+  async (req, res: Response) => {
+    const data = parseBody(createProductUpdateSchema, req.body);
+    const update = await resourceMutations.createProductUpdate(
+      data,
+      req.user?.id!,
+    );
+    res
+      .status(201)
+      .json({ success: true, data: update, message: "Product update created" });
+  },
+);
 
-export const adminUpdateProductUpdate = asyncHandler<AuthRequest>(async (req, res: Response) => {
-  const slug = requireSlug(req.params.slug);
-  const data = parseBody(updateProductUpdateSchema, req.body);
-  const update = await resourceMutations.updateProductUpdate(slug, data);
-  res.json({ success: true, data: update, message: "Product update saved" });
-});
+export const adminUpdateProductUpdate = asyncHandler<AuthRequest>(
+  async (req, res: Response) => {
+    const slug = requireSlug(req.params.slug);
+    const data = parseBody(updateProductUpdateSchema, req.body);
+    const update = await resourceMutations.updateProductUpdate(slug, data);
+    res.json({ success: true, data: update, message: "Product update saved" });
+  },
+);
 
-export const adminDeleteProductUpdate = asyncHandler<AuthRequest>(async (req, res: Response) => {
-  const slug = requireSlug(req.params.slug);
-  await resourceMutations.deleteProductUpdate(slug);
-  res.status(204).send();
-});
+export const adminDeleteProductUpdate = asyncHandler<AuthRequest>(
+  async (req, res: Response) => {
+    const slug = requireSlug(req.params.slug);
+    await resourceMutations.deleteProductUpdate(slug);
+    res.status(204).send();
+  },
+);
 
 // ════════════════════════════════════════════════════════════════════════
 // PUBLIC
@@ -124,7 +174,11 @@ export const adminDeleteProductUpdate = asyncHandler<AuthRequest>(async (req, re
 export const publicListPopularResources = asyncHandler(async (req, res) => {
   const { category } = req.query as any;
   const { page, limit } = parseListQuery(req.query, 8);
-  const result = await resourceQueries.findPublicPopularResources({ category, page, limit });
+  const result = await resourceQueries.findPublicPopularResources({
+    category,
+    page,
+    limit,
+  });
   res.json({ success: true, data: result });
 });
 
@@ -137,7 +191,10 @@ export const publicGetPopularResource = asyncHandler(async (req, res) => {
 
 export const publicListProductUpdates = asyncHandler(async (req, res) => {
   const { page, limit } = parseListQuery(req.query, 20);
-  const result = await resourceQueries.findPublicProductUpdates({ page, limit });
+  const result = await resourceQueries.findPublicProductUpdates({
+    page,
+    limit,
+  });
   res.json({ success: true, data: result });
 });
 

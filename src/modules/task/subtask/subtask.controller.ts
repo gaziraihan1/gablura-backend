@@ -40,7 +40,7 @@ export const createSubtask = asyncHandler(async (req: AuthRequest, res: Response
           parentTaskId,
           userId:       req.user!.id,
           workspaceId,
-          workspaceSlug: subtask.workspace.slug,
+          workspaceSlug: subtask.workspace?.slug ?? 'unknown',
         });
       }
       if (assigneeIds.length > 0) {
@@ -90,7 +90,7 @@ export const updateSubtask = asyncHandler(async (req: AuthRequest, res: Response
           parentTaskId,
           userId:       req.user!.id,
           workspaceId,
-          workspaceSlug: subtask.workspace.slug,
+          workspaceSlug: subtask.workspace?.slug ?? 'unknown',
           changes,
         });
       }
@@ -114,7 +114,7 @@ export const updateSubtaskStatus = asyncHandler(async (req: AuthRequest, res: Re
           parentTaskId,
           userId:       req.user!.id,
           workspaceId,
-          workspaceSlug: subtask.workspace.slug,
+          workspaceSlug: subtask.workspace?.slug ?? 'unknown',
           oldStatus,
           newStatus,
         });
@@ -136,7 +136,7 @@ export const deleteSubtask = asyncHandler(async (req: AuthRequest, res: Response
           parentTaskId,
           userId:       req.user!.id,
           workspaceId,
-          workspaceSlug: subtask.workspace.slug,
+          workspaceSlug: subtask.workspace?.slug ?? 'unknown',
         });
       }
     },

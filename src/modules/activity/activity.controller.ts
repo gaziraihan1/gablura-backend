@@ -44,8 +44,6 @@ export const getWorkspaceActivities = asyncHandler(async (req: AuthRequest, res:
   const isPublic = await ActivityAccess.isPublicWorkspace(workspaceId);
   if(!hasAccess && !isPublic) throw new ForbiddenError('You do not have access to this workspace');
 
-
-  console.log(workspaceId)
   const activities = await ActivityQuery.getWorkspaceActivities(workspaceId, {
     action:     action     as ActivityType | undefined,
     entityType: entityType as EntityType  | undefined,

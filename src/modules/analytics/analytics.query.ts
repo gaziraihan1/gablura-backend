@@ -19,7 +19,7 @@ import type {
   MemberWorkload,
   DeadlineRiskAnalysis,
 } from "./analytics.types.js";
-import { CacheClient, CACHE_KEYS, CACHE_TTL } from "../../lib/redis/cache.client.js";
+import { CacheClient, CACHE_KEYS, CACHE_TTL, AnalyticsCache } from "../../lib/redis/cache.client.js";
 import { Prisma, TaskStatus } from "@prisma/client";
 
 export const AnalyticsQuery = {
@@ -96,7 +96,7 @@ export const AnalyticsQuery = {
       storageUsed,
     };
 
-    await CacheClient.set(cacheKey, kpis, CACHE_TTL.ANALYTICS_DASHBOARD);
+    await CacheClient.set(cacheKey, kpis, CACHE_TTL.ANALYTICS_KPI);
 
     return kpis;
   },
@@ -107,6 +107,10 @@ export const AnalyticsQuery = {
   ): Promise<TaskStatusDistribution[]> {
     await AnalyticsAccess.assertWorkspaceAdminOrOwner(userId, workspaceId);
 
+    const cacheKey = CACHE_KEYS.analyticsTaskStatusDistribution(workspaceId);
+    const cached = await CacheClient.get<TaskStatusDistribution[]>(cacheKey);
+    if (cached) return cached;
+
     const distribution = await prisma.task.groupBy({
       by:     ["status"],
       where:  { workspaceId },
@@ -115,11 +119,15 @@ export const AnalyticsQuery = {
 
     const total = distribution.reduce((sum, item) => sum + item._count.status, 0);
 
-    return distribution.map((item) => ({
+    const result = distribution.map((item) => ({
       status:     item.status,
       count:      item._count.status,
       percentage: total > 0 ? Math.round((item._count.status / total) * 100) : 0,
     }));
+
+    await CacheClient.set(cacheKey, result, CACHE_TTL.ANALYTICS_DISTRIBUTION);
+
+    return result;
   },
 
   async getTaskCompletionTrend(
@@ -128,6 +136,10 @@ export const AnalyticsQuery = {
     days: number = 30,
   ): Promise<TrendDataPoint[]> {
     await AnalyticsAccess.assertWorkspaceAdminOrOwner(userId, workspaceId);
+
+    const cacheKey = CACHE_KEYS.analyticsTaskTrends(workspaceId, days);
+    const cached = await CacheClient.get<TrendDataPoint[]>(cacheKey);
+    if (cached) return cached;
 
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - days);
@@ -159,6 +171,8 @@ export const AnalyticsQuery = {
       trend.push({ date: new Date(date), count: dbMap.get(key) ?? 0 });
     }
 
+    await CacheClient.set(cacheKey, trend, CACHE_TTL.ANALYTICS_TREND);
+
     return trend;
   },
 
@@ -168,6 +182,10 @@ export const AnalyticsQuery = {
     days: number = 30,
   ): Promise<OverdueTrendPoint[]> {
     await AnalyticsAccess.assertWorkspaceAdminOrOwner(userId, workspaceId);
+
+    const cacheKey = CACHE_KEYS.analyticsOverdueTrend(workspaceId, days);
+    const cached = await CacheClient.get<OverdueTrendPoint[]>(cacheKey);
+    if (cached) return cached;
 
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - days);
@@ -203,6 +221,8 @@ export const AnalyticsQuery = {
       trend.push({ weekStart, count: dbMap.get(key) ?? 0 });
     }
 
+    await CacheClient.set(cacheKey, trend, CACHE_TTL.ANALYTICS_TREND);
+
     return trend;
   },
 
@@ -212,6 +232,10 @@ export const AnalyticsQuery = {
   ): Promise<ProjectHealth[]> {
     await AnalyticsAccess.assertWorkspaceAdminOrOwner(userId, workspaceId);
 
+    const cacheKey = CACHE_KEYS.analyticsProjectHealth(workspaceId);
+    const cached = await CacheClient.get<ProjectHealth[]>(cacheKey);
+    if (cached) return cached;
+
     const projects = await prisma.project.findMany({
       where:   { workspaceId },
       include: {
@@ -220,7 +244,7 @@ export const AnalyticsQuery = {
       },
     });
 
-    return projects.map((project) => {
+    const result = projects.map((project) => {
       const totalTasks     = project._count.tasks;
       const completedTasks = project.tasks.length;
       const progress       = totalTasks > 0
@@ -251,10 +275,18 @@ export const AnalyticsQuery = {
         health,
       };
     });
+
+    await CacheClient.set(cacheKey, result, CACHE_TTL.ANALYTICS_PROJECT_HEALTH);
+
+    return result;
   },
 
   async getProjectStatusDistribution(workspaceId: string, userId: string) {
     await AnalyticsAccess.assertWorkspaceAdminOrOwner(userId, workspaceId);
+
+    const cacheKey = CACHE_KEYS.analyticsProjectStatusDistribution(workspaceId);
+    const cached = await CacheClient.get(cacheKey);
+    if (cached) return cached;
 
     const distribution = await prisma.project.groupBy({
       by:     ["status"],
@@ -262,10 +294,14 @@ export const AnalyticsQuery = {
       _count: { status: true },
     });
 
-    return distribution.map((item) => ({
+    const result = distribution.map((item) => ({
       status: item.status,
       count:  item._count.status,
     }));
+
+    await CacheClient.set(cacheKey, result, CACHE_TTL.ANALYTICS_DISTRIBUTION);
+
+    return result;
   },
 
   async getMemberContribution(
@@ -273,6 +309,10 @@ export const AnalyticsQuery = {
     userId: string,
   ): Promise<MemberContribution[]> {
     await AnalyticsAccess.assertWorkspaceAdminOrOwner(userId, workspaceId);
+
+    const cacheKey = CACHE_KEYS.analyticsMemberContribution(workspaceId);
+    const cached = await CacheClient.get<MemberContribution[]>(cacheKey);
+    if (cached) return cached;
 
     const members = await prisma.workspaceMember.findMany({
       where:   { workspaceId },
@@ -311,7 +351,7 @@ export const AnalyticsQuery = {
     const commentMap       = new Map(commentRows.map((r) => [r.userId, r._count.userId]));
     const fileMap          = new Map(fileRows.map((r) => [r.uploadedById, r._count.uploadedById]));
 
-    return members
+    const result = members
       .map((member) => {
         const completedTasks = completedTaskMap.get(member.userId) ?? 0;
         const totalHours     = timeMap.get(member.userId) ?? 0;
@@ -331,6 +371,10 @@ export const AnalyticsQuery = {
         };
       })
       .sort((a, b) => b.contributionScore - a.contributionScore);
+
+    await CacheClient.set(cacheKey, result, CACHE_TTL.ANALYTICS_MEMBER_METRICS);
+
+    return result;
   },
 
   async getTimeTrackingSummary(
@@ -339,6 +383,10 @@ export const AnalyticsQuery = {
     days: number = 7,
   ): Promise<TimeTrackingSummary> {
     await AnalyticsAccess.assertWorkspaceAdminOrOwner(userId, workspaceId);
+
+    const cacheKey = CACHE_KEYS.analyticsTimeSummary(workspaceId, days);
+    const cached = await CacheClient.get<TimeTrackingSummary>(cacheKey);
+    if (cached) return cached;
 
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - days);
@@ -399,7 +447,11 @@ export const AnalyticsQuery = {
       .map(([projectId, { name, hours }]) => ({ projectId, projectName: name, hours }))
       .sort((a, b) => b.hours - a.hours);
 
-    return { totalHours, avgHoursPerMember, projectBreakdown };
+    const result = { totalHours, avgHoursPerMember, projectBreakdown };
+
+    await CacheClient.set(cacheKey, result, CACHE_TTL.ANALYTICS_MEMBER_METRICS);
+
+    return result;
   },
 
   async getActivityVolumeTrend(
@@ -408,6 +460,10 @@ export const AnalyticsQuery = {
     days: number = 30,
   ): Promise<ActivityVolumePoint[]> {
     await AnalyticsAccess.assertWorkspaceAdminOrOwner(userId, workspaceId);
+
+    const cacheKey = CACHE_KEYS.analyticsActivityTrends(workspaceId, days);
+    const cached = await CacheClient.get<ActivityVolumePoint[]>(cacheKey);
+    if (cached) return cached;
 
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - days);
@@ -433,7 +489,7 @@ export const AnalyticsQuery = {
       trendMap.set(dateKey, dayMap);
     }
 
-    return Array.from(trendMap.entries()).map(([date, actions]) => ({
+    const result = Array.from(trendMap.entries()).map(([date, actions]) => ({
       date:      new Date(date),
       created:   actions.get("CREATED")   ?? 0,
       updated:   actions.get("UPDATED")   ?? 0,
@@ -441,6 +497,10 @@ export const AnalyticsQuery = {
       assigned:  actions.get("ASSIGNED")  ?? 0,
       total:     Array.from(actions.values()).reduce((sum, n) => sum + n, 0),
     }));
+
+    await CacheClient.set(cacheKey, result, CACHE_TTL.ANALYTICS_MEMBER_METRICS);
+
+    return result;
   },
 
   async getMostActiveDay(
@@ -448,6 +508,10 @@ export const AnalyticsQuery = {
     userId: string,
   ): Promise<MostActiveDay> {
     await AnalyticsAccess.assertWorkspaceAdminOrOwner(userId, workspaceId);
+
+    const cacheKey = CACHE_KEYS.analyticsMostActiveDay(workspaceId);
+    const cached = await CacheClient.get<MostActiveDay>(cacheKey);
+    if (cached) return cached;
 
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
@@ -476,7 +540,11 @@ export const AnalyticsQuery = {
       }))
       .sort((a, b) => b.count - a.count);
 
-    return sorted[0] ?? { day: "None", count: 0, mostCommonAction: "NONE" };
+    const result = sorted[0] ?? { day: "None", count: 0, mostCommonAction: "NONE" };
+
+    await CacheClient.set(cacheKey, result, CACHE_TTL.ANALYTICS_MEMBER_METRICS);
+
+    return result;
   },
 
   async getTasksPerMember(
@@ -484,6 +552,10 @@ export const AnalyticsQuery = {
     userId: string,
   ): Promise<MemberWorkload[]> {
     await AnalyticsAccess.assertWorkspaceAdminOrOwner(userId, workspaceId);
+
+    const cacheKey = CACHE_KEYS.analyticsWorkload(workspaceId);
+    const cached = await CacheClient.get<MemberWorkload[]>(cacheKey);
+    if (cached) return cached;
 
     const members = await prisma.workspaceMember.findMany({
       where:   { workspaceId },
@@ -503,7 +575,7 @@ export const AnalyticsQuery = {
       assignedTaskRows.map((r) => [r.userId, r._count.taskId]),
     );
 
-    return members
+    const result = members
       .map((member) => {
         const assignedTasks = assignedTaskMap.get(member.userId) ?? 0;
         const status: MemberWorkload["status"] =
@@ -520,10 +592,18 @@ export const AnalyticsQuery = {
         };
       })
       .sort((a, b) => b.assignedTasks - a.assignedTasks);
+
+    await CacheClient.set(cacheKey, result, CACHE_TTL.ANALYTICS_MEMBER_METRICS);
+
+    return result;
   },
 
   async getTasksByPriority(workspaceId: string, userId: string) {
     await AnalyticsAccess.assertWorkspaceAdminOrOwner(userId, workspaceId);
+
+    const cacheKey = CACHE_KEYS.analyticsTaskPriorityDistribution(workspaceId);
+    const cached = await CacheClient.get(cacheKey);
+    if (cached) return cached;
 
     const distribution = await prisma.task.groupBy({
       by:     ["priority"],
@@ -531,10 +611,14 @@ export const AnalyticsQuery = {
       _count: { priority: true },
     });
 
-    return distribution.map((item) => ({
+    const result = distribution.map((item) => ({
       priority: item.priority,
       count:    item._count.priority,
     }));
+
+    await CacheClient.set(cacheKey, result, CACHE_TTL.ANALYTICS_DISTRIBUTION);
+
+    return result;
   },
 
   async getDeadlineRiskAnalysis(
@@ -542,6 +626,10 @@ export const AnalyticsQuery = {
     userId: string,
   ): Promise<DeadlineRiskAnalysis> {
     await AnalyticsAccess.assertWorkspaceAdminOrOwner(userId, workspaceId);
+
+    const cacheKey = CACHE_KEYS.analyticsDeadlineRisk(workspaceId);
+    const cached = await CacheClient.get<DeadlineRiskAnalysis>(cacheKey);
+    if (cached) return cached;
 
     const now            = new Date();
     const threeDaysLater = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
@@ -587,12 +675,11 @@ export const AnalyticsQuery = {
       }),
     ]);
 
-    const riskLevel =
-      highPriorityNearDeadline.length >= 5 ? "high"
+    const riskLevel = (highPriorityNearDeadline.length >= 3 ? "high"
       : highPriorityNearDeadline.length >= 2 ? "medium"
-      : "low";
+      : "low") as DeadlineRiskAnalysis['riskLevel'];
 
-    return {
+    const result = {
       dueIn3Days: dueIn3Days.map(({ assignees, ...task }) => ({
         ...task,
         assignedTo: assignees.map((a) => a.user.name).join(", "),
@@ -601,5 +688,9 @@ export const AnalyticsQuery = {
       highPriorityNearDeadline,
       riskLevel,
     };
+
+    await CacheClient.set(cacheKey, result, CACHE_TTL.ANALYTICS_RISK_ANALYSIS);
+
+    return result;
   },
 };

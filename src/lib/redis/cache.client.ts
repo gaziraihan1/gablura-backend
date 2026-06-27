@@ -29,6 +29,49 @@ export const CACHE_TTL = {
   STORAGE_LARGEST_FILES: parseInt(
     process.env.CACHE_TTL_STORAGE_LARGEST_FILES ?? "120",
   ), // 2 min
+
+  // Project — moderate TTLs as projects change less frequently than tasks
+  PROJECT_METADATA: parseInt(process.env.CACHE_TTL_PROJECT_METADATA ?? "1800"), // 30 min
+  PROJECT_LIST: parseInt(process.env.CACHE_TTL_PROJECT_LIST ?? "600"), // 10 min
+  PROJECT_STATS: parseInt(process.env.CACHE_TTL_PROJECT_STATS ?? "900"), // 15 min
+
+  // Task — shorter TTLs as tasks change frequently
+  TASK_METADATA: parseInt(process.env.CACHE_TTL_TASK_METADATA ?? "300"), // 5 min
+  TASK_OVERVIEW: parseInt(process.env.CACHE_TTL_TASK_OVERVIEW ?? "300"), // 5 min
+  TASK_STATS: parseInt(process.env.CACHE_TTL_TASK_STATS ?? "120"), // 2 min
+
+  // Activity — very short TTLs as activities are real-time
+  ACTIVITY_LIST: parseInt(process.env.CACHE_TTL_ACTIVITY_LIST ?? "60"), // 1 min
+  ACTIVITY_FEED: parseInt(process.env.CACHE_TTL_ACTIVITY_FEED ?? "30"), // 30 sec
+
+  // Calendar — moderate TTLs as calendar data changes periodically
+  CALENDAR_AGGREGATES: parseInt(process.env.CACHE_TTL_CALENDAR_AGGREGATES ?? "300"), // 5 min
+  CALENDAR_INSIGHTS: parseInt(process.env.CACHE_TTL_CALENDAR_INSIGHTS ?? "300"), // 5 min
+  CALENDAR_SYSTEM_EVENTS: parseInt(process.env.CACHE_TTL_CALENDAR_SYSTEM_EVENTS ?? "600"), // 10 min
+  CALENDAR_GOAL_CHECKPOINTS: parseInt(process.env.CACHE_TTL_CALENDAR_GOAL_CHECKPOINTS ?? "300"), // 5 min
+
+  // Focus Session — TTLs based on data freshness needs
+  FOCUS_ACTIVE_SESSION: parseInt(process.env.CACHE_TTL_FOCUS_ACTIVE_SESSION ?? "30"), // 30 sec (real-time)
+  FOCUS_SESSION_HISTORY: parseInt(process.env.CACHE_TTL_FOCUS_SESSION_HISTORY ?? "300"), // 5 min
+  FOCUS_SESSION_STATS: parseInt(process.env.CACHE_TTL_FOCUS_SESSION_STATS ?? "300"), // 5 min
+  FOCUS_SESSION_STREAK: parseInt(process.env.CACHE_TTL_FOCUS_SESSION_STREAK ?? "600"), // 10 min
+
+  // Analytics — moderate to long TTLs as analytics are expensive to compute
+  ANALYTICS_KPI: parseInt(process.env.CACHE_TTL_ANALYTICS_KPI ?? "1800"), // 30 min
+  ANALYTICS_TREND: parseInt(process.env.CACHE_TTL_ANALYTICS_TREND ?? "900"), // 15 min
+  ANALYTICS_MEMBER_METRICS: parseInt(process.env.CACHE_TTL_ANALYTICS_MEMBER_METRICS ?? "600"), // 10 min
+  ANALYTICS_PROJECT_HEALTH: parseInt(process.env.CACHE_TTL_ANALYTICS_PROJECT_HEALTH ?? "900"), // 15 min
+  ANALYTICS_RISK_ANALYSIS: parseInt(process.env.CACHE_TTL_ANALYTICS_RISK_ANALYSIS ?? "300"), // 5 min
+  ANALYTICS_DISTRIBUTION: parseInt(process.env.CACHE_TTL_ANALYTICS_DISTRIBUTION ?? "1800"), // 30 min
+
+  // User — moderate TTLs as user data changes infrequently
+  USER_PROFILE: parseInt(process.env.CACHE_TTL_USER_PROFILE ?? "1800"), // 30 min
+  USER_SETTINGS: parseInt(process.env.CACHE_TTL_USER_SETTINGS ?? "3600"), // 1 hour
+  USER_PERMISSIONS: parseInt(process.env.CACHE_TTL_USER_PERMISSIONS ?? "600"), // 10 min
+
+  // Authentication — shorter TTLs for security
+  AUTH_RESULT: parseInt(process.env.CACHE_TTL_AUTH_RESULT ?? "300"), // 5 min
+  USER_SESSION: parseInt(process.env.CACHE_TTL_USER_SESSION ?? "3600"), // 1 hour
 } as const;
 
 // ─── Cache Key Generators ─────────────────────────────────────────────────────
@@ -55,16 +98,28 @@ export const CACHE_KEYS = {
   analyticsKPIs: (workspaceId: string) => `analytics:kpis:${workspaceId}`,
   analyticsTaskTrends: (workspaceId: string, days: number) =>
     `analytics:task-trends:${workspaceId}:${days}`,
+  analyticsOverdueTrend: (workspaceId: string, days: number) =>
+    `analytics:overdue-trend:${workspaceId}:${days}`,
   analyticsProjectHealth: (workspaceId: string) =>
     `analytics:project-health:${workspaceId}`,
+  analyticsProjectStatusDistribution: (workspaceId: string) =>
+    `analytics:project-status-dist:${workspaceId}`,
   analyticsMemberContribution: (workspaceId: string) =>
     `analytics:member-contribution:${workspaceId}`,
   analyticsTimeSummary: (workspaceId: string, days: number) =>
     `analytics:time-summary:${workspaceId}:${days}`,
   analyticsActivityTrends: (workspaceId: string, days: number) =>
     `analytics:activity-trends:${workspaceId}:${days}`,
+  analyticsMostActiveDay: (workspaceId: string) =>
+    `analytics:most-active-day:${workspaceId}`,
   analyticsWorkload: (workspaceId: string) =>
     `analytics:workload:${workspaceId}`,
+  analyticsTaskPriorityDistribution: (workspaceId: string) =>
+    `analytics:task-priority-dist:${workspaceId}`,
+  analyticsTaskStatusDistribution: (workspaceId: string) =>
+    `analytics:task-status-dist:${workspaceId}`,
+  analyticsDeadlineRisk: (workspaceId: string) =>
+    `analytics:deadline-risk:${workspaceId}`,
 
   // Storage caching
   storageWorkspacesSummary: (userId: string) =>
@@ -79,6 +134,54 @@ export const CACHE_KEYS = {
     `storage:user-contributions:${workspaceId}`,
   storageLargestFiles: (workspaceId: string, limit: number) =>
     `storage:largest-files:${workspaceId}:${limit}`,
+
+  // Project caching
+  projectById: (projectId: string) => `project:id:${projectId}`,
+  projectBySlug: (slug: string) => `project:slug:${slug}`,
+  projectList: (userId: string, workspaceId?: string) =>
+    `project:list:${userId}:${workspaceId ?? "all"}`,
+  projectStats: (projectId: string) => `project:stats:${projectId}`,
+  projectWorkspaceList: (workspaceId: string) =>
+    `project:workspace:${workspaceId}`,
+
+  // Task caching
+  taskById: (taskId: string) => `task:id:${taskId}`,
+  taskOverview: (taskId: string) => `task:overview:${taskId}`,
+  taskStats: (userId: string, workspaceId?: string, type?: string) =>
+    `task:stats:${userId}:${workspaceId ?? "personal"}:${type ?? "all"}`,
+
+  // Activity caching
+  activityUserList: (userId: string, workspaceId?: string) =>
+    `activity:user:${userId}:${workspaceId ?? "all"}`,
+  activityWorkspaceList: (workspaceId: string) => `activity:workspace:${workspaceId}`,
+  activityTaskList: (taskId: string) => `activity:task:${taskId}`,
+
+  // Calendar caching
+  calendarAggregates: (userId: string, workspaceId: string | undefined, startDate: string, endDate: string) =>
+    `calendar:aggregates:${userId}:${workspaceId ?? "all"}:${startDate}:${endDate}`,
+  calendarInsights: (userId: string, workspaceId: string | undefined, startDate: string, endDate: string) =>
+    `calendar:insights:${userId}:${workspaceId ?? "all"}:${startDate}:${endDate}`,
+  calendarSystemEvents: (userId: string, workspaceId: string | undefined, startDate: string, endDate: string) =>
+    `calendar:system-events:${userId}:${workspaceId ?? "all"}:${startDate}:${endDate}`,
+  calendarGoalCheckpoints: (userId: string, workspaceId: string | undefined, startDate: string, endDate: string) =>
+    `calendar:goal-checkpoints:${userId}:${workspaceId ?? "all"}:${startDate}:${endDate}`,
+
+  // Focus Session caching
+  focusActiveSession: (userId: string) => `focus:active-session:${userId}`,
+  focusSessionHistory: (userId: string, limit: number) => `focus:history:${userId}:${limit}`,
+  focusSessionStats: (userId: string, startDate?: string, endDate?: string) =>
+    `focus:stats:${userId}:${startDate ?? "all"}:${endDate ?? "all"}`,
+  focusSessionStreak: (userId: string) => `focus:streak:${userId}`,
+
+  // User caching
+  userProfile: (userId: string) => `user:profile:${userId}`,
+  userSettings: (userId: string) => `user:settings:${userId}`,
+  userPermissions: (userId: string, workspaceId: string) => `user:permissions:${userId}:${workspaceId}`,
+
+  // Authentication caching
+  authResult: (tokenJti: string) => `auth:result:${tokenJti}`,
+  userSession: (userId: string) => `session:user:${userId}`,
+  activeSessions: (userId: string) => `sessions:active:${userId}`,
 } as const;
 
 // ─── Generic Cache Helpers ────────────────────────────────────────────────────
@@ -227,6 +330,41 @@ export const AnalyticsCache = {
   async invalidateWorkload(workspaceId: string): Promise<void> {
     await CacheClient.delete(CACHE_KEYS.analyticsWorkload(workspaceId));
   },
+
+  /**
+   * Invalidate distribution caches for a workspace
+   */
+  async invalidateDistributions(workspaceId: string): Promise<void> {
+    await Promise.all([
+      CacheClient.delete(CACHE_KEYS.analyticsProjectStatusDistribution(workspaceId)),
+      CacheClient.delete(CACHE_KEYS.analyticsTaskStatusDistribution(workspaceId)),
+      CacheClient.delete(CACHE_KEYS.analyticsTaskPriorityDistribution(workspaceId)),
+    ]);
+  },
+
+  /**
+   * Invalidate activity caches for a workspace
+   */
+  async invalidateActivityMetrics(workspaceId: string): Promise<void> {
+    await Promise.all([
+      CacheClient.deletePattern(`analytics:activity-trends:${workspaceId}:*`),
+      CacheClient.delete(CACHE_KEYS.analyticsMostActiveDay(workspaceId)),
+    ]);
+  },
+
+  /**
+   * Invalidate risk analysis cache for a workspace
+   */
+  async invalidateRiskAnalysis(workspaceId: string): Promise<void> {
+    await CacheClient.delete(CACHE_KEYS.analyticsDeadlineRisk(workspaceId));
+  },
+
+  /**
+   * Invalidate overdue trend cache for a workspace
+   */
+  async invalidateOverdueTrend(workspaceId: string): Promise<void> {
+    await CacheClient.deletePattern(`analytics:overdue-trend:${workspaceId}:*`);
+  },
 };
 
 // ─── Storage Cache Invalidation ───────────────────────────────────────────────
@@ -260,5 +398,245 @@ export const StorageCache = {
       StorageCache.invalidateWorkspace(workspaceId),
       StorageCache.invalidateUserSummary(userId),
     ]);
+  },
+};
+
+// ─── Project Cache Invalidation ────────────────────────────────────────────────
+
+export const ProjectCache = {
+  /**
+   * Invalidate a specific project's metadata
+   */
+  async invalidateProject(projectId: string, slug?: string): Promise<void> {
+    const keys = [
+      CACHE_KEYS.projectById(projectId),
+      CACHE_KEYS.projectStats(projectId),
+    ];
+    if (slug) {
+      keys.push(CACHE_KEYS.projectBySlug(slug));
+    }
+    await CacheClient.delete(...keys);
+  },
+
+  /**
+   * Invalidate all project lists for a specific user
+   */
+  async invalidateUserProjects(userId: string): Promise<void> {
+    await CacheClient.deletePattern(`project:list:${userId}:*`);
+  },
+
+  /**
+   * Invalidate all projects in a workspace
+   */
+  async invalidateWorkspaceProjects(workspaceId: string): Promise<void> {
+    await CacheClient.delete(CACHE_KEYS.projectWorkspaceList(workspaceId));
+    await CacheClient.deletePattern(`project:list:*:${workspaceId}`);
+  },
+};
+
+// ─── Task Cache Invalidation ────────────────────────────────────────────────────
+
+export const TaskCache = {
+  /**
+   * Invalidate a specific task's metadata
+   */
+  async invalidateTask(taskId: string): Promise<void> {
+    await CacheClient.delete(
+      CACHE_KEYS.taskById(taskId),
+      CACHE_KEYS.taskOverview(taskId),
+    );
+  },
+
+  /**
+   * Invalidate task stats for a user/workspace context
+   */
+  async invalidateTaskStats(userId: string, workspaceId?: string): Promise<void> {
+    await CacheClient.deletePattern(`task:stats:${userId}:${workspaceId ?? 'personal'}:*`);
+  },
+
+  /**
+   * Invalidate all task-related caches for a workspace
+   */
+  async invalidateWorkspaceTasks(workspaceId: string): Promise<void> {
+    await CacheClient.deletePattern(`task:stats:*:${workspaceId}:*`);
+  },
+};
+
+// ─── Activity Cache Invalidation ─────────────────────────────────────────────────
+
+export const ActivityCache = {
+  /**
+   * Invalidate user activity lists
+   */
+  async invalidateUserActivities(userId: string, workspaceId?: string): Promise<void> {
+    await CacheClient.deletePattern(`activity:user:${userId}:*`);
+  },
+
+  /**
+   * Invalidate workspace activity feed
+   */
+  async invalidateWorkspaceActivities(workspaceId: string): Promise<void> {
+    await CacheClient.delete(CACHE_KEYS.activityWorkspaceList(workspaceId));
+  },
+
+  /**
+   * Invalidate task activity timeline
+   */
+  async invalidateTaskActivities(taskId: string): Promise<void> {
+    await CacheClient.delete(CACHE_KEYS.activityTaskList(taskId));
+  },
+};
+
+// ─── Calendar Cache Invalidation ─────────────────────────────────────────────────
+
+export const CalendarCache = {
+  /**
+   * Invalidate calendar aggregates for a user/workspace date range
+   */
+  async invalidateAggregates(userId: string, workspaceId?: string): Promise<void> {
+    await CacheClient.deletePattern(`calendar:aggregates:${userId}:*`);
+  },
+
+  /**
+   * Invalidate calendar insights for a user/workspace date range
+   */
+  async invalidateInsights(userId: string, workspaceId?: string): Promise<void> {
+    await CacheClient.deletePattern(`calendar:insights:${userId}:*`);
+  },
+
+  /**
+   * Invalidate system events for a user/workspace date range
+   */
+  async invalidateSystemEvents(userId: string, workspaceId?: string): Promise<void> {
+    await CacheClient.deletePattern(`calendar:system-events:${userId}:*`);
+  },
+
+  /**
+   * Invalidate goal checkpoints for a user/workspace date range
+   */
+  async invalidateGoalCheckpoints(userId: string, workspaceId?: string): Promise<void> {
+    await CacheClient.deletePattern(`calendar:goal-checkpoints:${userId}:*`);
+  },
+
+  /**
+   * Invalidate all calendar data for a user
+   */
+  async invalidateUserCalendar(userId: string): Promise<void> {
+    await CacheClient.deletePattern(`calendar:*:${userId}:*`);
+  },
+
+  /**
+   * Invalidate all calendar data for a workspace
+   */
+  async invalidateWorkspaceCalendar(workspaceId: string): Promise<void> {
+    await CacheClient.deletePattern(`calendar:*:*:${workspaceId}:*`);
+  },
+};
+
+// ─── Focus Session Cache Invalidation ─────────────────────────────────────────────
+
+export const FocusSessionCache = {
+  /**
+   * Invalidate active session cache for a user
+   */
+  async invalidateActiveSession(userId: string): Promise<void> {
+    await CacheClient.delete(CACHE_KEYS.focusActiveSession(userId));
+  },
+
+  /**
+   * Invalidate session history cache for a user
+   */
+  async invalidateHistory(userId: string): Promise<void> {
+    await CacheClient.deletePattern(`focus:history:${userId}:*`);
+  },
+
+  /**
+   * Invalidate session stats cache for a user
+   */
+  async invalidateStats(userId: string): Promise<void> {
+    await CacheClient.deletePattern(`focus:stats:${userId}:*`);
+  },
+
+  /**
+   * Invalidate focus streak cache for a user
+   */
+  async invalidateStreak(userId: string): Promise<void> {
+    await CacheClient.delete(CACHE_KEYS.focusSessionStreak(userId));
+  },
+
+  /**
+   * Invalidate all focus session caches for a user
+   */
+  async invalidateUserFocusSessions(userId: string): Promise<void> {
+    await Promise.all([
+      this.invalidateActiveSession(userId),
+      this.invalidateHistory(userId),
+      this.invalidateStats(userId),
+      this.invalidateStreak(userId),
+    ]);
+  },
+};
+
+// ─── User Cache Invalidation ─────────────────────────────────────────────────────
+
+export const UserCache = {
+  /**
+   * Invalidate user profile cache
+   */
+  async invalidateProfile(userId: string): Promise<void> {
+    await CacheClient.delete(CACHE_KEYS.userProfile(userId));
+  },
+
+  /**
+   * Invalidate user settings cache
+   */
+  async invalidateSettings(userId: string): Promise<void> {
+    await CacheClient.delete(CACHE_KEYS.userSettings(userId));
+  },
+
+  /**
+   * Invalidate user permissions for a specific workspace
+   */
+  async invalidatePermissions(userId: string, workspaceId: string): Promise<void> {
+    await CacheClient.delete(CACHE_KEYS.userPermissions(userId, workspaceId));
+  },
+
+  /**
+   * Invalidate all user permissions across all workspaces
+   */
+  async invalidateAllPermissions(userId: string): Promise<void> {
+    await CacheClient.deletePattern(`user:permissions:${userId}:*`);
+  },
+
+  /**
+   * Invalidate all user-related caches (profile, settings, permissions)
+   */
+  async invalidateUser(userId: string): Promise<void> {
+    await Promise.all([
+      this.invalidateProfile(userId),
+      this.invalidateSettings(userId),
+      this.invalidateAllPermissions(userId),
+    ]);
+  },
+
+  /**
+   * Invalidate user session cache
+   */
+  async invalidateSession(userId: string): Promise<void> {
+    await CacheClient.delete(CACHE_KEYS.userSession(userId));
+  },
+
+  /**
+   * Invalidate active sessions cache for a user
+   */
+  async invalidateActiveSessions(userId: string): Promise<void> {
+    await CacheClient.delete(CACHE_KEYS.activeSessions(userId));
+  },
+
+  /**
+   * Invalidate authentication result cache for a specific token
+   */
+  async invalidateAuthResult(tokenJti: string): Promise<void> {
+    await CacheClient.delete(CACHE_KEYS.authResult(tokenJti));
   },
 };

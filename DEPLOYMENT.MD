@@ -102,6 +102,47 @@ npx prisma studio
 (max_connections - 3) / number_of_instances
 ```
 
+### Advanced Connection Pool Configuration
+
+The application now supports dynamic connection pool sizing based on environment variables:
+
+```bash
+# Database Connection Pool Configuration
+DB_MAX_CONNECTIONS=100              # Maximum connections allowed by your database plan
+INSTANCE_COUNT=1                    # Number of application instances (for horizontal scaling)
+PRIMARY_POOL_RATIO=0.3              # Ratio of connections for primary pool (write operations)
+REPLICA_POOL_RATIO=0.7              # Ratio of connections for read replica pool (read operations)
+QUERY_TIMEOUT_MS=30000              # Query timeout in milliseconds
+```
+
+**Pool Size Calculation:**
+- Available connections = DB_MAX_CONNECTIONS - 3 (reserve for superuser/maintenance)
+- Connections per instance = floor(available_connections / INSTANCE_COUNT)
+- Primary pool size = max(2, floor(connections_per_instance * PRIMARY_POOL_RATIO))
+- Replica pool size = max(2, floor(connections_per_instance * REPLICA_POOL_RATIO))
+
+**Example Configuration:**
+- Single instance with 100 max connections:
+  - Available: 97 connections
+  - Primary pool: 29 connections (30% for writes)
+  - Replica pool: 67 connections (70% for reads)
+
+- 3 instances with 100 max connections:
+  - Available per instance: 32 connections
+  - Primary pool per instance: 9 connections
+  - Replica pool per instance: 22 connections
+
+**Monitoring Endpoints:**
+- `/health` - Enhanced health check with database latency metrics
+- `/health/db-pool` - Connection pool metrics (development only)
+
+**Features:**
+- Dynamic pool sizing based on instance count
+- Query timeout protection (30s default)
+- Slow query detection and logging
+- Connection pool exhaustion prevention
+- Enhanced health checks with latency monitoring
+
 ---
 
 ## Railway Deployment

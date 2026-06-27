@@ -52,6 +52,10 @@ export function authHeaders(user: TestUser): { Authorization: string } {
   return { Authorization: `Bearer ${generateTestToken(user)}` };
 }
 
+export function adminAuthHeaders(user: TestUser): { Authorization: string } {
+  return { Authorization: `Bearer ${generateTestToken(user)}` };
+}
+
 export async function authWithCsrfHeaders(
   user: TestUser,
   opts: TokenOptions = {},

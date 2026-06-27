@@ -9,7 +9,7 @@ import {
   rollbackPersonalQuota,
   rollbackWorkspaceQuota,
 } from './task.quota.service.js';
-import { AnalyticsCache, WorkspaceCache } from '../../lib/redis/cache.client.js';
+import { AnalyticsCache, WorkspaceCache, TaskCache, CalendarCache } from '../../lib/redis/cache.client.js';
 import { getRedisClient }  from '../../redis/redis.client.js';
 import { ProjectAccess }   from '../project/project.access.js';
 import { BadRequestError, ForbiddenError, NotFoundError } from '../../errors/index.js';
@@ -190,7 +190,18 @@ export const TaskMutation = {
       Promise.all([
         AnalyticsCache.invalidateWorkspace(finalWorkspaceId),
         WorkspaceCache.invalidateWorkspace(finalWorkspaceId),
+        TaskCache.invalidateTaskStats(data.createdById, finalWorkspaceId),
+        CalendarCache.invalidateAggregates(data.createdById, finalWorkspaceId),
+        CalendarCache.invalidateInsights(data.createdById, finalWorkspaceId),
       ]).catch((err) => console.error('[Cache] Failed to invalidate after task creation:', err));
+    } else {
+      Promise.all([
+        TaskCache.invalidateTaskStats(data.createdById),
+        CalendarCache.invalidateAggregates(data.createdById),
+        CalendarCache.invalidateInsights(data.createdById),
+      ]).catch((err) =>
+        console.error('[Cache] Failed to invalidate personal task stats:', err),
+      );
     }
 
     if (onCreated) {
@@ -246,7 +257,18 @@ export const TaskMutation = {
       Promise.all([
         AnalyticsCache.invalidateWorkspace(existingTask.workspaceId),
         WorkspaceCache.invalidateWorkspace(existingTask.workspaceId),
+        TaskCache.invalidateTask(taskId),
+        TaskCache.invalidateTaskStats(userId, existingTask.workspaceId),
+        CalendarCache.invalidateAggregates(userId, existingTask.workspaceId),
+        CalendarCache.invalidateInsights(userId, existingTask.workspaceId),
       ]).catch((err) => console.error('[Cache] Failed to invalidate after task update:', err));
+    } else {
+      Promise.all([
+        TaskCache.invalidateTask(taskId),
+        TaskCache.invalidateTaskStats(userId),
+        CalendarCache.invalidateAggregates(userId),
+        CalendarCache.invalidateInsights(userId),
+      ]).catch((err) => console.error('[Cache] Failed to invalidate after personal task update:', err));
     }
 
     let addedAssigneeIds: string[] = [];
@@ -313,7 +335,14 @@ export const TaskMutation = {
       Promise.all([
         AnalyticsCache.invalidateWorkspace(existingTask.workspaceId),
         WorkspaceCache.invalidateWorkspace(existingTask.workspaceId),
+        TaskCache.invalidateTask(taskId),
+        TaskCache.invalidateTaskStats(userId, existingTask.workspaceId),
       ]).catch((err) => console.error('[Cache] Failed to invalidate after status update:', err));
+    } else {
+      Promise.all([
+        TaskCache.invalidateTask(taskId),
+        TaskCache.invalidateTaskStats(userId),
+      ]).catch((err) => console.error('[Cache] Failed to invalidate after personal status update:', err));
     }
 
     if (onUpdated) {
@@ -341,7 +370,18 @@ export const TaskMutation = {
       Promise.all([
         AnalyticsCache.invalidateWorkspace(workspaceId),
         WorkspaceCache.invalidateWorkspace(workspaceId),
+        TaskCache.invalidateTask(taskId),
+        TaskCache.invalidateTaskStats(userId, workspaceId),
+        CalendarCache.invalidateAggregates(userId, workspaceId),
+        CalendarCache.invalidateInsights(userId, workspaceId),
       ]).catch((err) => console.error('[Cache] Failed to invalidate after task deletion:', err));
+    } else {
+      Promise.all([
+        TaskCache.invalidateTask(taskId),
+        TaskCache.invalidateTaskStats(userId),
+        CalendarCache.invalidateAggregates(userId),
+        CalendarCache.invalidateInsights(userId),
+      ]).catch((err) => console.error('[Cache] Failed to invalidate after personal task deletion:', err));
     }
 
     if (onDeleted) {

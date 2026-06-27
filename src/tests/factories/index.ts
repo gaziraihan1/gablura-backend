@@ -5,7 +5,7 @@
 import { faker } from '@faker-js/faker';
 import argon2 from 'argon2';
 import { prisma } from '../../lib/prisma.js';
-import type {
+import {
   User,
   Workspace,
   WorkspaceMember,
@@ -15,19 +15,13 @@ import type {
   Announcement,
   Label,
   FeatureRequest,
-} from '@prisma/client';
-import {
-  UserRole,
-  WorkspaceRole,
-  ProjectStatus,
-  Priority,
-  TaskStatus,
-  MeetingStatus,
   MeetingVisibility,
-  AnnouncementVisibility,
+  MeetingStatus,
+  ProjectStatus,
 } from '@prisma/client';
 
-// ─────────────────────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────────────
+
 // Internal helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -373,7 +367,7 @@ export async function createFeatureRequest(
 // Activity
 // ─────────────────────────────────────────────────────────────
 
-import { ActivityType, EntityType } from '@prisma/client';
+import { ActivityType, AnnouncementVisibility, EntityType, JobDepartment, JobStatus, Priority, TaskStatus, UserRole, WorkspaceRole } from '@prisma/client';
 
 export interface CreateActivityOptions {
   action?: ActivityType;
@@ -401,6 +395,61 @@ export async function createActivity(
     },
   });
 }
+
+export async function createJobPosting(
+  postedById: string,
+  opts: {
+    title?: string;
+    description?: string;
+    department?: any; // Use any to allow JobDepartment enum
+    location?: string;
+    locationType?: any; // Use any to allow JobLocationType enum
+    type?: any; // Use any to allow JobType enum
+    experienceLevel?: any; // Use any to allow JobExperience enum
+    salaryMin?: number;
+    salaryMax?: number;
+    salaryCurrency?: string;
+    status?: any; // Use any to allow JobStatus enum
+    isPinned?: boolean;
+    closingDate?: Date;
+    applicationUrl?: string;
+    applicationEmail?: string;
+    slug?: string;
+    requirements?: string;
+    niceToHave?: string;
+    benefits?: string;
+  } = {}
+): Promise<any> {
+  const title = opts.title ?? faker.company.catchPhrase();
+  const generatedSlug = opts.slug ?? slug('job');
+
+  return prisma.jobPosting.create({
+    data: {
+      title,
+      slug: generatedSlug,
+      description: opts.description ?? faker.lorem.paragraphs(2),
+      requirements: opts.requirements ?? faker.lorem.paragraphs(1),
+      department: opts.department ?? JobDepartment.ENGINEERING,
+      location: opts.location ?? faker.location.city(),
+      locationType: opts.locationType ?? 'REMOTE',
+      type: opts.type ?? 'FULL_TIME',
+      experienceLevel: opts.experienceLevel ?? 'MID',
+      salaryMin: opts.salaryMin ?? 50000,
+      salaryMax: opts.salaryMax ?? 100000,
+      salaryCurrency: opts.salaryCurrency ?? 'USD',
+      status: opts.status ?? JobStatus.OPEN,
+      isPinned: opts.isPinned ?? false,
+      closingDate: opts.closingDate ?? faker.date.future(),
+      applicationUrl: opts.applicationUrl ?? faker.internet.url(),
+      applicationEmail: opts.applicationEmail ?? 'jobs@example.com',
+      niceToHave: opts.niceToHave ?? faker.lorem.sentence(),
+      benefits: opts.benefits ?? faker.lorem.sentence(),
+      postedById,
+      publishedAt: opts.status === JobStatus.OPEN ? new Date() : null,
+    },
+  });
+}
+
 export async function assignUserToTask(
   taskId: string,
   userId: string

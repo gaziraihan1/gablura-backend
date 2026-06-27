@@ -3,7 +3,7 @@ import type { TaskFilterParams, PaginationParams, SortParams, PaginatedTasksResu
 import { taskFullInclude, taskDetailInclude } from './task.selects.js';
 import { TaskFilters }   from './task.filters.js';
 import { getTimeStatus } from './task.utils.js';
-import { CacheClient }   from '../../lib/redis/cache.client.js';
+import { CacheClient, CACHE_KEYS, CACHE_TTL } from '../../lib/redis/cache.client.js';
 import { NotFoundError } from '../../errors/index.js';
 import { Prisma, TaskStatus } from '@prisma/client';
 
@@ -86,6 +86,10 @@ export const TaskQuery = {
   },
 
   async getTaskById(taskId: string, userId: string) {
+  const cacheKey = CACHE_KEYS.taskById(taskId);
+  const cached = await CacheClient.get(cacheKey);
+  if (cached) return cached;
+
   const task = await prisma.task.findFirst({
     where: {
       id: taskId,
@@ -93,19 +97,25 @@ export const TaskQuery = {
         { createdById: userId },
         { assignees:  { some: { userId } } },
         { project:    { workspace: { members: { some: { userId } } } } },
-        { project:    { workspace: { ownerId: userId } } },   // ✅ add
+        { project:    { workspace: { ownerId: userId } } },
         { workspace:  { members: { some: { userId } } } },
-        { workspace:  { ownerId: userId } },                   // ✅ add
+        { workspace:  { ownerId: userId } },
       ],
     },
     include: taskDetailInclude,
   });
 
   if (!task) throw new NotFoundError('Task');
-  return { ...task, timeTracking: getTimeStatus(task) };
+  const result = { ...task, timeTracking: getTimeStatus(task) };
+  await CacheClient.set(cacheKey, result, CACHE_TTL.TASK_METADATA);
+  return result;
 },
 
   async getTaskOverview(taskId: string, userId: string) {
+    const cacheKey = CACHE_KEYS.taskOverview(taskId);
+    const cached = await CacheClient.get(cacheKey);
+    if (cached) return cached;
+
     const task = await prisma.task.findFirst({
     where: {
       id: taskId,
@@ -113,9 +123,9 @@ export const TaskQuery = {
         { createdById: userId },
         { assignees:  { some: { userId } } },
         { project:    { workspace: { members: { some: { userId } } } } },
-        { project:    { workspace: { ownerId: userId } } },   // ✅ add
+        { project:    { workspace: { ownerId: userId } } },
         { workspace:  { members: { some: { userId } } } },
-        { workspace:  { ownerId: userId } },                   // ✅ add
+        { workspace:  { ownerId: userId } },
       ],
     },
     include: taskDetailInclude,
@@ -146,11 +156,13 @@ export const TaskQuery = {
       }),
     ]);
 
-    return { task: { ...task, timeTracking: getTimeStatus(task) }, comments, attachments };
+    const result = { task: { ...task, timeTracking: getTimeStatus(task) }, comments, attachments };
+    await CacheClient.set(cacheKey, result, CACHE_TTL.TASK_OVERVIEW);
+    return result;
   },
 
   async getTaskStats(params: { userId: string; workspaceId?: string; type?: string }): Promise<TaskStats> {
-    const cacheKey = `stats:${params.userId}:${params.workspaceId ?? 'personal'}:${params.type ?? 'all'}`;
+    const cacheKey = CACHE_KEYS.taskStats(params.userId, params.workspaceId, params.type);
 
     const cached = await CacheClient.get<TaskStats>(cacheKey);
     if (cached) return cached;
@@ -213,7 +225,7 @@ export const TaskQuery = {
     };
 
     console.log('📊 Stats result:', stats);
-    CacheClient.set(cacheKey, stats, 120).catch(() => {});
+    CacheClient.set(cacheKey, stats, CACHE_TTL.TASK_STATS).catch(() => {});
     return stats;
   },
 

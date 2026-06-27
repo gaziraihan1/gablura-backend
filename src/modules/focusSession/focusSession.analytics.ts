@@ -1,9 +1,17 @@
 
 import { prisma } from '../../lib/prisma.js';
 import type { GetFocusStatsInput, FocusStats } from './focusSession.types.js';
+import { CacheClient, CACHE_KEYS, CACHE_TTL } from '../../lib/redis/cache.client.js';
 
 export const FocusSessionAnalytics = {
   async getStats(input: GetFocusStatsInput): Promise<FocusStats> {
+    const startDateStr = input.startDate?.toISOString().split('T')[0] ?? 'all';
+    const endDateStr = input.endDate?.toISOString().split('T')[0] ?? 'all';
+    const cacheKey = CACHE_KEYS.focusSessionStats(input.userId, startDateStr, endDateStr);
+    
+    const cached = await CacheClient.get<FocusStats>(cacheKey);
+    if (cached) return cached;
+
     const where = {
       userId:    input.userId,
       completed: true,
@@ -36,22 +44,33 @@ export const FocusSessionAnalytics = {
 
     const totalMinutes = durationAgg._sum.duration ?? 0;
 
-    return {
+    const result = {
       totalSessions:         sessionCount,
       totalMinutes,
       completedToday,
       averageSessionLength:  sessionCount > 0 ? totalMinutes / sessionCount : 0,
     };
+
+    await CacheClient.set(cacheKey, result, CACHE_TTL.FOCUS_SESSION_STATS);
+    return result;
   },
 
   async getFocusStreak(userId: string): Promise<number> {
+    const cacheKey = CACHE_KEYS.focusSessionStreak(userId);
+    
+    const cached = await CacheClient.get<number>(cacheKey);
+    if (cached !== null) return cached;
+
     const sessions = await prisma.focusSession.findMany({
       where:   { userId, completed: true },
       select:  { startedAt: true },
       orderBy: { startedAt: 'desc' },
     });
 
-    if (sessions.length === 0) return 0;
+    if (sessions.length === 0) {
+      await CacheClient.set(cacheKey, 0, CACHE_TTL.FOCUS_SESSION_STREAK);
+      return 0;
+    }
 
     const sessionDates = new Set(
       sessions.map((s) => s.startedAt.toISOString().split('T')[0]),
@@ -59,15 +78,16 @@ export const FocusSessionAnalytics = {
 
     let streak = 0;
     const cursor = new Date();
-    cursor.setHours(0, 0, 0, 0);
+    const cursorUTC = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth(), cursor.getUTCDate()));
 
     while (true) {
-      const key = cursor.toISOString().split('T')[0];
+      const key = cursorUTC.toISOString().split('T')[0];
       if (!sessionDates.has(key)) break;
       streak++;
-      cursor.setDate(cursor.getDate() - 1);
+      cursorUTC.setUTCDate(cursorUTC.getUTCDate() - 1);
     }
 
+    await CacheClient.set(cacheKey, streak, CACHE_TTL.FOCUS_SESSION_STREAK);
     return streak;
   },
 };

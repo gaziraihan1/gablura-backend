@@ -8,3 +8,7 @@ dist/
 keys/private.pem
 keys/*.pem
 !keys/public.pem
+GEMINI.md
+BACKEND_ANALYSIS.md
+DATABASE_POOL_FIXES.md
+CACHING_STRATEGY.md

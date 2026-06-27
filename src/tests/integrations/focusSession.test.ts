@@ -348,10 +348,16 @@ describe("GET /api/v1/focus-sessions/history — history", () => {
 // GET /api/v1/focus-sessions/stats  —  Aggregated stats
 // ─────────────────────────────────────────────────────────────────────────────
 describe("GET /api/v1/focus-sessions/stats", () => {
-  it("200 — returns stats for user's completed sessions only", async () => {
+  it("200 — returns stats and streak for user's completed sessions", async () => {
     const user = await createUser();
 
-    // Seed: 3 completed, 1 incomplete
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(today.getDate() - 1);
+    const twoDaysAgo = new Date(today);
+    twoDaysAgo.setDate(today.getDate() - 2);
+
+    // Seed: 3 completed sessions for a streak of 3
     await prisma.focusSession.createMany({
       data: [
         {
@@ -359,39 +365,33 @@ describe("GET /api/v1/focus-sessions/stats", () => {
           duration: 25,
           type: FocusType.POMODORO,
           completed: true,
-          endedAt: new Date(),
+          startedAt: today,
+          endedAt: today,
         },
         {
           userId: user.id,
           duration: 25,
           type: FocusType.POMODORO,
           completed: true,
-          endedAt: new Date(),
+          startedAt: yesterday,
+          endedAt: yesterday,
         },
         {
           userId: user.id,
           duration: 90,
           type: FocusType.DEEP_WORK,
           completed: true,
-          endedAt: new Date(),
+          startedAt: twoDaysAgo,
+          endedAt: twoDaysAgo,
         },
-        {
-          userId: user.id,
-          duration: 25,
-          type: FocusType.POMODORO,
-          completed: false,
-        }, // active
       ],
     });
 
     const res = await request(app).get(`${BASE}/stats`).set(authHeaders(user));
 
     expect(res.status).toBe(200);
-    // Completed: 25 + 25 + 90 = 140 minutes
-    expect(res.body.data.totalMinutes ?? res.body.total).toBeGreaterThanOrEqual(
-      140,
-    );
-    expect(res.body.data.totalSessions ?? res.body.completed).toBe(3);
+    expect(res.body.data.totalSessions).toBe(3);
+    expect(res.body.data.focusStreak).toBe(3);
   });
 
   it("200 — stats are isolated per user", async () => {

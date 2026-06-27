@@ -9,6 +9,7 @@ import {
   countConsecutiveDays,
   getWeekStart,
 } from "./calendar.utils.js";
+import { CacheClient, CACHE_KEYS, CACHE_TTL } from "../../lib/redis/cache.client.js";
 
 export const CalendarInsightsService = {
   async getInsights(
@@ -17,6 +18,13 @@ export const CalendarInsightsService = {
     startDate: Date,
     endDate: Date,
   ): Promise<CalendarInsights> {
+    const startDateStr = startDate.toISOString().split('T')[0];
+    const endDateStr = endDate.toISOString().split('T')[0];
+    const cacheKey = CACHE_KEYS.calendarInsights(userId, workspaceId, startDateStr, endDateStr);
+    
+    const cached = await CacheClient.get<CalendarInsights>(cacheKey);
+    if (cached) return cached;
+
     const [aggregates, capacity, schedule] = await Promise.all([
       CalendarAggregation.getOrComputeAggregates({
         userId,
@@ -49,7 +57,7 @@ export const CalendarInsightsService = {
 
     const burnoutSignal = await this.calculateBurnoutRisk(userId, startDate);
 
-    return {
+    const result = {
       totalPlannedHours,
       totalCapacityHours,
       commitmentGap,
@@ -58,6 +66,9 @@ export const CalendarInsightsService = {
       burnoutRisk: burnoutSignal.riskLevel,
       timeAllocation: null, // null until real category tracking is implemented
     };
+
+    await CacheClient.set(cacheKey, result, CACHE_TTL.CALENDAR_INSIGHTS);
+    return result;
   },
 
   async calculateBurnoutRisk(

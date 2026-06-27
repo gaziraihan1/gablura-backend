@@ -41,7 +41,8 @@ import {
   workspaceAnnouncementRouter,
 } from "./modules/announcement/index.js";
 import { adminRouter } from "./admin/admin.routes.js";
-import { prisma } from "./lib/prisma.js";
+import { prisma, checkDatabaseHealth, getPoolMetrics, disconnectAll } from "./lib/prisma.js";
+import { dbMonitoring, dbPoolGuard } from "./middleware/dbMonitoring.js";
 import { templatesRouter } from "./modules/templates/index.js";
 import { errorHandler, notFoundHandler } from "./errors/errorHandler.js";
 import { adminResourceRouter, publicResourceRouter } from "./modules/resource/index.js";
@@ -117,21 +118,37 @@ app.use((req: Request, res: Response, next) => {
   next();
 });
 
+// Database connection pool monitoring (development only)
+if (process.env.NODE_ENV === "development") {
+  app.use(dbMonitoring);
+}
+
+// Database pool guard to prevent exhaustion (production only)
+if (process.env.NODE_ENV === "production") {
+  app.use(dbPoolGuard);
+}
+
 initNotificationCrons();
 initDailyTaskCrons();
 
 app.get("/health", async (req: Request, res: Response) => {
   try {
-    await prisma.$queryRaw`SELECT 1`;
+    const dbHealth = await checkDatabaseHealth();
 
     res.json({
       status: "OK",
       timestamp: new Date().toISOString(),
       uptime: process.uptime(),
       environment: process.env.NODE_ENV,
-      database: "connected",
+      
+      database: {
+        primary: dbHealth.primary ? "connected" : "disconnected",
+        replica: dbHealth.replica ? "connected" : "disconnected",
+        latency: dbHealth.latency,
+      },
       authMethod: "Authorization Header",
       csrfEnabled: true,
+      instanceCount: parseInt(process.env.INSTANCE_COUNT ?? "1"),
     });
   } catch (error) {
     res.status(503).json({
@@ -143,6 +160,25 @@ app.get("/health", async (req: Request, res: Response) => {
       error: (error as Error).message,
     });
   }
+});
+
+app.get("/health/db-pool", (req: Request, res: Response) => {
+  if (isProd) {
+    return res.status(403).json({ error: "Database pool metrics disabled in production" });
+  }
+
+  const poolMetrics = getPoolMetrics();
+  res.json({
+    timestamp: new Date().toISOString(),
+    poolMetrics,
+    configuration: {
+      instanceCount: parseInt(process.env.INSTANCE_COUNT ?? "1"),
+      dbMaxConnections: parseInt(process.env.DB_MAX_CONNECTIONS ?? "100"),
+      primaryPoolRatio: parseFloat(process.env.PRIMARY_POOL_RATIO ?? "0.3"),
+      replicaPoolRatio: parseFloat(process.env.REPLICA_POOL_RATIO ?? "0.7"),
+      queryTimeout: parseInt(process.env.QUERY_TIMEOUT_MS ?? "30000"),
+    },
+  });
 });
 
 app.get("/api/v1/debug/auth", (req: Request, res: Response) => {
@@ -281,8 +317,7 @@ const gracefulShutdown = async (signal: string) => {
     console.log("✅ HTTP server closed");
 
     try {
-      await prisma.$disconnect();
-      console.log("✅ Database disconnected");
+      await disconnectAll();
       console.log("✅ Graceful shutdown complete");
       process.exit(0);
     } catch (error) {
