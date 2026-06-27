@@ -56,10 +56,6 @@ export async function setup() {
 
   console.log('🔧 [globalSetup] Pushing schema to test database...');
   
-  // Clear existing DATABASE_URL to prevent Prisma from picking it up from .env
-  delete process.env.DATABASE_URL;
-  delete process.env.DIRECT_URL;
-
   try {
     execSync('npx prisma db push --force-reset --accept-data-loss', {
       env: {
