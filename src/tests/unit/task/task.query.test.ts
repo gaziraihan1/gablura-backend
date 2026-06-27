@@ -36,12 +36,17 @@ vi.mock("../../../modules/task/task.filters.js", () => ({
   },
 }));
 
-vi.mock("../../../lib/redis/cache.client.js", () => ({
-  CacheClient: {
-    get: vi.fn(),
-    set: vi.fn().mockResolvedValue(undefined),
-  },
-}));
+vi.mock("../../../lib/redis/cache.client.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../../lib/redis/cache.client.js")>();
+  return {
+    ...actual,
+    CacheClient: {
+      ...actual.CacheClient,
+      get: vi.fn(),
+      set: vi.fn().mockResolvedValue(undefined),
+    },
+  };
+});
 
 describe("TaskQuery", () => {
   beforeEach(() => {

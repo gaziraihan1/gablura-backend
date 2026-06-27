@@ -66,16 +66,26 @@ vi.mock("../../../modules/task/task.quota.service.js", () => ({
   rollbackWorkspaceQuota: vi.fn(),
 }));
 
-vi.mock("../../../lib/redis/cache.client.js", () => ({
-  AnalyticsCache: { invalidateWorkspace: vi.fn() },
-  WorkspaceCache: { invalidateWorkspace: vi.fn() },
-  CacheClient: { get: vi.fn(), set: vi.fn() },
-}));
+vi.mock("../../../lib/redis/cache.client.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../../lib/redis/cache.client.js")>();
+  return {
+    ...actual,
+    AnalyticsCache: { invalidateWorkspace: vi.fn() },
+    WorkspaceCache: { invalidateWorkspace: vi.fn() },
+    CacheClient: { 
+      ...actual.CacheClient,
+      get: vi.fn(), 
+      set: vi.fn() 
+    },
+  };
+});
 
 vi.mock("../../../redis/redis.client.js", () => ({
   getRedisClient: vi.fn(() => ({
     get: vi.fn(),
     setex: vi.fn(),
+    del: vi.fn(),
+    keys: vi.fn().mockResolvedValue([]),
   })),
 }));
 
