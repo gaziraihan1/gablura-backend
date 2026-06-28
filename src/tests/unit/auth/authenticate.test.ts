@@ -266,8 +266,10 @@ describe("authenticate middleware", () => {
   });
 
   it("uses cached user profile and skips DB lookup", async () => {
-    const cachedUser = { ...mockUser, bannedAt: null };
-    vi.mocked(CacheClient.get).mockResolvedValueOnce(cachedUser);
+    const cachedUser = { ...mockUser };
+    vi.mocked(CacheClient.get)
+      .mockResolvedValueOnce(null) // Auth result cache miss
+      .mockResolvedValueOnce(cachedUser as any); // User profile cache hit
 
     const next = makeNext();
     const req = makeReq(`Bearer ${generateTestToken(mockUser)}`);
@@ -287,8 +289,8 @@ describe("authenticate middleware", () => {
 
     const err = getNextError(next);
     expect(err.statusCode).toBe(401);
-    expect(err.code).toBe("INVALID_TOKEN");
-    expect(err.message).toBe("INVALID_TOKEN_CACHED");
+    expect(err.code).toBe("INVALID_TOKEN_CACHED");
+    expect(err.message).toBe("Invalid token");
   });
 
   it("caches successful authentication results", async () => {
