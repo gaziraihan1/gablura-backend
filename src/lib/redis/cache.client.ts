@@ -72,6 +72,14 @@ export const CACHE_TTL = {
   // Authentication — shorter TTLs for security
   AUTH_RESULT: parseInt(process.env.CACHE_TTL_AUTH_RESULT ?? "300"), // 5 min
   USER_SESSION: parseInt(process.env.CACHE_TTL_USER_SESSION ?? "3600"), // 1 hour
+
+  // External API caching — reduces external API calls and costs
+  EXTERNAL_API_STRIPE_CUSTOMER: parseInt(process.env.CACHE_TTL_EXTERNAL_API_STRIPE_CUSTOMER ?? "300"), // 5 min
+  EXTERNAL_API_STRIPE_SUBSCRIPTION: parseInt(process.env.CACHE_TTL_EXTERNAL_API_STRIPE_SUBSCRIPTION ?? "180"), // 3 min
+  EXTERNAL_API_STRIPE_PRICE: parseInt(process.env.CACHE_TTL_EXTERNAL_API_STRIPE_PRICE ?? "86400"), // 24 hours (rarely changes)
+  EXTERNAL_API_PADDLE_CUSTOMER: parseInt(process.env.CACHE_TTL_EXTERNAL_API_PADDLE_CUSTOMER ?? "300"), // 5 min
+  EXTERNAL_API_PADDLE_SUBSCRIPTION: parseInt(process.env.CACHE_TTL_EXTERNAL_API_PADDLE_SUBSCRIPTION ?? "180"), // 3 min
+  EXTERNAL_API_PADDLE_PRICE: parseInt(process.env.CACHE_TTL_EXTERNAL_API_PADDLE_PRICE ?? "86400"), // 24 hours (rarely changes)
 } as const;
 
 // ─── Cache Key Generators ─────────────────────────────────────────────────────
@@ -182,6 +190,14 @@ export const CACHE_KEYS = {
   authResult: (tokenJti: string) => `auth:result:${tokenJti}`,
   userSession: (userId: string) => `session:user:${userId}`,
   activeSessions: (userId: string) => `sessions:active:${userId}`,
+
+  // External API caching
+  stripeCustomer: (customerId: string) => `api:stripe:customer:${customerId}`,
+  stripeSubscription: (subscriptionId: string) => `api:stripe:subscription:${subscriptionId}`,
+  stripePrice: (priceId: string) => `api:stripe:price:${priceId}`,
+  paddleCustomer: (customerId: string) => `api:paddle:customer:${customerId}`,
+  paddleSubscription: (subscriptionId: string) => `api:paddle:subscription:${subscriptionId}`,
+  paddlePrice: (priceId: string) => `api:paddle:price:${priceId}`,
 } as const;
 
 // ─── Generic Cache Helpers ────────────────────────────────────────────────────
@@ -638,5 +654,65 @@ export const UserCache = {
    */
   async invalidateAuthResult(tokenJti: string): Promise<void> {
     await CacheClient.delete(CACHE_KEYS.authResult(tokenJti));
+  },
+};
+
+// ─── External API Cache Invalidation ─────────────────────────────────────────────
+
+export const ExternalApiCache = {
+  /**
+   * Invalidate Stripe customer cache
+   */
+  async invalidateStripeCustomer(customerId: string): Promise<void> {
+    await CacheClient.delete(CACHE_KEYS.stripeCustomer(customerId));
+  },
+
+  /**
+   * Invalidate Stripe subscription cache
+   */
+  async invalidateStripeSubscription(subscriptionId: string): Promise<void> {
+    await CacheClient.delete(CACHE_KEYS.stripeSubscription(subscriptionId));
+  },
+
+  /**
+   * Invalidate Stripe price cache
+   */
+  async invalidateStripePrice(priceId: string): Promise<void> {
+    await CacheClient.delete(CACHE_KEYS.stripePrice(priceId));
+  },
+
+  /**
+   * Invalidate Paddle customer cache
+   */
+  async invalidatePaddleCustomer(customerId: string): Promise<void> {
+    await CacheClient.delete(CACHE_KEYS.paddleCustomer(customerId));
+  },
+
+  /**
+   * Invalidate Paddle subscription cache
+   */
+  async invalidatePaddleSubscription(subscriptionId: string): Promise<void> {
+    await CacheClient.delete(CACHE_KEYS.paddleSubscription(subscriptionId));
+  },
+
+  /**
+   * Invalidate Paddle price cache
+   */
+  async invalidatePaddlePrice(priceId: string): Promise<void> {
+    await CacheClient.delete(CACHE_KEYS.paddlePrice(priceId));
+  },
+
+  /**
+   * Invalidate all external API caches for a provider
+   */
+  async invalidateAllStripe(): Promise<void> {
+    await CacheClient.deletePattern("api:stripe:*");
+  },
+
+  /**
+   * Invalidate all external API caches for a provider
+   */
+  async invalidateAllPaddle(): Promise<void> {
+    await CacheClient.deletePattern("api:paddle:*");
   },
 };

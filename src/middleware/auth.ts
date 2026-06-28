@@ -9,6 +9,7 @@ import { revokeAllRefreshTokens, isAccessTokenRevoked } from "../lib/auth/tokenR
 import { auditLog } from "../lib/auth/auditLog.js";
 import { AccountBannedError, EmailNotVerifiedError, ForbiddenError, InvalidTokenError, SessionHijackError, TokenExpiredError, TokenRevokedError, UnauthorizedError } from "../errors/AppError.js";
 import { setUserContext, addBreadcrumb, captureException } from "../lib/sentry.js";
+import { CacheClient, CACHE_KEYS, CACHE_TTL } from "../lib/redis/cache.client.js";
 
 export interface AuthRequest extends Request {
   user?: {
@@ -82,6 +83,21 @@ export const authenticate = async (
       }
       return next(new InvalidTokenError());
     }
+
+    // 2.5. Check authentication result cache (performance optimization)
+    if (decoded.jti) {
+      const cacheKey = CACHE_KEYS.authResult(decoded.jti);
+      const cachedResult = await CacheClient.get<{ userId: string; valid: boolean }>(cacheKey);
+      
+      if (cachedResult) {
+        console.log("✅ Auth result cache hit for token:", decoded.jti?.slice(0, 8));
+        // If cached result indicates invalid, return error immediately
+        if (!cachedResult.valid) {
+          return next(new InvalidTokenError("INVALID_TOKEN_CACHED"));
+        }
+        // If valid, continue to revocation check below
+      }
+    }
  
     // 3. Token version check
     if (decoded.version !== CURRENT_TOKEN_VERSION) {
@@ -130,30 +146,60 @@ export const authenticate = async (
       }
     }
  
-    // 7. DB user lookup
-    const user = await prisma.user.findUnique({
-      where: { id: decoded.sub },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        role: true,
-        emailVerified: true,
-        bannedAt: true,
-        banReason: true,
-      },
-    });
- 
+    // 7. DB user lookup with caching
+    const userProfileKey = CACHE_KEYS.userProfile(decoded.sub);
+    const cachedUser = await CacheClient.get<{
+      id: string;
+      email: string;
+      name: string | null;
+      role: string;
+      emailVerified: Date | null;
+      bannedAt: Date | null;
+      banReason: string | null;
+    }>(userProfileKey);
+
+    let user;
+    
+    if (cachedUser) {
+      console.log("✅ User profile cache hit for:", decoded.sub);
+      user = cachedUser;
+    } else {
+      console.log("❌ User profile cache miss for:", decoded.sub);
+      user = await prisma.user.findUnique({
+        where: { id: decoded.sub },
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          role: true,
+          emailVerified: true,
+          bannedAt: true,
+          banReason: true,
+        },
+      });
+
+      if (user) {
+        // Cache the user profile for future requests
+        await CacheClient.set(userProfileKey, user, CACHE_TTL.USER_PROFILE);
+      }
+    }
+
     if (!user) {
       return next(new UnauthorizedError("User not found", "USER_NOT_FOUND"));
     }
- 
+
     if (!user.emailVerified) {
       return next(new EmailNotVerifiedError());
     }
- 
+
     if (user.bannedAt) {
       return next(new AccountBannedError(user.banReason, user.bannedAt));
+    }
+
+    // 7.5. Cache successful authentication result
+    if (decoded.jti) {
+      const authResultKey = CACHE_KEYS.authResult(decoded.jti);
+      await CacheClient.set(authResultKey, { userId: decoded.sub, valid: true }, CACHE_TTL.AUTH_RESULT);
     }
  
     // 8. Attach user to request

@@ -23,6 +23,9 @@ import {
   generateTestToken,
 } from "../helpers/auth.js";
 
+import { mutateBanUser } from "../../admin/admin.mutation.js";
+import { createAdminUser } from "../factories/index.js";
+
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/v1/auth/exchange
 // ─────────────────────────────────────────────────────────────────────────────
@@ -384,17 +387,27 @@ describe("GET /api/v1/user/profile", () => {
     expect(res.body.code).toBe("EMAIL_NOT_VERIFIED");
   });
 
-  it("403 ACCOUNT_BANNED — banned user is rejected", async () => {
-    const user = await createUser({
-      bannedAt: new Date(),
-      banReason: "ToS violation",
-    });
+  it("403 ACCOUNT_BANNED — immediately after admin bans user (cache invalidation check)", async () => {
+    const user = await createUser();
+    const admin = await createAdminUser();
+    const headers = authHeaders(user);
 
-    const res = await request(app)
+    // 1. First request to populate the user profile cache
+    const res1 = await request(app)
       .get("/api/v1/user/profile")
-      .set(authHeaders(user));
+      .set(headers);
+    expect(res1.status).toBe(200);
 
-    expect(res.status).toBe(403);
-    expect(res.body.code).toBe("ACCOUNT_BANNED");
+    // 2. Admin bans the user (this should call UserCache.invalidateProfile)
+    await mutateBanUser(user.id, admin.id, "Integration test ban");
+
+    // 3. Second request should now fail because cache was invalidated and DB check finds bannedAt
+    const res2 = await request(app)
+      .get("/api/v1/user/profile")
+      .set(headers);
+
+    expect(res2.status).toBe(403);
+    expect(res2.body.code).toBe("ACCOUNT_BANNED");
   });
-});
+  });
+

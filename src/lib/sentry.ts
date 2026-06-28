@@ -45,16 +45,6 @@ export const initSentry = (): void => {
       return event;
     },
     
-    // Integrations
-    integrations: [
-      // Add HTTP tracing to capture network requests
-      new Sentry.HttpIntegration({
-        tracing: true,
-      }),
-      // Note: Express integration will be added after app initialization if needed
-      // Note: Profiling requires additional setup and dependencies
-    ],
-    
     // Attach stack traces to all errors
     attachStacktrace: true,
     
@@ -109,11 +99,13 @@ export const addBreadcrumb = (breadcrumb: Sentry.Breadcrumb): void => {
 };
 
 /**
- * Create a transaction for performance monitoring
+ * Create a span for performance monitoring
  */
-export const startTransaction = (name: string, op: string): Sentry.Transaction => {
-  return Sentry.startTransaction({
+export const startTransaction = (name: string, op: string): any => {
+  return Sentry.startSpan({
     name,
     op,
+  }, (span) => {
+    return span;
   });
 };

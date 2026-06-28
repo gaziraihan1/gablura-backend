@@ -95,7 +95,6 @@ export function getPoolMetrics(): PoolMetrics {
 }
 
 // ─── Primary client (read-write) ─────────────────────────────────────────────
-
 const PRIMARY_URL = process.env.DATABASE_URL;
 if (!PRIMARY_URL) throw new Error("DATABASE_URL env variable is required");
 

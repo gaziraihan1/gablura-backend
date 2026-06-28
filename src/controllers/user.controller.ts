@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth.js';
 import { prisma } from '../lib/prisma.js';
+import { UserCache } from '../lib/redis/cache.client.js';
 
 export const getUserProfile = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -119,6 +120,9 @@ export const updateUserProfile = async (req: AuthRequest, res: Response): Promis
         updatedAt: true,
       },
     });
+
+    // Invalidate user profile cache after successful update
+    await UserCache.invalidateProfile(req.user.id);
 
     res.status(200).json({
       success: true,

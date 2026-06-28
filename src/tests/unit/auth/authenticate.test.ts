@@ -35,10 +35,27 @@ vi.mock("../../../lib/auth/auditLog.js", () => ({
   auditLog: vi.fn(),
 }));
 
+vi.mock("../../../lib/redis/cache.client.js", () => ({
+  CacheClient: {
+    get: vi.fn(),
+    set: vi.fn(),
+  },
+  CACHE_KEYS: {
+    authResult: vi.fn((jti: string) => `auth:result:${jti}`),
+    userProfile: vi.fn((id: string) => `user:profile:${id}`),
+  },
+  CACHE_TTL: {
+    USER_PROFILE: 1800,
+    AUTH_RESULT: 300,
+  },
+}));
+
 import { authenticate, authorize } from "../../../middleware/auth.js";
 import { prisma } from "../../../lib/prisma.js";
+import { CacheClient } from "../../../lib/redis/cache.client.js";
 import {
   generateTestToken,
+
   expiredAuthHeaders,
   invalidAuthHeaders,
 } from "../../helpers/auth.js";
@@ -248,7 +265,49 @@ describe("authenticate middleware", () => {
     expect(err.code).toBe("ACCOUNT_BANNED");
   });
 
+  it("uses cached user profile and skips DB lookup", async () => {
+    const cachedUser = { ...mockUser, bannedAt: null };
+    vi.mocked(CacheClient.get).mockResolvedValueOnce(cachedUser);
+
+    const next = makeNext();
+    const req = makeReq(`Bearer ${generateTestToken(mockUser)}`);
+    await authenticate(req, makeRes(), next);
+
+    expect(next).toHaveBeenCalledOnce();
+    expect(prisma.user.findUnique).not.toHaveBeenCalled();
+    expect(req.user?.id).toBe(mockUser.id);
+  });
+
+  it("fast-fails when auth result cache indicates token is invalid", async () => {
+    vi.mocked(CacheClient.get).mockResolvedValueOnce({ valid: false });
+
+    const next = makeNext();
+    const req = makeReq(`Bearer ${generateTestToken(mockUser)}`);
+    await authenticate(req, makeRes(), next);
+
+    const err = getNextError(next);
+    expect(err.statusCode).toBe(401);
+    expect(err.code).toBe("INVALID_TOKEN");
+    expect(err.message).toBe("INVALID_TOKEN_CACHED");
+  });
+
+  it("caches successful authentication results", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValue(mockUser as any);
+    vi.mocked(CacheClient.get).mockResolvedValue(null); // Force miss
+
+    const next = makeNext();
+    const req = makeReq(`Bearer ${generateTestToken(mockUser)}`);
+    await authenticate(req, makeRes(), next);
+
+    expect(CacheClient.set).toHaveBeenCalledWith(
+      expect.stringContaining("auth:result:"),
+      { userId: mockUser.id, valid: true },
+      expect.any(Number)
+    );
+  });
+
   it("returns 401 SESSION_HIJACK_DETECTED when session binding fails", async () => {
+
     const fakeMetadata = JSON.stringify({
       ip: "1.2.3.4",
       userAgent: "OtherBrowser/1.0",

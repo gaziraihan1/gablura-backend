@@ -2,23 +2,12 @@ import { Router } from "express";
 import { prisma } from "../../lib/prisma.js";
 import { authenticate } from "../../middleware/auth.js";
 import { requireFocuraAdmin } from "../../middleware/focuraAdmin.js";
-import { ratelimit } from "../../lib/rateLimit.js";
+import { rateLimitMiddleware } from "../../middleware/rateLimiter.js";
 
 
 const router = Router();
 
-router.post("/", async (req, res) => {
-  const identifier = req.ip ?? "anonymous";
-
-  const { success } = await ratelimit.limit(identifier);
-
-  if (!success) {
-    return res.status(429).json({
-      success: false,
-      message: "Too many requests",
-    });
-  }
-
+router.post("/", rateLimitMiddleware(5, 600), async (req, res) => {
   const { email } = req.body;
 
   if (!email || typeof email !== "string") {

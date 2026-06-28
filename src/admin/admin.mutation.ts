@@ -1,5 +1,6 @@
 import { WorkspacePlan } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
+import { UserCache } from "../lib/redis/cache.client.js";
 
 // ─── Workspace mutations ───────────────────────────────────────────────────────
 
@@ -94,6 +95,9 @@ export async function mutateBanUser(
       bannedById: adminId,
     },
   });
+  
+  // Invalidate user profile cache after ban
+  await UserCache.invalidateProfile(userId);
 }
 
 export async function mutateUnbanUser(userId: string): Promise<void> {
@@ -105,4 +109,7 @@ export async function mutateUnbanUser(userId: string): Promise<void> {
       bannedById: null,
     },
   });
+  
+  // Invalidate user profile cache after unban
+  await UserCache.invalidateProfile(userId);
 }

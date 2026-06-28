@@ -18,11 +18,9 @@ import {
   MeetingVisibility,
   MeetingStatus,
   ProjectStatus,
-  JobDepartment,
   JobLocationType,
   JobType,
   JobExperience,
-  JobStatus,
 } from '@prisma/client';
 
   // ─────────────────────────────────────────────────────────────────────────────

@@ -16,14 +16,14 @@ export const rateLimitMiddleware = (max = 100, windowSeconds = 60) => {
 
       const pipe = redis.pipeline();
       pipe.zremrangebyscore(key, 0, windowStart);
-      pipe.zcard(key);
-      pipe.zadd(key, now, member); // ioredis: zadd(key, score, member)
+      pipe.zadd(key, now, member); // Add current request first
+      pipe.zcard(key);            // Then count total including current
       pipe.expire(key, windowSeconds);
       const results = await pipe.exec();
 
-      const count = (results?.[1]?.[1] as number) ?? 0;
+      const count = (results?.[2]?.[1] as number) ?? 0;
 
-      if (count >= max) {
+      if (count > max) {
         return res.status(429).json({ error: "Too many requests", retryAfter: windowSeconds });
       }
 

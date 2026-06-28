@@ -6,9 +6,15 @@
 // the data layer, not routing/middleware.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { prisma } from '../../../lib/prisma.js';
 import { WorkspacePlan, WorkspaceRole } from '@prisma/client';
+
+vi.mock('../../../lib/redis/cache.client.js', () => ({
+  UserCache: {
+    invalidateProfile: vi.fn().mockResolvedValue(undefined),
+  },
+}));
 
 // ── Factories ────────────────────────────────────────────────────────────────
 import {
@@ -30,6 +36,8 @@ import {
   mutateBanUser,
   mutateUnbanUser,
 } from '../../../admin/admin.mutation.js';
+
+import { UserCache } from '../../../lib/redis/cache.client.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Workspace mutations
@@ -195,9 +203,12 @@ describe('mutateBanUser', () => {
     expect(fresh?.bannedAt).toBeInstanceOf(Date);
     expect(fresh?.banReason).toBe('Spam activity');
     expect(fresh?.bannedById).toBe(admin.id);
+    
+    expect(UserCache.invalidateProfile).toHaveBeenCalledWith(user.id);
   });
 
   it('does not affect other users', async () => {
+
     const admin     = await createAdminUser();
     const target    = await createUser();
     const bystander = await createUser();
@@ -223,9 +234,12 @@ describe('mutateUnbanUser', () => {
     expect(fresh?.bannedAt).toBeNull();
     expect(fresh?.banReason).toBeNull();
     expect(fresh?.bannedById).toBeNull();
+    
+    expect(UserCache.invalidateProfile).toHaveBeenCalledWith(user.id);
   });
 
   it('is idempotent — unbanning an already-unbanned user does not throw', async () => {
+
     const user = await createUser();
     await expect(mutateUnbanUser(user.id)).resolves.not.toThrow();
   });
