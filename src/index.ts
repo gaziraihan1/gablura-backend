@@ -3,6 +3,7 @@ import cors from "cors";
 import dotenv from "dotenv";
 import helmet from "helmet";
 import { requireCsrfToken, getCsrfTokenHandler } from "./middleware/csrf.js";
+import { initSentry } from "./lib/sentry.js";
 
 import projectRoutes from "./modules/project/project.routes.js";
 import { taskRouter } from "./modules/task/index.js";
@@ -46,8 +47,12 @@ import { dbMonitoring, dbPoolGuard } from "./middleware/dbMonitoring.js";
 import { templatesRouter } from "./modules/templates/index.js";
 import { errorHandler, notFoundHandler } from "./errors/errorHandler.js";
 import { adminResourceRouter, publicResourceRouter } from "./modules/resource/index.js";
+import { captureException } from "./lib/sentry.js";
 
 dotenv.config();
+
+// Initialize Sentry for error tracking
+initSentry();
 
 const app: Application = express();
 const PORT = Number(process.env.PORT) || 5000;
@@ -337,11 +342,17 @@ process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 
 process.on("uncaughtException", (error) => {
   console.error("❌ Uncaught Exception:", error);
+  captureException(error, { type: "uncaughtException" });
   gracefulShutdown("UNCAUGHT_EXCEPTION");
 });
 
 process.on("unhandledRejection", (reason, promise) => {
   console.error("❌ Unhandled Rejection at:", promise, "reason:", reason);
+  const error = reason instanceof Error ? reason : new Error(String(reason));
+  captureException(error, { 
+    type: "unhandledRejection",
+    promise: String(promise) 
+  });
   gracefulShutdown("UNHANDLED_REJECTION");
 });
 

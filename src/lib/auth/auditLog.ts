@@ -134,7 +134,6 @@ export function auditLog(
   } else if (entry.severity === "warn") {
     console.warn(`[AUDIT:WARN] ${output}`);
   } else {
-    console.log(`[AUDIT:INFO] ${output}`);
   }
 
   // Production: await prisma.auditLog.create({ data: entry });

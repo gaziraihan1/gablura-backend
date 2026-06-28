@@ -52,14 +52,14 @@ describe("Public Job Endpoints", () => {
 
   it("GET /api/v1/jobs — 200 filters by department", async () => {
     const user = await createUser();
-    await createJobPosting(user.id, { status: JobStatus.OPEN, department: "Engineering" });
-    await createJobPosting(user.id, { status: JobStatus.OPEN, department: "Sales" });
+    await createJobPosting(user.id, { status: JobStatus.OPEN, department: "ENGINEERING" });
+    await createJobPosting(user.id, { status: JobStatus.OPEN, department: "SALES" });
 
-    const res = await request(app).get("/api/v1/jobs?department=Engineering");
+    const res = await request(app).get("/api/v1/jobs?department=ENGINEERING");
 
     expect(res.status).toBe(200);
     expect(res.body.jobs).toHaveLength(1);
-    expect(res.body.jobs[0].department).toBe("Engineering");
+    expect(res.body.jobs[0].department).toBe("ENGINEERING");
   });
 
   it("GET /api/v1/jobs/:slug — 200 returns job details if open", async () => {
@@ -129,8 +129,9 @@ describe("Admin Job Endpoints", () => {
       .set(await authWithCsrfHeaders(admin))
       .send({
         title: "Admin Created Job",
-        description: "Great opportunity!",
-        department: "Engineering",
+        description: "Great opportunity to join our team and work on exciting projects!",
+        requirements: "Experience with TypeScript and Node.js is required",
+        department: "ENGINEERING",
         location: "Remote",
         locationType: "REMOTE",
         type: "FULL_TIME",

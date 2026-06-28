@@ -99,7 +99,7 @@ export const CalendarInsightsService = {
     const workDayNumbers = getWorkDayNumbers(workDays);
 
     const workdayAggs = aggregates.filter((agg) =>
-      workDayNumbers.includes(agg.date.getDay()),
+      workDayNumbers.includes(new Date(agg.date).getDay()),
     );
 
     const heavyDays = workdayAggs.filter((agg) => agg.workloadScore > 1.2);

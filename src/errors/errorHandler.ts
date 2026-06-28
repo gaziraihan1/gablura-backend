@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import { AppError, ValidationError, RateLimitError, SessionHijackError, NotFoundError } from "./AppError.js";
+import { captureException } from "../lib/sentry.js";
 
 /**
  * Global error handler — mount LAST in your Express app:
@@ -86,6 +87,20 @@ export const errorHandler = (
 
   // Log non-operational errors loudly — these are bugs
   console.error("🔴 Unhandled error:", err);
+
+  // Capture unhandled errors in Sentry
+  if (err instanceof Error) {
+    captureException(err, {
+      request: {
+        method: req.method,
+        url: req.url,
+        headers: {
+          'user-agent': req.headers['user-agent'],
+          'content-type': req.headers['content-type'],
+        },
+      },
+    });
+  }
 
   res.status(500).json({
     success: false,

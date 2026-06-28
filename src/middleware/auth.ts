@@ -8,6 +8,7 @@ import { getClientIp, SessionMetadata, validateSessionBinding } from "../lib/aut
 import { revokeAllRefreshTokens, isAccessTokenRevoked } from "../lib/auth/tokenRevocation.js";
 import { auditLog } from "../lib/auth/auditLog.js";
 import { AccountBannedError, EmailNotVerifiedError, ForbiddenError, InvalidTokenError, SessionHijackError, TokenExpiredError, TokenRevokedError, UnauthorizedError } from "../errors/AppError.js";
+import { setUserContext, addBreadcrumb, captureException } from "../lib/sentry.js";
 
 export interface AuthRequest extends Request {
   user?: {
@@ -164,10 +165,38 @@ export const authenticate = async (
       tokenJti: decoded.jti,
       sessionId: decoded.sessionId,
     };
- 
+
+    // Set user context in Sentry for better error tracking
+    setUserContext({
+      id: user.id,
+      email: user.email,
+      username: user.name || undefined,
+    });
+
+    // Add breadcrumb for authentication success
+    addBreadcrumb({
+      category: "auth",
+      message: "User authenticated successfully",
+      level: "info",
+      data: {
+        userId: user.id,
+        email: user.email,
+        role: user.role,
+      },
+    });
+
     next();
   } catch (err) {
     console.error("🔴  Unexpected authentication error:", err);
+    
+    // Capture authentication errors in Sentry
+    if (err instanceof Error) {
+      captureException(err, {
+        context: "authentication",
+        userId: req.user?.id,
+      });
+    }
+    
     next(err); // Let errorHandler deal with truly unexpected errors
   }
 };

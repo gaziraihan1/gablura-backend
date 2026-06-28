@@ -16,57 +16,60 @@ vi.mock('node-cron', () => ({
 // ── MOCK: ioredis ─────────────────────────────────────────────────────────────
 const redisStore = new Map<string, string>();
 
-const createInMemoryRedisMock = () => ({
-  get:    vi.fn(async (key: string) => redisStore.get(key) ?? null),
-  set:    vi.fn(async (key: string, value: string) => { redisStore.set(key, value); return 'OK'; }),
-  setex:  vi.fn(async (key: string, _ttl: number, value: string) => { redisStore.set(key, value); return 'OK'; }),
-  del:    vi.fn(async (...keys: string[]) => {
-    let deleted = 0;
-    for (const key of keys) if (redisStore.delete(key)) deleted++;
-    return deleted;
-  }),
-  keys:   vi.fn(async (pattern: string) => {
-    if (!pattern.includes('*')) return redisStore.has(pattern) ? [pattern] : [];
-    const regex = new RegExp(`^${pattern.replaceAll('*', '.*')}$`);
-    return [...redisStore.keys()].filter((k) => regex.test(k));
-  }),
-  decr:   vi.fn().mockResolvedValue(0),
-  incr:   vi.fn().mockResolvedValue(1),
-  incrby: vi.fn(async (key: string, n: number) => {
-    const cur = parseInt(redisStore.get(key) ?? '0', 10);
-    const next = cur + n;
-    redisStore.set(key, String(next));
-    return next;
-  }),
-  decrby: vi.fn(async (key: string, n: number) => {
-    const cur = parseInt(redisStore.get(key) ?? '0', 10);
-    const next = Math.max(0, cur - n);
-    redisStore.set(key, String(next));
-    return next;
-  }),
-  zrem:   vi.fn().mockResolvedValue(1),
-  zcard:  vi.fn().mockResolvedValue(0),
-  zadd:   vi.fn().mockResolvedValue(1),
-  expire: vi.fn().mockResolvedValue(1),
-  sadd:   vi.fn().mockResolvedValue(1),
-  srem:   vi.fn().mockResolvedValue(1),
-  smembers: vi.fn().mockResolvedValue([]),
-  zremrangebyscore: vi.fn().mockResolvedValue(0),
-  eval:   vi.fn().mockResolvedValue(1),
-  pipeline: vi.fn().mockReturnValue({
-    get:              vi.fn().mockReturnThis(),
-    set:              vi.fn().mockReturnThis(),
-    zadd:             vi.fn().mockReturnThis(),
-    zcard:            vi.fn().mockReturnThis(),
-    zremrangebyscore: vi.fn().mockReturnThis(),
-    expire:           vi.fn().mockReturnThis(),
-    incr:             vi.fn().mockReturnThis(),
-    exec:             vi.fn().mockResolvedValue([[null, 0], [null, 1], [null, 1], [null, 1]]),
-  }),
-  on:     vi.fn().mockReturnThis(),
-  quit:   vi.fn().mockResolvedValue('OK'),
-  status: 'ready',
-});
+const createInMemoryRedisMock = () => {
+  const mock = {
+    get:    vi.fn(async (key: string) => redisStore.get(key) ?? null),
+    set:    vi.fn(async (key: string, value: string) => { redisStore.set(key, value); return 'OK'; }),
+    setex:  vi.fn(async (key: string, _ttl: number, value: string) => { redisStore.set(key, value); return 'OK'; }),
+    del:    vi.fn(async (...keys: string[]) => {
+      let deleted = 0;
+      for (const key of keys) if (redisStore.delete(key)) deleted++;
+      return deleted;
+    }),
+    keys:   vi.fn(async (pattern: string) => {
+      if (!pattern.includes('*')) return redisStore.has(pattern) ? [pattern] : [];
+      const regex = new RegExp(`^${pattern.replaceAll('*', '.*')}$`);
+      return [...redisStore.keys()].filter((k) => regex.test(k));
+    }),
+    decr:   vi.fn().mockResolvedValue(0),
+    incr:   vi.fn().mockResolvedValue(1),
+    incrby: vi.fn(async (key: string, n: number) => {
+      const cur = parseInt(redisStore.get(key) ?? '0', 10);
+      const next = cur + n;
+      redisStore.set(key, String(next));
+      return next;
+    }),
+    decrby: vi.fn(async (key: string, n: number) => {
+      const cur = parseInt(redisStore.get(key) ?? '0', 10);
+      const next = Math.max(0, cur - n);
+      redisStore.set(key, String(next));
+      return next;
+    }),
+    zrem:   vi.fn().mockResolvedValue(1),
+    zcard:  vi.fn().mockResolvedValue(0),
+    zadd:   vi.fn().mockResolvedValue(1),
+    expire: vi.fn().mockResolvedValue(1),
+    sadd:   vi.fn().mockResolvedValue(1),
+    srem:   vi.fn().mockResolvedValue(1),
+    smembers: vi.fn().mockResolvedValue([]),
+    zremrangebyscore: vi.fn().mockResolvedValue(0),
+    eval:   vi.fn().mockResolvedValue(1),
+    pipeline: vi.fn().mockReturnValue({
+      get:              vi.fn().mockReturnThis(),
+      set:              vi.fn().mockReturnThis(),
+      zadd:             vi.fn().mockReturnThis(),
+      zcard:            vi.fn().mockReturnThis(),
+      zremrangebyscore: vi.fn().mockReturnThis(),
+      expire:           vi.fn().mockReturnThis(),
+      incr:             vi.fn().mockReturnThis(),
+      exec:             vi.fn().mockResolvedValue([[null, 0], [null, 1], [null, 1], [null, 1]]),
+    }),
+    on:     vi.fn().mockReturnThis(),
+    quit:   vi.fn().mockResolvedValue('OK'),
+    status: 'ready',
+  };
+  return mock;
+};
 
 const RedisMock = vi.fn().mockImplementation(() => createInMemoryRedisMock());
 
@@ -101,11 +104,11 @@ vi.mock('@upstash/ratelimit', () => {
   return { Ratelimit: RatelimitMock };
 });
 
-// ── MOCK: lib/redis/redis.client.ts ───────────────────────────────────────────
+// ── MOCK: redis/redis.client.ts ───────────────────────────────────────────
 const noopRedisClient = createInMemoryRedisMock();
 
-vi.mock('../lib/redis/redis.client.js', () => ({
-  getRedisClient: vi.fn().mockReturnValue(noopRedisClient),
+vi.mock('../redis/redis.client.js', () => ({
+  getRedisClient: vi.fn(() => noopRedisClient),
   BILLING_CACHE: {
     getSubscription:     vi.fn().mockResolvedValue(null),
     setSubscription:     vi.fn().mockResolvedValue(undefined),
@@ -171,7 +174,7 @@ const TRUNCATE_ORDER = [
   'CalendarDayAggregate', 'GoalCheckpoint', 'SystemCalendarEvent', 'UserCapacity',
   'UserWorkSchedule', 'UploadRateLimit', 'File', 'Activity', 'Notification',
   'Task', 'Label', 'FeatureRequest', 'Announcement', 'Meeting', 'Project',
-  'Invoice', 'Subscription', 'Payment', 'UsageRecord', 'BillingEvent',
+  'JobPosting', 'Invoice', 'Subscription', 'Payment', 'UsageRecord', 'BillingEvent',
   'WorkspaceInvitation', 'WorkspaceMember', 'Workspace', 'RefreshToken',
   'Session', 'Account', 'VerificationToken', 'PasswordResetToken', 'User', 'Plan',
 ] as const;

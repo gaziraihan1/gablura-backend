@@ -13,6 +13,10 @@ import { createUser, createJobPosting } from '../../factories/index.js';
 import { JobStatus } from '@prisma/client';
 
 describe('JobService', () => {
+  beforeEach(async () => {
+    await prisma.jobPosting.deleteMany();
+  });
+
   it('listOpenJobs should return only open jobs', async () => {
     const user = await createUser();
     await createJobPosting(user.id, { status: JobStatus.OPEN, title: 'Open Job 1' });
@@ -39,7 +43,7 @@ describe('JobService', () => {
       department: 'ENGINEERING',
     });
 
-    expect(result.jobs).toHaveLength(3);
+    expect(result.jobs).toHaveLength(1);
     expect(result.jobs[0].department).toBe('ENGINEERING');
   });
 
@@ -102,7 +106,7 @@ describe('JobService', () => {
 
   it('createJob should handle duplicate slugs by appending a number', async () => {
     const user = await createUser();
-    await createJobPosting(user.id, { title: 'Software Engineer' });
+    await createJobPosting(user.id, { title: 'Software Engineer', slug: 'software-engineer' });
     
     const jobData = {
       title: 'Software Engineer',
@@ -158,7 +162,7 @@ describe('JobService', () => {
     
     const result = await listAllJobs();
     console.log(result)
-    expect(result.jobs).toHaveLength(18);
+    expect(result.jobs).toHaveLength(2);
   });
 
   it('togglePin should toggle the isPinned status', async () => {

@@ -1,5 +1,5 @@
 // scripts/fix-invoice-workspace.ts
-import { prisma } from '../src/index.js';
+import { prisma } from '../src/index';
 
 async function fixInvoices() {
   const invoices = await prisma.invoice.findMany({
