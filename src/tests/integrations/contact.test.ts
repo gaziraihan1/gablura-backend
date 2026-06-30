@@ -8,7 +8,7 @@
 // The rate-limit middleware skips in NODE_ENV=test so we never hit 429 here.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterAll, beforeAll } from 'vitest';
 import request from 'supertest';
 import app from '../../app.js';
 import { prisma } from '../../lib/prisma.js';
@@ -17,6 +17,23 @@ import { authHeaders } from '../helpers/auth.js';
 import { registerFocuraAdmin } from '../factories/index.js';
 
 const BASE = '/api/v1/contact';
+
+// Preserve the original admin ID list for the entire suite and restore it after
+// all tests. Additionally, clear the admin IDs before each individual test to
+// avoid cross‑test contamination.
+let _originalAdminIds: string | undefined;
+
+beforeAll(() => {
+  _originalAdminIds = process.env.FOCURA_ADMIN_IDS;
+});
+
+afterAll(() => {
+  process.env.FOCURA_ADMIN_IDS = _originalAdminIds ?? '';
+});
+
+beforeEach(() => {
+  process.env.FOCURA_ADMIN_IDS = '';
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared valid payload

@@ -22,6 +22,7 @@ vi.mock("../../../lib/prisma.js", () => ({
     },
     project: {
       findFirst: vi.fn(),
+      findUnique: vi.fn(),
     },
     workspace: {
       findUnique: vi.fn(),
@@ -247,7 +248,7 @@ describe("TaskMutation", () => {
       vi.mocked(prisma.task.update).mockResolvedValue({ id: "t1" } as any);
 
       const newAssignees = ["u2", "u3"];
-      await TaskMutation.updateTask("t1", "u1", { assignees: newAssignees } as any);
+      await TaskMutation.updateTask("t1", "u1", { assigneeIds: newAssignees } as any);
 
       expect(prisma.taskAssignee.deleteMany).toHaveBeenCalledWith(expect.objectContaining({
         where: { taskId: "t1" },
@@ -267,7 +268,7 @@ describe("TaskMutation", () => {
       vi.mocked(prisma.task.update).mockResolvedValue({ id: "t1" } as any);
 
       const newLabels = ["l1", "l2"];
-      await TaskMutation.updateTask("t1", "u1", { labels: newLabels } as any);
+      await TaskMutation.updateTask("t1", "u1", { labelIds: newLabels } as any);
 
       expect(prisma.taskLabel.deleteMany).toHaveBeenCalledWith(expect.objectContaining({
         where: { taskId: "t1" },
@@ -284,7 +285,7 @@ describe("TaskMutation", () => {
         projectId: "p1",
         assignees: [],
       } as any);
-      vi.mocked(prisma.project.findFirst).mockResolvedValue({ workspaceId: "ws2" } as any);
+      vi.mocked(prisma.project.findUnique).mockResolvedValue({ workspaceId: "ws2" } as any);
       vi.mocked(prisma.workspace.findUnique).mockResolvedValue({ plan: "PRO" } as any);
       vi.mocked(prisma.workspaceMember.count).mockResolvedValue(5);
       vi.mocked(checkAndConsumeWorkspaceQuota).mockResolvedValue({ allowed: true } as any);

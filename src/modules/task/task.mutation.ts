@@ -233,6 +233,7 @@ export const TaskMutation = {
     const updateData: any = {};
     if (data.title)                     updateData.title           = data.title;
     if (data.description !== undefined) updateData.description     = data.description;
+    if (data.projectId !== undefined)   updateData.projectId       = data.projectId;
     if (data.status)                    updateData.status          = data.status as any;
     if (data.priority)                  updateData.priority        = data.priority as any;
     if (data.dueDate !== undefined)     updateData.dueDate         = data.dueDate ? new Date(data.dueDate) : null;
@@ -244,6 +245,25 @@ export const TaskMutation = {
     if (data.energyType !== undefined)     updateData.energyType     = data.energyType as any;
     if (data.distractionCost !== undefined) updateData.distractionCost = data.distractionCost;
     if (data.intent !== undefined)         updateData.intent         = data.intent as any;
+
+    if (data.projectId && data.projectId !== existingTask.projectId) {
+      const newProject = await prisma.project.findUnique({
+        where: { id: data.projectId },
+        select: { workspaceId: true },
+      });
+      if (!newProject) throw new NotFoundError('Project');
+
+      const workspaceId = newProject.workspaceId;
+      const [plan, memberCount] = await Promise.all([
+        resolveWorkspacePlan(workspaceId),
+        prisma.workspaceMember.count({ where: { workspaceId } }),
+      ]);
+
+      const quota = await checkAndConsumeWorkspaceQuota(
+        userId, workspaceId, plan, memberCount,
+      );
+      if (!quota.allowed) throw new BadRequestError(quota.reason ?? 'Workspace task limit reached');
+    }
 
     const task = await prisma.task.update({
       where:   { id: taskId },

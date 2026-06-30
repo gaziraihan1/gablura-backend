@@ -94,6 +94,7 @@ describe('GET /api/v1/activities', () => {
         entityType: 'TASK',
         entityId: 'test',
         createdAt: yesterday,
+        workspaceSlug: workspace.slug
       } as any,
     });
 

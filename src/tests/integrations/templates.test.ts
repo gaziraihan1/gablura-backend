@@ -6,11 +6,9 @@ import { prisma } from "../../lib/prisma.js";
 import { createUser } from "../factories/index.js";
 import { authHeaders, TestUser } from "../helpers/auth.js";
 import { getRedisClient } from "../../redis/redis.client.js";
+import * as adminConfig from "../../config/admin.config.js";
 
 let adminUserId: string;
-vi.mock("../../config/admin.config.js", () => ({
-  isFocuraAdmin: vi.fn().mockImplementation((userId: string) => userId === adminUserId),
-}));
 
 describe("Templates Module Integration Tests", () => {
   let adminUser: TestUser;
@@ -18,6 +16,13 @@ describe("Templates Module Integration Tests", () => {
   beforeEach(async () => {
     adminUser = await createUser({ role: "ADMIN" });
     adminUserId = adminUser.id;
+    vi.spyOn(adminConfig, "isFocuraAdmin").mockImplementation((userId: string) => {
+      return userId === adminUserId;
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   describe("POST /api/v1/templates", () => {
@@ -105,8 +110,6 @@ describe("Templates Module Integration Tests", () => {
 
       expect(res.status).toBe(429);
       expect(res.body.error).toBe("Too many requests");
-
-      vi.restoreAllMocks();
     });
   });
 

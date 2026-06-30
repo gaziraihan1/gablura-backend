@@ -19,16 +19,8 @@ export const requireFocuraAdmin = (
     });
   }
 
-  // First, allow any user that has the explicit ADMIN role. This mirrors the
-  // behavior of many applications where role information is baked into the JWT
-  // payload. It also ensures the test suite works even when the admin config
-  // mock is applied after the module has been loaded.
-  if (userRole === 'ADMIN') {
-    return next();
-  }
-
-  // Fallback to the environment‑based admin list.
-  if (!isFocuraAdmin(userId)) {
+  // Require both ADMIN role AND FOCURA_ADMIN_IDS registration
+  if (userRole !== 'ADMIN' || !isFocuraAdmin(userId)) {
     return res.status(403).json({
       success: false,
       message: 'Forbidden: Admin access required',

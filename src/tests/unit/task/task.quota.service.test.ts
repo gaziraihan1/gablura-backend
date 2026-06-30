@@ -87,7 +87,7 @@ describe('Task Quota Service', () => {
     it('should allow unlimited for ENTERPRISE plan', async () => {
       const result = await checkAndConsumeWorkspaceQuota('user-1', 'ws-1', 'ENTERPRISE', 1);
       expect(result.allowed).toBe(true);
-      expect(result.isUnlimited).toBeUndefined(); // based on QuotaCheckResult type
+      expect(result.isUnlimited).toBe(true);
     });
 
     it('should deny if rate limit reached', async () => {

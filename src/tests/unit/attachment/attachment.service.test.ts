@@ -57,18 +57,16 @@ vi.mock('../../../modules/attachment/attachment.access.js', () => ({
 import { AttachmentAccess } from '../../../modules/attachment/attachment.access.js';
 
 // ── Repository ───────────────────────────────────────────────────────────────
-// Note: AttachmentService imports AttachmentRepository internally, so we need to mock it
-// at the module level before importing AttachmentService
-const mockAttachmentRepository = {
-  aggregateWorkspaceSize: vi.fn().mockResolvedValue({ _sum: { size: 0 } }),
-  createFile:            vi.fn(),
-  deleteFile:             vi.fn(),
-  createActivity:         vi.fn().mockResolvedValue(undefined),
-};
-
 vi.mock('../../../modules/attachment/attachment.repository.js', () => ({
-  AttachmentRepository: mockAttachmentRepository,
+  AttachmentRepository: {
+    aggregateWorkspaceSize: vi.fn().mockResolvedValue({ _sum: { size: 0 } }),
+    createFile:            vi.fn(),
+    deleteFile:             vi.fn(),
+    createActivity:         vi.fn().mockResolvedValue(undefined),
+  },
 }));
+import { AttachmentRepository } from '../../../modules/attachment/attachment.repository.js';
+const mockAttachmentRepository = AttachmentRepository as any;
 
 // ── Storage provider ──────────────────────────────────────────────────────────
 vi.mock('../../../modules/attachment/storage.provider.js', () => ({

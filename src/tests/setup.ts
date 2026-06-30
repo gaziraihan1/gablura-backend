@@ -165,6 +165,15 @@ vi.mock('stripe', () => ({
   })),
 }));
 
+// ── MOCK: nodemailer ────────────────────────────────────────────────────────────
+vi.mock('nodemailer', () => ({
+  default: {
+    createTransport: vi.fn().mockReturnValue({
+      sendMail: vi.fn().mockResolvedValue({ messageId: 'test-message-id' }),
+    }),
+  },
+}));
+
 // ── Table truncation ──────────────────────────────────────────────────────────
 const TRUNCATE_ORDER = [
   'CommentMention', 'Comment', 'TaskLabel', 'TaskAssignee', 'TaskDependency',
