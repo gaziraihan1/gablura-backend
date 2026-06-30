@@ -60,16 +60,50 @@ describe('GET /api/v1/activities', () => {
     expect(res.body.data.length).toBeGreaterThan(0);
   });
 
-  it('200 — supports filters (workspaceId)', async () => {
-    await createActivity(user.id, workspace.id);
+  it('200 — supports multiple filters (workspaceId, action, entityType)', async () => {
+    await createActivity(user.id, workspace.id, {
+      action: 'CREATED',
+      entityType: 'TASK',
+    });
 
     const res = await request(app)
       .get('/api/v1/activities')
-      .query({ workspaceId: workspace.id })
+      .query({ 
+        workspaceId: workspace.id,
+        action: 'CREATED',
+        entityType: 'TASK'
+      })
       .set(authHeaders(user));
 
     expect(res.status).toBe(200);
-    expect(res.body.data.every((a: any) => a.workspaceId === workspace.id)).toBe(true);
+    expect(res.body.data.length).toBeGreaterThan(0);
+    expect(res.body.data[0].action).toBe('CREATED');
+    expect(res.body.data[0].entityType).toBe('TASK');
+  });
+
+  it('200 — supports date filters', async () => {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const dateStr = yesterday.toISOString();
+
+    await prisma.activity.create({
+      data: {
+        userId: user.id,
+        workspaceId: workspace.id,
+        action: 'CREATED',
+        entityType: 'TASK',
+        entityId: 'test',
+        createdAt: yesterday,
+      } as any,
+    });
+
+    const res = await request(app)
+      .get('/api/v1/activities')
+      .query({ startDate: dateStr })
+      .set(authHeaders(user));
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.length).toBeGreaterThan(0);
   });
 
   it('401 — unauthenticated', async () => {
@@ -94,7 +128,28 @@ describe('GET /api/v1/activities/workspace/:workspaceId', () => {
     expect(res.body.data.length).toBeGreaterThan(0);
   });
 
-  it('403 — non-member cannot access', async () => {
+  it('200 — anyone can access public workspace activities', async () => {
+    await prisma.workspace.update({
+      where: { id: workspace.id },
+      data: { isPublic: true },
+    });
+    await createActivity(user.id, workspace.id);
+
+    const other = await createUser();
+
+    const res = await request(app)
+      .get(`/api/v1/activities/workspace/${workspace.id}`)
+      .set(authHeaders(other));
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.length).toBeGreaterThan(0);
+  });
+
+  it('403 — non-member cannot access private workspace', async () => {
+    await prisma.workspace.update({
+      where: { id: workspace.id },
+      data: { isPublic: false },
+    });
     const other = await createUser();
 
     const res = await request(app)

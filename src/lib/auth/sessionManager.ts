@@ -44,12 +44,16 @@ export async function getUserActiveSessions(
   for (const sessionId of sessionIds) {
     const metadata = await redis.get(`session:metadata:${sessionId}`);
     if (metadata) {
-      const parsed = JSON.parse(metadata);
-      sessions.push({
-        sessionId,
-        deviceInfo: parsed.userAgent,
-        lastActivity: new Date(parsed.lastActivity).toISOString(),
-      });
+      try {
+        const parsed = JSON.parse(metadata);
+        sessions.push({
+          sessionId,
+          deviceInfo: parsed.userAgent,
+          lastActivity: new Date(parsed.lastActivity).toISOString(),
+        });
+      } catch {
+        // Skip session if metadata is corrupted
+      }
     }
   }
 

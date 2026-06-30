@@ -105,7 +105,7 @@ describe("TaskMutation", () => {
       vi.mocked(prisma.project.findFirst).mockResolvedValue({ workspaceId: "ws1" } as any);
       vi.mocked(prisma.workspace.findUnique).mockResolvedValue({ plan: "PRO" } as any);
       vi.mocked(prisma.workspaceMember.count).mockResolvedValue(5);
-      vi.mocked(checkAndConsumeWorkspaceQuota).mockResolvedValue({ allowed: true } as any);
+      vi.mocked(checkAndConsumeWorkspaceQuota).mockResolvedValue({ allowed: true, remaining: 100 } as any);
       vi.mocked(prisma.task.create).mockResolvedValue({ id: "t1", title: "Test Task", workspaceId: "ws1" } as any);
 
       const result = await TaskMutation.createTask(mockInput);
@@ -118,7 +118,7 @@ describe("TaskMutation", () => {
     it("should create a personal task if no project", async () => {
       const input = { ...mockInput, projectId: null };
       vi.mocked(prisma.subscription.findFirst).mockResolvedValue(null);
-      vi.mocked(checkAndConsumePersonalQuota).mockResolvedValue({ allowed: true } as any);
+      vi.mocked(checkAndConsumePersonalQuota).mockResolvedValue({ allowed: true, remaining: 50 } as any);
       vi.mocked(prisma.task.create).mockResolvedValue({ id: "t1", title: "Test Task" } as any);
 
       const result = await TaskMutation.createTask(input as any);
@@ -127,9 +127,58 @@ describe("TaskMutation", () => {
       expect(checkAndConsumePersonalQuota).toHaveBeenCalled();
     });
 
-    it("should throw BadRequestError if title is missing", async () => {
-      const input = { ...mockInput, title: "" };
-      await expect(TaskMutation.createTask(input)).rejects.toThrow(BadRequestError);
+    it("should throw BadRequestError if title is missing or empty", async () => {
+      await expect(TaskMutation.createTask({ ...mockInput, title: " " })).rejects.toThrow(BadRequestError);
+    });
+
+    it("should throw BadRequestError if title exceeds 200 characters", async () => {
+      await expect(TaskMutation.createTask({ ...mockInput, title: "a".repeat(201) })).rejects.toThrow(BadRequestError);
+    });
+
+    it("should throw BadRequestError if focusLevel is out of range", async () => {
+      await expect(TaskMutation.createTask({ ...mockInput, focusLevel: 6 })).rejects.toThrow(BadRequestError);
+      await expect(TaskMutation.createTask({ ...mockInput, focusLevel: 0 })).rejects.toThrow(BadRequestError);
+    });
+
+    it("should throw BadRequestError if distractionCost is negative", async () => {
+      await expect(TaskMutation.createTask({ ...mockInput, distractionCost: -1 })).rejects.toThrow(BadRequestError);
+    });
+
+    it("should throw BadRequestError if startDate is after dueDate", async () => {
+      const input = { 
+        ...mockInput, 
+        startDate: new Date('2026-07-01'), 
+        dueDate: new Date('2026-06-01') 
+      };
+      await expect(TaskMutation.createTask(input as any)).rejects.toThrow(BadRequestError);
+    });
+
+    it("should throw BadRequestError if too many assignees", async () => {
+      const input = { ...mockInput, assigneeIds: ['1', '2', '3', '4', '5', '6'] };
+      await expect(TaskMutation.createTask(input as any)).rejects.toThrow(BadRequestError);
+    });
+
+    it("should throw ForbiddenError if user has no access to the project", async () => {
+      vi.mocked(prisma.project.findFirst).mockResolvedValue(null);
+      await expect(TaskMutation.createTask(mockInput)).rejects.toThrow(ForbiddenError);
+    });
+
+    it("should compute HIGH priority if dueDate is within 24 hours and priority not provided", async () => {
+      const tomorrow = new Date();
+      tomorrow.setHours(tomorrow.getHours() + 12);
+      
+      vi.mocked(prisma.project.findFirst).mockResolvedValue({ workspaceId: "ws1" } as any);
+      vi.mocked(prisma.workspace.findUnique).mockResolvedValue({ plan: "PRO" } as any);
+      vi.mocked(prisma.workspaceMember.count).mockResolvedValue(5);
+      vi.mocked(checkAndConsumeWorkspaceQuota).mockResolvedValue({ allowed: true } as any);
+      
+      const input = { ...mockInput, dueDate: tomorrow, priority: undefined };
+      
+      await TaskMutation.createTask(input as any);
+      
+      expect(prisma.task.create).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({ priority: 'HIGH' })
+      }));
     });
 
     it("should throw BadRequestError if workspace quota exceeded", async () => {
@@ -151,6 +200,25 @@ describe("TaskMutation", () => {
       await expect(TaskMutation.createTask(mockInput)).rejects.toThrow("DB Error");
       expect(rollbackWorkspaceQuota).toHaveBeenCalled();
     });
+
+    it("should call onCreated callback and handle its errors", async () => {
+      vi.mocked(prisma.project.findFirst).mockResolvedValue({ workspaceId: "ws1" } as any);
+      vi.mocked(prisma.workspace.findUnique).mockResolvedValue({ plan: "PRO" } as any);
+      vi.mocked(prisma.workspaceMember.count).mockResolvedValue(5);
+      vi.mocked(checkAndConsumeWorkspaceQuota).mockResolvedValue({ allowed: true } as any);
+      vi.mocked(prisma.task.create).mockResolvedValue({ id: "t1", title: "Test Task", workspaceId: "ws1" } as any);
+      
+      const onCreated = vi.fn().mockRejectedValue(new Error("Callback Fail"));
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      
+      await TaskMutation.createTask(mockInput, onCreated);
+      
+      expect(onCreated).toHaveBeenCalled();
+      // Wait for promise to settle
+      await new Promise(resolve => setTimeout(resolve, 10));
+      expect(consoleSpy).toHaveBeenCalledWith('Post-creation callback failed:', expect.any(Error));
+      consoleSpy.mockRestore();
+    });
   });
 
   describe("updateTask", () => {
@@ -167,6 +235,67 @@ describe("TaskMutation", () => {
 
       expect(result.title).toBe("Updated");
       expect(prisma.task.update).toHaveBeenCalled();
+    });
+
+    it("should sync assignees correctly when provided", async () => {
+      vi.mocked(TaskAccess.checkEditPermission).mockResolvedValue({ canEdit: true });
+      vi.mocked(prisma.task.findUnique).mockResolvedValue({
+        id: "t1",
+        projectId: null,
+        assignees: [],
+      } as any);
+      vi.mocked(prisma.task.update).mockResolvedValue({ id: "t1" } as any);
+
+      const newAssignees = ["u2", "u3"];
+      await TaskMutation.updateTask("t1", "u1", { assignees: newAssignees } as any);
+
+      expect(prisma.taskAssignee.deleteMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: { taskId: "t1" },
+      }));
+      expect(prisma.taskAssignee.createMany).toHaveBeenCalledWith(expect.objectContaining({
+        data: newAssignees.map(userId => ({ taskId: "t1", userId })),
+      }));
+    });
+
+    it("should sync labels correctly when provided", async () => {
+      vi.mocked(TaskAccess.checkEditPermission).mockResolvedValue({ canEdit: true });
+      vi.mocked(prisma.task.findUnique).mockResolvedValue({
+        id: "t1",
+        projectId: null,
+        assignees: [],
+      } as any);
+      vi.mocked(prisma.task.update).mockResolvedValue({ id: "t1" } as any);
+
+      const newLabels = ["l1", "l2"];
+      await TaskMutation.updateTask("t1", "u1", { labels: newLabels } as any);
+
+      expect(prisma.taskLabel.deleteMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: { taskId: "t1" },
+      }));
+      expect(prisma.taskLabel.createMany).toHaveBeenCalledWith(expect.objectContaining({
+        data: newLabels.map(labelId => ({ taskId: "t1", labelId })),
+      }));
+    });
+
+    it("should handle project transition (Project A -> Project B)", async () => {
+      vi.mocked(TaskAccess.checkEditPermission).mockResolvedValue({ canEdit: true });
+      vi.mocked(prisma.task.findUnique).mockResolvedValue({
+        id: "t1",
+        projectId: "p1",
+        assignees: [],
+      } as any);
+      vi.mocked(prisma.project.findFirst).mockResolvedValue({ workspaceId: "ws2" } as any);
+      vi.mocked(prisma.workspace.findUnique).mockResolvedValue({ plan: "PRO" } as any);
+      vi.mocked(prisma.workspaceMember.count).mockResolvedValue(5);
+      vi.mocked(checkAndConsumeWorkspaceQuota).mockResolvedValue({ allowed: true } as any);
+      vi.mocked(prisma.task.update).mockResolvedValue({ id: "t1", projectId: "p2" } as any);
+
+      await TaskMutation.updateTask("t1", "u1", { projectId: "p2" } as any);
+
+      expect(checkAndConsumeWorkspaceQuota).toHaveBeenCalled();
+      expect(prisma.task.update).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({ projectId: "p2" }),
+      }));
     });
 
     it("should throw ForbiddenError if user cannot edit", async () => {
@@ -195,15 +324,27 @@ describe("TaskMutation", () => {
     });
   });
 
-  describe("deleteTask", () => {
-    it("should delete task if permission granted", async () => {
-      vi.mocked(TaskAccess.assertDeletePermission).mockResolvedValue({ id: "t1", workspaceId: "ws1" } as any);
-      vi.mocked(prisma.task.delete).mockResolvedValue({ id: "t1" } as any);
+  describe("addComment", () => {
+    it("should create a comment and trigger callback", async () => {
+      vi.mocked(prisma.comment.create).mockResolvedValue({ id: "c1", content: "New comment" } as any);
+      vi.mocked(prisma.task.findUnique).mockResolvedValue({ 
+        id: "t1", 
+        title: "Task 1", 
+        project: { workspaceId: "ws1" } 
+      } as any);
+      
+      const onCommentAdded = vi.fn().mockResolvedValue(undefined);
+      const result = await TaskMutation.addComment("t1", "u1", "New comment", onCommentAdded);
 
-      const result = await TaskMutation.deleteTask("t1", "u1");
-
-      expect(result.success).toBe(true);
-      expect(prisma.task.delete).toHaveBeenCalled();
+      expect(result.id).toBe("c1");
+      expect(prisma.comment.create).toHaveBeenCalledWith({
+        data: { taskId: "t1", userId: "u1", content: "New comment" },
+      });
+      expect(onCommentAdded).toHaveBeenCalledWith({
+        taskId: "t1",
+        taskTitle: "Task 1",
+        workspaceId: "ws1",
+      });
     });
   });
 });

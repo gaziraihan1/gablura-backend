@@ -11,14 +11,19 @@ import {
   activityUserOnlyInclude,
 } from './activity.selects.js';
 import { CacheClient, CACHE_KEYS, CACHE_TTL } from '../../lib/redis/cache.client.js';
+import { Prisma } from '@prisma/client';
+
+type ActivityFull = Prisma.ActivityGetPayload<{ include: typeof activityFullInclude }>;
+type ActivitySlim = Prisma.ActivityGetPayload<{ include: typeof activitySlimInclude }>;
+type ActivityUserOnly = Prisma.ActivityGetPayload<{ include: typeof activityUserOnlyInclude }>;
 
 export const ActivityQuery = {
-  async getUserActivities(userId: string, filters: ActivityFilters = {}): Promise<any[]> {
+  async getUserActivities(userId: string, filters: ActivityFilters = {}): Promise<ActivityFull[]> {
     const cacheKey = CACHE_KEYS.activityUserList(userId, filters.workspaceId);
-    const cached = await CacheClient.get<any[]>(cacheKey);
+    const cached = await CacheClient.get<ActivityFull[]>(cacheKey);
     if (cached) return cached;
 
-    const where: Record<string, unknown> = {
+    const where: Prisma.ActivityWhereInput = {
       OR: [
         { userId },
         {
@@ -39,9 +44,9 @@ export const ActivityQuery = {
     if (filters.action)      where.action      = filters.action;
 
     if (filters.startDate || filters.endDate) {
-      const createdAt: Record<string, Date> = {};
-      if (filters.startDate) createdAt.gte = filters.startDate;
-      if (filters.endDate)   createdAt.lte = filters.endDate;
+      const createdAt: Prisma.ActivityWhereInput['createdAt'] = {};
+      if (filters.startDate) (createdAt as any).gte = filters.startDate;
+      if (filters.endDate)   (createdAt as any).lte = filters.endDate;
       where.createdAt = createdAt;
     }
 
@@ -60,12 +65,12 @@ export const ActivityQuery = {
   async getWorkspaceActivities(
     workspaceId: string,
     filters: WorkspaceActivityFilters = {},
-  ): Promise<any[]> {
+  ): Promise<ActivitySlim[]> {
     const cacheKey = CACHE_KEYS.activityWorkspaceList(workspaceId);
-    const cached = await CacheClient.get<any[]>(cacheKey);
+    const cached = await CacheClient.get<ActivitySlim[]>(cacheKey);
     if (cached) return cached;
 
-    const where: Record<string, unknown> = { workspaceId };
+    const where: Prisma.ActivityWhereInput = { workspaceId };
 
     if (filters.action)     where.action     = filters.action;
     if (filters.entityType) where.entityType = filters.entityType;
@@ -82,9 +87,9 @@ export const ActivityQuery = {
     return result;
   },
 
-  async getTaskActivities(taskId: string, filters: TaskActivityFilters = {}): Promise<any[]> {
+  async getTaskActivities(taskId: string, filters: TaskActivityFilters = {}): Promise<ActivityUserOnly[]> {
     const cacheKey = CACHE_KEYS.activityTaskList(taskId);
-    const cached = await CacheClient.get<any[]>(cacheKey);
+    const cached = await CacheClient.get<ActivityUserOnly[]>(cacheKey);
     if (cached) return cached;
 
     const result = await prisma.activity.findMany({

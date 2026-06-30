@@ -24,6 +24,7 @@ export interface QuotaCheckResult {
   resetAt: Date;
   limit: number | null;
   usedToday: number;
+  isUnlimited: boolean;
 }
 
 export type UserPlan = "FREE" | "PRO";
@@ -155,6 +156,7 @@ export async function checkAndConsumePersonalQuota(
       resetAt,
       limit: limits.dailyLimit,
       usedToday: limits.dailyLimit,
+      isUnlimited: false,
     };
   }
 
@@ -164,6 +166,7 @@ export async function checkAndConsumePersonalQuota(
     resetAt,
     limit: limits.dailyLimit,
     usedToday: newCount,
+    isUnlimited: false,
   };
 }
 
@@ -179,7 +182,7 @@ export async function checkAndConsumeWorkspaceQuota(
   const resetAt = new Date(expireAt * 1000);
 
   if (limits.isUnlimited) {
-    return { allowed: true, remaining: null, resetAt, limit: null, usedToday: 0 };
+    return { allowed: true, remaining: null, resetAt, limit: null, usedToday: 0, isUnlimited: true };
   }
 
   if (limits.perMinute !== null) {
@@ -192,6 +195,7 @@ export async function checkAndConsumeWorkspaceQuota(
         resetAt: new Date(Date.now() + rateCheck.retryAfterMs),
         limit: limits.perMinute,
         usedToday: 0,
+        isUnlimited: false,
       };
     }
   }
@@ -208,6 +212,7 @@ export async function checkAndConsumeWorkspaceQuota(
       resetAt,
       limit: limits.dailyWorkspaceTotal,
       usedToday: limits.dailyWorkspaceTotal,
+      isUnlimited: false,
     };
   }
 
@@ -223,6 +228,7 @@ export async function checkAndConsumeWorkspaceQuota(
       resetAt,
       limit: limits.dailyPerMember,
       usedToday: memberNewCount - 1,
+      isUnlimited: false,
     };
   }
 
@@ -241,6 +247,7 @@ export async function checkAndConsumeWorkspaceQuota(
     resetAt,
     limit: limits.dailyPerMember ?? limits.dailyWorkspaceTotal,
     usedToday: memberNewCount,
+    isUnlimited: false,
   };
 }
 

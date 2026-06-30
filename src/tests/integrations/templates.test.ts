@@ -58,11 +58,40 @@ describe("Templates Module Integration Tests", () => {
 
     it("429 — enforces rate limiting", async () => {
       const emailBase = `rate-${Date.now()}@example.com`;
-      const fixedIp = `test-ip-${Date.now()}`; // Unique IP per test run
+      const fixedIp = `test-ip-${Date.now()}`;
+
+      // Mock Redis pipeline to reliably trigger 429
+      const slidingWindowCounts = new Map<string, number[]>();
+      const redis = getRedisClient();
       
-      // Send a large number of requests to ensure the limit is hit
-      // The limit is 5 requests
-      for (let i = 0; i < 15; i++) {
+      vi.spyOn(redis, "pipeline").mockImplementation(() => {
+        let pendingKey: string | null = null;
+        let windowBound: number | null = null;
+
+        const pipelineMock = {
+          zremrangebyscore: vi.fn((key: string, _min: number, _max: number) => {
+            pendingKey = key;
+            windowBound = _max;
+            return pipelineMock;
+          }),
+          zadd: vi.fn(() => pipelineMock),
+          zcard: vi.fn(() => pipelineMock),
+          expire: vi.fn(() => pipelineMock),
+          exec: vi.fn(async () => {
+            if (!pendingKey) return [[null, 0], [null, 1], [null, 0], [null, 1]];
+            const now = Date.now();
+            const timestamps = (slidingWindowCounts.get(pendingKey) ?? [])
+              .filter((t) => t > (windowBound ?? 0));
+            timestamps.push(now);
+            slidingWindowCounts.set(pendingKey, timestamps);
+            return [[null, 0], [null, 1], [null, timestamps.length], [null, 1]];
+          }),
+        };
+        return pipelineMock as any;
+      });
+
+      // Exhaust the limit (max = 5)
+      for (let i = 0; i < 6; i++) {
         await request(app)
           .post("/api/v1/templates")
           .set("x-forwarded-for", fixedIp)
@@ -74,12 +103,10 @@ describe("Templates Module Integration Tests", () => {
         .set("x-forwarded-for", fixedIp)
         .send({ email: `overflow-${emailBase}` });
 
-      if (res.status !== 429) {
-        console.log("Rate limit failed. Status:", res.status, "Body:", res.body);
-      }
-
       expect(res.status).toBe(429);
       expect(res.body.error).toBe("Too many requests");
+
+      vi.restoreAllMocks();
     });
   });
 
@@ -121,66 +148,6 @@ describe("Templates Module Integration Tests", () => {
         .set(authHeaders(regularUser));
 
       expect(res.status).toBe(403);
-    });
-  });
-  describe("POST /api/v1/templates", () => {
-    it("429 — enforces rate limiting", async () => {
-      const emailBase = `rate-${Date.now()}@example.com`;
-      const fixedIp = `test-ip-${Date.now()}`;
-
-      // Inject a stateful pipeline that actually counts per key
-      const slidingWindowCounts = new Map<string, number[]>();
-
-      const redis = getRedisClient();
-      vi.spyOn(redis, "pipeline").mockImplementation(() => {
-        let pendingKey: string | null = null;
-        let windowBound: number | null = null;
-
-        const pipelineMock = {
-          zremrangebyscore: vi.fn((key: string, _min: number, _max: number) => {
-            pendingKey = key;
-            windowBound = _max; // this is windowStart (now - window*1000)
-            return pipelineMock;
-          }),
-          zadd: vi.fn(() => pipelineMock),
-          zcard: vi.fn(() => pipelineMock),
-          expire: vi.fn(() => pipelineMock),
-          exec: vi.fn(async () => {
-            if (!pendingKey) return [[null, 0], [null, 1], [null, 0], [null, 1]];
-
-            const now = Date.now();
-            const timestamps = (slidingWindowCounts.get(pendingKey) ?? [])
-              .filter((t) => t > (windowBound ?? 0));
-            timestamps.push(now);
-            slidingWindowCounts.set(pendingKey, timestamps);
-            const count = timestamps.length;
-
-            // Mirror the pipeline result shape: [zremrangebyscore, zadd, zcard, expire]
-            return [[null, 0], [null, 1], [null, count], [null, 1]];
-          }),
-        };
-        return pipelineMock as any;
-      });
-
-      // Exhaust the limit (max = 5)
-      for (let i = 0; i < 5; i++) {
-        await request(app)
-          .post("/api/v1/templates")
-          .set("x-forwarded-for", fixedIp)
-          .send({ email: `${i}-${emailBase}` });
-      }
-
-      // 6th request — count will be 6 > 5
-      const res = await request(app)
-        .post("/api/v1/templates")
-        .set("x-forwarded-for", fixedIp)
-        .send({ email: `overflow-${emailBase}` });
-
-      expect(res.status).toBe(429);
-      expect(res.body.error).toBe("Too many requests");
-
-      // Restore the original mock so other tests are unaffected
-      vi.restoreAllMocks();
     });
   });
 

@@ -34,19 +34,17 @@ export function sanitizeRichText(html: string): string {
 }
 
 export function sanitizeFilename(filename: string): string {
-  if (!filename || typeof filename !== 'string') return 'file';
+  if (!filename || typeof filename !== 'string') return 'file.txt';
 
   let sanitized = filename.replace(/\.\./g, '');
   
   sanitized = sanitized.replace(/[^a-zA-Z0-9._-]/g, '_');
   
-  sanitized = sanitized.substring(0, 255);
-  
   if (!sanitized.includes('.')) {
     sanitized += '.txt';
   }
 
-  return sanitized || 'file.txt';
+  return sanitized.substring(0, 255) || 'file.txt';
 }
 
 export function sanitizeUrl(url: string): string {
@@ -66,13 +64,22 @@ export function sanitizeUrl(url: string): string {
       return '';
     }
 
-    return parsed.href;
+    const href = parsed.href;
+    return href.endsWith('/') && parsed.pathname === '/' 
+      ? href.slice(0, -1) 
+      : href;
   } catch {
     return '';
   }
 }
 
 export function sanitizeObject<T extends Record<string, any>>(obj: T): T {
+  if (obj === null || typeof obj !== 'object') return obj as any;
+
+  if (Array.isArray(obj)) {
+    return obj.map(item => (typeof item === 'object' ? sanitizeObject(item) : (typeof item === 'string' ? sanitizePlainText(item) : item))) as any;
+  }
+
   const sanitized: any = {};
 
   for (const [key, value] of Object.entries(obj)) {

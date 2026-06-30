@@ -112,6 +112,8 @@ export interface TaskForPermission {
 }
 
 export interface TaskForTimeTracking {
+  id?:             string;
+  title?:           string
   createdAt:       Date;
   dueDate:         Date | null;
   status:          string;

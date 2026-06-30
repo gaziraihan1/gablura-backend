@@ -22,6 +22,12 @@ vi.mock("../../../lib/prisma.js", () => ({
     workspace: {
       findMany: vi.fn(),
     },
+    comment: {
+      findMany: vi.fn(),
+    },
+    file: {
+      findMany: vi.fn(),
+    },
   },
 }));
 
@@ -95,6 +101,26 @@ describe("TaskQuery", () => {
     });
   });
 
+  describe("getTaskOverview", () => {
+    it("should return full overview with comments and attachments", async () => {
+      vi.mocked(prisma.task.findFirst).mockResolvedValue({ id: "t1", title: "Task 1" } as any);
+      vi.mocked(prisma.comment.findMany).mockResolvedValue([{ id: "c1", content: "Comment 1" }] as any);
+      vi.mocked(prisma.file.findMany).mockResolvedValue([{ id: "f1", name: "File 1" }] as any);
+
+      const result = await TaskQuery.getTaskOverview("t1", "u1") as { task: Record<string, unknown>; comments: unknown[]; attachments: unknown[] };
+
+
+      expect(result.task.id).toBe("t1");
+      expect(result.comments ).toHaveLength(1);
+      expect(result.attachments).toHaveLength(1);
+    });
+
+    it("should throw NotFoundError if task not found", async () => {
+      vi.mocked(prisma.task.findFirst).mockResolvedValue(null);
+      await expect(TaskQuery.getTaskOverview("t1", "u1")).rejects.toThrow("Task");
+    });
+  });
+
   describe("getTaskStats", () => {
     it("should return stats from cache if available", async () => {
       const stats = { totalTasks: 10, completed: 5 };
@@ -110,13 +136,27 @@ describe("TaskQuery", () => {
       vi.mocked(CacheClient.get).mockResolvedValue(null);
       vi.mocked(TaskFilters.buildPersonalTasksFilter).mockReturnValue({});
       vi.mocked(prisma.task.count).mockResolvedValue(10);
-      vi.mocked(prisma.task.groupBy).mockResolvedValue([]);
-      vi.mocked(prisma.$queryRaw).mockResolvedValue([{ count: 0n }]);
+      vi.mocked(prisma.task.groupBy).mockResolvedValue([] as any);
+      vi.mocked(prisma.$queryRaw).mockResolvedValue([{ count: 0n }] as any);
 
       const result = await TaskQuery.getTaskStats({ userId: "u1" });
 
       expect(result.totalTasks).toBe(10);
       expect(CacheClient.set).toHaveBeenCalled();
+    });
+  });
+
+  describe("getTasksByIntent", () => {
+    it("should fetch tasks filtered by intent", async () => {
+      const params = { userId: "u1", intent: "EXECUTION" as const };
+      vi.mocked(prisma.task.findMany).mockResolvedValue([{ id: "t1", intent: "EXECUTION" }] as any);
+
+      const result = await TaskQuery.getTasksByIntent(params);
+
+      expect(result).toHaveLength(1);
+      expect(prisma.task.findMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: expect.objectContaining({ intent: "EXECUTION" })
+      }));
     });
   });
 });

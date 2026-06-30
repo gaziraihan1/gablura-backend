@@ -171,13 +171,14 @@ async function processEvent(
 // ---------------------------------------------------------------------------
 
 async function handleCheckoutCompleted(event: NormalisedSubscriptionEvent) {
-  const { workspaceId } = event.metadata;
+  const workspaceId = event.metadata?.workspaceId;
   console.log(`[Webhook] Checkout completed for workspace ${workspaceId}`);
   // Provisioning is handled by SUBSCRIPTION_CREATED which fires right after.
 }
 
 async function handleSubscriptionUpserted(event: NormalisedSubscriptionEvent) {
-  const { workspaceId, ownerId } = event.metadata;
+  const workspaceId = event.metadata?.workspaceId;
+  const ownerId = event.metadata?.ownerId;
 
   console.log("[Webhook] Subscription upsert payload:", JSON.stringify({
     workspaceId,
@@ -191,6 +192,7 @@ async function handleSubscriptionUpserted(event: NormalisedSubscriptionEvent) {
     console.warn("[Webhook] Subscription event missing workspaceId metadata — skipping");
     return;
   }
+
 
   const plan = await prisma.plan.findUnique({ where: { name: event.planName } });
   if (!plan) throw new Error(`Plan not found in DB: ${event.planName}`);

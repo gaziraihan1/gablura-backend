@@ -87,6 +87,20 @@ describe("StorageMutation", () => {
       expect(result.deletedCount).toBe(2);
     });
 
+    it("should only delete files the user has permission for (non-admin)", async () => {
+      vi.mocked(StorageAccess.isAdmin).mockResolvedValue(false);
+      vi.mocked(prisma.file.findMany).mockResolvedValue(mockFiles as any);
+      vi.mocked(prisma.file.deleteMany).mockResolvedValue({ count: 1 } as any);
+
+      const result = await StorageMutation.bulkDeleteFiles(["f1", "f2"], "ws1", "user1");
+
+      expect(result.success).toBe(true);
+      expect(result.deletedCount).toBe(1);
+      expect(prisma.file.deleteMany).toHaveBeenCalledWith({
+        where: { id: { in: ["f1"] } },
+      });
+    });
+
     it("should throw NotFoundError if no files found", async () => {
       vi.mocked(prisma.file.findMany).mockResolvedValue([]);
 

@@ -21,8 +21,12 @@ import { Request, Response, NextFunction, RequestHandler } from "express";
  *   }));
  */
 export const asyncHandler = <T extends Request = Request>(
-  fn: (req: T, res: Response, next: NextFunction) => Promise<unknown>,
+  fn: (req: T, res: Response, next: NextFunction) => Promise<unknown> | unknown,
 ): RequestHandler =>
-  (req, res, next) => {
-    Promise.resolve(fn(req as T, res, next)).catch(next);
+  async (req, res, next) => {
+    try {
+      return await fn(req as T, res, next);
+    } catch (error) {
+      next(error);
+    }
   };

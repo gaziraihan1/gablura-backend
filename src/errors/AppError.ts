@@ -118,7 +118,12 @@ export class RateLimitError extends AppError {
   public readonly retryAfter?: number;
 
   constructor(retryAfter?: number) {
-    super("Rate limit exceeded. Please try again later.", 429, "RATE_LIMIT_EXCEEDED");
+    super(
+      "Rate limit exceeded. Please try again later.",
+      429,
+      "RATE_LIMIT_EXCEEDED",
+      retryAfter ? { retryAfterMs: retryAfter } : undefined,
+    );
     this.retryAfter = retryAfter;
   }
 }

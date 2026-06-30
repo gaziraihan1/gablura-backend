@@ -185,8 +185,12 @@ export function parseExpiry(expiry: string): number {
 }
 
 export function extractJti(token: string): string {
-  const payload = JSON.parse(
-    Buffer.from(token.split(".")[1], "base64url").toString("utf-8"),
-  );
-  return payload.jti ?? "";
+  try {
+    const payload = JSON.parse(
+      Buffer.from(token.split(".")[1], "base64url").toString("utf-8"),
+    );
+    return payload.jti ?? "";
+  } catch {
+    return "";
+  }
 }

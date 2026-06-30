@@ -227,4 +227,44 @@ describe("WorkspaceQuery", () => {
         .rejects.toThrow(NotFoundError);
     });
   });
+
+  describe("getStats", () => {
+    it("returns stats when user has viewer access", async () => {
+      // assertViewer passes
+      vi.mocked(prisma.workspace.findFirst).mockResolvedValueOnce({
+        id: "ws-1",
+        isPublic: false,
+        members: [{ id: "mem-1", role: "MEMBER" }],
+      } as any);
+      // computeStats mocks
+      vi.mocked(prisma.project.count).mockResolvedValue(3);
+      vi.mocked(prisma.workspaceMember.count).mockResolvedValue(8);
+      (vi.mocked(prisma.task.count).mockImplementation as any)(
+        async (args: any) => {
+          const where = args.where;
+          if (where?.status === "COMPLETED") return 40;
+          if (where?.dueDate?.lt) return 5;
+          return 50;
+        },
+      );
+
+      const result = await WorkspaceQuery.getStats("ws-1", "user-1");
+
+      expect(result.totalProjects).toBe(3);
+      expect(result.totalTasks).toBe(50);
+      expect(result.totalMembers).toBe(8);
+      expect(result.completedTasks).toBe(40);
+      expect(result.overdueTasks).toBe(5);
+      expect(result.completionRate).toBe(80);
+    });
+
+    it("throws NotFoundError when user has no access", async () => {
+      vi.mocked(prisma.workspace.findFirst).mockResolvedValueOnce(null);
+
+      await expect(
+        WorkspaceQuery.getStats("ws-1", "outsider"),
+      ).rejects.toThrow(NotFoundError);
+    });
+  });
+
 });
