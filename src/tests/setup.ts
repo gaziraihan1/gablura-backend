@@ -73,77 +73,75 @@ const createInMemoryRedisMock = () => {
 
 const RedisMock = vi.fn().mockImplementation(() => createInMemoryRedisMock());
 
-if (process.env.VITEST_MODE === 'unit') {
-  vi.mock('ioredis', () => ({
-    default: RedisMock,
-    Redis:   RedisMock,
-  }));
+vi.mock('ioredis', () => ({
+  default: RedisMock,
+  Redis:   RedisMock,
+}));
 
-  // ── MOCK: @upstash/redis (only used by contactRateLimit + templates) ───────────
-  vi.mock('@upstash/redis', () => ({
-    Redis: vi.fn().mockImplementation(() => createInMemoryRedisMock()),
-  }));
+// ── MOCK: @upstash/redis (only used by contactRateLimit + templates) ───────────
+vi.mock('@upstash/redis', () => ({
+  Redis: vi.fn().mockImplementation(() => createInMemoryRedisMock()),
+}));
 
-  // ── MOCK: @upstash/ratelimit ──────────────────────────────────────────────────
-  vi.mock('@upstash/ratelimit', () => {
-    const RatelimitMock = vi.fn().mockImplementation(() => ({
-      limit: vi.fn().mockResolvedValue({
-        success: true,
-        remaining: 99,
-        reset: Date.now() + 60_000,
-      }),
-    })) as unknown as typeof import('@upstash/ratelimit').Ratelimit & {
-      slidingWindow: ReturnType<typeof vi.fn>;
-      fixedWindow:   ReturnType<typeof vi.fn>;
-      tokenBucket:   ReturnType<typeof vi.fn>;
-    };
+// ── MOCK: @upstash/ratelimit ──────────────────────────────────────────────────
+vi.mock('@upstash/ratelimit', () => {
+  const RatelimitMock = vi.fn().mockImplementation(() => ({
+    limit: vi.fn().mockResolvedValue({
+      success: true,
+      remaining: 99,
+      reset: Date.now() + 60_000,
+    }),
+  })) as unknown as typeof import('@upstash/ratelimit').Ratelimit & {
+    slidingWindow: ReturnType<typeof vi.fn>;
+    fixedWindow:   ReturnType<typeof vi.fn>;
+    tokenBucket:   ReturnType<typeof vi.fn>;
+  };
 
-    (RatelimitMock as any).slidingWindow = vi.fn().mockReturnValue("mocked-limiter");
-    (RatelimitMock as any).fixedWindow   = vi.fn().mockReturnValue("mocked-limiter");
-    (RatelimitMock as any).tokenBucket   = vi.fn().mockReturnValue("mocked-limiter");
+  (RatelimitMock as any).slidingWindow = vi.fn().mockReturnValue("mocked-limiter");
+  (RatelimitMock as any).fixedWindow   = vi.fn().mockReturnValue("mocked-limiter");
+  (RatelimitMock as any).tokenBucket   = vi.fn().mockReturnValue("mocked-limiter");
 
-    return { Ratelimit: RatelimitMock };
-  });
+  return { Ratelimit: RatelimitMock };
+});
 
-  // ── MOCK: redis/redis.client.ts ───────────────────────────────────────────
-  const noopRedisClient = createInMemoryRedisMock();
+// ── MOCK: redis/redis.client.ts ───────────────────────────────────────────
+const noopRedisClient = createInMemoryRedisMock();
 
-  vi.mock('../redis/redis.client.js', () => ({
-    getRedisClient: vi.fn(() => noopRedisClient),
-    BILLING_CACHE: {
-      getSubscription:     vi.fn().mockResolvedValue(null),
-      setSubscription:     vi.fn().mockResolvedValue(undefined),
-      getPlanLimits:       vi.fn().mockResolvedValue(null),
-      setPlanLimits:       vi.fn().mockResolvedValue(undefined),
-      getUserWsLimit:      vi.fn().mockResolvedValue(null),
-      setUserWsLimit:      vi.fn().mockResolvedValue(undefined),
-      invalidateWorkspace: vi.fn().mockResolvedValue(undefined),
-      invoiceKey:          vi.fn().mockReturnValue('invoice:test'),
-      INVOICE_TTL:         300,
-    },
-  }));
+vi.mock('../redis/redis.client.js', () => ({
+  getRedisClient: vi.fn(() => noopRedisClient),
+  BILLING_CACHE: {
+    getSubscription:     vi.fn().mockResolvedValue(null),
+    setSubscription:     vi.fn().mockResolvedValue(undefined),
+    getPlanLimits:       vi.fn().mockResolvedValue(null),
+    setPlanLimits:       vi.fn().mockResolvedValue(undefined),
+    getUserWsLimit:      vi.fn().mockResolvedValue(null),
+    setUserWsLimit:      vi.fn().mockResolvedValue(undefined),
+    invalidateWorkspace: vi.fn().mockResolvedValue(undefined),
+    invoiceKey:          vi.fn().mockReturnValue('invoice:test'),
+    INVOICE_TTL:         300,
+  },
+}));
 
-  // ── MOCK: lib/redis.ts (shim — only used by Upstash ratelimit files) ──────────
-  vi.mock('../lib/redis.js', () => ({
-    redis: createInMemoryRedisMock(),
-  }));
+// ── MOCK: lib/redis.ts (shim — only used by Upstash ratelimit files) ──────────
+vi.mock('../lib/redis.js', () => ({
+  redis: createInMemoryRedisMock(),
+}));
 
-  // ── MOCK: tokenRevocation ─────────────────────────────────────────────────────
-  vi.mock('../lib/auth/tokenRevocation.js', () => ({
-    isAccessTokenRevoked:   vi.fn().mockResolvedValue(false),
-    revokeAccessToken:      vi.fn().mockResolvedValue(undefined),
-    revokeAllRefreshTokens: vi.fn().mockResolvedValue(undefined),
-    storeRefreshToken:      vi.fn().mockResolvedValue(undefined),
-    rotateRefreshToken:     vi.fn().mockResolvedValue(true),
-  }));
+// ── MOCK: tokenRevocation ─────────────────────────────────────────────────────
+vi.mock('../lib/auth/tokenRevocation.js', () => ({
+  isAccessTokenRevoked:   vi.fn().mockResolvedValue(false),
+  revokeAccessToken:      vi.fn().mockResolvedValue(undefined),
+  revokeAllRefreshTokens: vi.fn().mockResolvedValue(undefined),
+  storeRefreshToken:      vi.fn().mockResolvedValue(undefined),
+  rotateRefreshToken:     vi.fn().mockResolvedValue(true),
+}));
 
-  // ── MOCK: refreshLock ─────────────────────────────────────────────────────────
-  vi.mock('../lib/auth/refreshLock.js', () => ({
-    acquireRefreshLock: vi.fn().mockResolvedValue(true),
-    releaseRefreshLock: vi.fn().mockResolvedValue(undefined),
-    isRefreshLocked:    vi.fn().mockResolvedValue(false),
-  }));
-}
+// ── MOCK: refreshLock ─────────────────────────────────────────────────────────
+vi.mock('../lib/auth/refreshLock.js', () => ({
+  acquireRefreshLock: vi.fn().mockResolvedValue(true),
+  releaseRefreshLock: vi.fn().mockResolvedValue(undefined),
+  isRefreshLocked:    vi.fn().mockResolvedValue(false),
+}));
 
 // ── MOCK: Cloudinary ──────────────────────────────────────────────────────────
 vi.mock('cloudinary', () => ({

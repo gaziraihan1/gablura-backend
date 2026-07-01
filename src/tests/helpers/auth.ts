@@ -8,6 +8,11 @@ let _cachedPrivateKey: string | null = null;
 function getPrivateKey(): string {
   if (_cachedPrivateKey) return _cachedPrivateKey;
 
+  if (process.env.JWT_PRIVATE_KEY) {
+    _cachedPrivateKey = Buffer.from(process.env.JWT_PRIVATE_KEY, 'base64').toString('utf-8');
+    return _cachedPrivateKey;
+  }
+
   const testPath = process.env.TEST_JWT_PRIVATE_KEY_PATH;
   if (testPath) {
     try { _cachedPrivateKey = readFileSync(testPath, 'utf-8'); return _cachedPrivateKey; } catch {}
@@ -15,11 +20,6 @@ function getPrivateKey(): string {
 
   const projectPath = process.env.JWT_PRIVATE_KEY_PATH ?? './keys/private.pem';
   try { _cachedPrivateKey = readFileSync(projectPath, 'utf-8'); return _cachedPrivateKey; } catch {}
-
-  if (process.env.JWT_PRIVATE_KEY) {
-    _cachedPrivateKey = Buffer.from(process.env.JWT_PRIVATE_KEY, 'base64').toString('utf-8');
-    return _cachedPrivateKey;
-  }
 
   throw new Error('[auth helper] Cannot resolve RSA private key.');
 }
