@@ -100,8 +100,8 @@ function getNextError(next: ReturnType<typeof makeNext>) {
 }
 
 function getTestPrivateKey(): string {
-  const keyPath = process.env.TEST_JWT_PRIVATE_KEY_PATH;
-  if (!keyPath) throw new Error("TEST_JWT_PRIVATE_KEY_PATH is not set.");
+  const keyPath = process.env.JWT_PRIVATE_KEY_PATH;
+  if (!keyPath) throw new Error("JWT_PRIVATE_KEY_PATH is not set.");
   return readFileSync(keyPath, "utf-8");
 }
 

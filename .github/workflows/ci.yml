@@ -89,8 +89,9 @@ jobs:
           echo "JWT_PRIVATE_KEY_PATH=./keys/private.pem" >> $GITHUB_ENV
           echo "JWT_PUBLIC_KEY_PATH=./keys/public.pem" >> $GITHUB_ENV
 
-          echo "NEXTAUTH_SECRET=${{ secrets.NEXTAUTH_SECRET }}" >> $GITHUB_ENV
-          echo "ACCESS_TOKEN_SECRET=${{ secrets.ACCESS_TOKEN_SECRET }}" >> $GITHUB_ENV
+           # Generate deterministic dummy secrets for CI (secure enough for tests)
+           echo "NEXTAUTH_SECRET=$(openssl rand -hex 32)" >> $GITHUB_ENV
+           echo "ACCESS_TOKEN_SECRET=$(openssl rand -hex 32)" >> $GITHUB_ENV
 
           echo "STRIPE_SECRET_KEY=sk_test_fake_for_tests_only" >> $GITHUB_ENV
           echo "STRIPE_WEBHOOK_SECRET=whsec_fake_for_tests_only" >> $GITHUB_ENV
@@ -108,7 +109,7 @@ jobs:
           echo "FRONTEND_URL=http://localhost:3000" >> $GITHUB_ENV
 
           echo "PAYMENT_PROVIDER=STRIPE" >> $GITHUB_ENV
-          echo "FOCURA_ADMIN_IDS=cmnie0eka0000h50qi8aqsreo" >> $GITHUB_ENV
+          echo "FOCURA_ADMIN_IDS=cmq13or010006crfhieczji8v" >> $GITHUB_ENV
 
       # ─────────────────────────────────────────────
       # RSA KEYS
