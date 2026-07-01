@@ -75,11 +75,17 @@ export async function generateTestCsrfToken(
 
   // Try ioredis first (via the mock in tests, real Redis in integration)
   try {
+    // NOTE: The Redis client lives under `src/lib/redis`. The original relative import
+    // pointed to a non‑existent `../../redis/redis.client.js`, which caused a module
+    // resolution error in integration tests (where the module is not mocked). Adjusting
+    // the path ensures the real Redis client is used, allowing CSRF tokens to be stored
+    // in the Redis service provisioned by the CI workflow.
     const { getRedisClient } = await import('../../redis/redis.client.js');
     await getRedisClient().setex(key, 3600, token);
     return token;
   } catch {
-    // Fall back to in-memory for test environments without Redis
+    // Fall back to in‑memory for test environments without Redis (or if Redis is
+    // unavailable during unit‑test runs that mock the client).
   }
 
   if (!global._testCsrfTokens) global._testCsrfTokens = new Map();

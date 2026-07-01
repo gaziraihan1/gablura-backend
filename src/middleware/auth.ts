@@ -37,7 +37,12 @@ try {
   if (process.env.JWT_PUBLIC_KEY) {
     publicKey = Buffer.from(process.env.JWT_PUBLIC_KEY, "base64").toString("utf-8");
   } else {
-    const keysDir = path.join(process.cwd(), "..", "keys");
+    // In production the keys live at `<repo>/keys`. The previous implementation
+    // incorrectly looked one directory **above** the project root (`../keys`),
+    // which caused a file‑not‑found error in CI and resulted in all protected
+    // routes returning 401. Align the lookup with the rest of the codebase
+    // (e.g., `src/lib/auth/backendToken.ts`) by using the correct relative path.
+    const keysDir = path.join(process.cwd(), "keys");
     publicKey = fs.readFileSync(
       process.env.JWT_PUBLIC_KEY_PATH || path.join(keysDir, "public.pem"),
       "utf-8"
