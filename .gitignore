@@ -4,6 +4,8 @@
 .env*
 node_modules
 dist/
+coverage/
+*.coverage
 # RSA Keys - NEVER commit private key!
 keys/private.pem
 keys/*.pem

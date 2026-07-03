@@ -15,11 +15,15 @@ function getPrivateKey(): string {
 
   const testPath = process.env.TEST_JWT_PRIVATE_KEY_PATH;
   if (testPath) {
-    try { _cachedPrivateKey = readFileSync(testPath, 'utf-8'); return _cachedPrivateKey; } catch {}
+    try { _cachedPrivateKey = readFileSync(testPath, 'utf-8'); return _cachedPrivateKey; } catch {
+      console.warn(`[auth helper] Cannot resolve RSA private key from TEST_JWT_PRIVATE_KEY_PATH: ${testPath}`);
+    }
   }
 
   const projectPath = process.env.JWT_PRIVATE_KEY_PATH ?? './keys/private.pem';
-  try { _cachedPrivateKey = readFileSync(projectPath, 'utf-8'); return _cachedPrivateKey; } catch {}
+  try { _cachedPrivateKey = readFileSync(projectPath, 'utf-8'); return _cachedPrivateKey; } catch {
+    console.warn(`[auth helper] Cannot resolve RSA private key from JWT_PRIVATE_KEY_PATH: ${projectPath}`);
+  }
 
   throw new Error('[auth helper] Cannot resolve RSA private key.');
 }

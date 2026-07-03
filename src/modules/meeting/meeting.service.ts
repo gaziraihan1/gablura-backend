@@ -26,11 +26,13 @@ export const MeetingService = {
   },
 
   async getById(ctx: MeetingContext, meetingId: string) {
+    const meeting = await MeetingQuery.findById(meetingId);
+    if (!meeting) throw new NotFoundError('Meeting');
+    if (meeting.workspaceId !== ctx.workspaceId) throw new ForbiddenError('Meeting does not belong to this workspace');
+
     const canAccess = await MeetingQuery.canUserAccess(meetingId, ctx.userId, isAdmin(ctx.workspaceRole));
     if (!canAccess) throw new ForbiddenError('You do not have access to this meeting');
 
-    const meeting = await MeetingQuery.findById(meetingId);
-    if (!meeting) throw new NotFoundError('Meeting');
     return meeting;
   },
 

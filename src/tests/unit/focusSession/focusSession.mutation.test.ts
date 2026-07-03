@@ -11,7 +11,7 @@ import { ConflictError, NotFoundError, BadRequestError } from '../../../errors/i
 import { FocusType } from '@prisma/client';
 
 describe('FocusSessionMutation', () => {
-  let user: any;
+  // let user: any;
   let admin: any;
   let workspace: any;
   let project: any;

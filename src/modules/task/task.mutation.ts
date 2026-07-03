@@ -255,12 +255,12 @@ export const TaskMutation = {
 
       const workspaceId = newProject.workspaceId;
       const [plan, memberCount] = await Promise.all([
-        resolveWorkspacePlan(workspaceId),
+        resolveWorkspacePlan(workspaceId!),
         prisma.workspaceMember.count({ where: { workspaceId } }),
       ]);
 
       const quota = await checkAndConsumeWorkspaceQuota(
-        userId, workspaceId, plan, memberCount,
+        userId, workspaceId!, plan, memberCount,
       );
       if (!quota.allowed) throw new BadRequestError(quota.reason ?? 'Workspace task limit reached');
     }

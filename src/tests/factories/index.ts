@@ -274,6 +274,7 @@ export interface CreateMeetingOptions {
   visibility?: MeetingVisibility;
   startTime?: Date;
   endTime?: Date;
+  attendeeIds?: string[];
 }
 
 export async function createMeeting(
@@ -296,6 +297,14 @@ export async function createMeeting(
       endTime,
       workspaceId,
       createdById,
+      ...(opts.attendeeIds?.length && {
+        attendees: {
+          createMany: {
+            data: opts.attendeeIds.map((userId) => ({ userId })),
+            skipDuplicates: true,
+          },
+        },
+      }),
     },
   });
 }

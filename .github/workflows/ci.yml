@@ -127,8 +127,11 @@ jobs:
       # ─────────────────────────────────────────────
       # TESTS
       # ─────────────────────────────────────────────
-      - name: Run tests
-        run: npx vitest run --reporter=verbose
+      - name: Lint code
+        run: npm run lint
+
+      - name: Run tests with coverage thresholds
+        run: npm run test:coverage
 
       # ─────────────────────────────────────────────
       # ARTIFACTS
