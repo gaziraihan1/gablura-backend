@@ -1,15 +1,15 @@
 import escapeHtml from 'escape-html';
 import DOMPurify from 'isomorphic-dompurify';
 
-const ALLOWED_TAGS = [
-  'p', 'br', 'strong', 'em', 'u', 's', 'a', 'ul', 'ol', 'li',
-  'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'code', 'pre'
-];
+// const ALLOWED_TAGS = [
+//   'p', 'br', 'strong', 'em', 'u', 's', 'a', 'ul', 'ol', 'li',
+//   'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'code', 'pre'
+// ];
 
-const ALLOWED_ATTRIBUTES = {
-  'a': ['href', 'title', 'target'],
-  'img': ['src', 'alt', 'title', 'width', 'height'],
-};
+// const ALLOWED_ATTRIBUTES = {
+//   'a': ['href', 'title', 'target'],
+//   'img': ['src', 'alt', 'title', 'width', 'height'],
+// };
 
 export function sanitizePlainText(input: string): string {
   if (!input || typeof input !== 'string') return '';

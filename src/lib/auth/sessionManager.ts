@@ -6,7 +6,7 @@ const MAX_CONCURRENT_SESSIONS = 5;
 export async function trackUserSession(
   userId: string,
   sessionId: string,
-  deviceInfo: string,
+  // deviceInfo: string,
 ): Promise<void> {
   const redis = getRedisClient();
   const key = `user:sessions:${userId}`;

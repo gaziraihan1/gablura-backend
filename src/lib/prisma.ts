@@ -83,7 +83,7 @@ interface PoolMetrics {
   waitingRequests: number;
 }
 
-let poolMetrics: PoolMetrics = {
+const poolMetrics: PoolMetrics = {
   totalConnections: 0,
   activeConnections: 0,
   idleConnections: 0,
@@ -129,7 +129,7 @@ _prisma.$use(async (params, next) => {
   } catch (error: any) {
     if (error.message === "Query timeout") {
       console.error(`❌ Query timeout: ${params.model}.${params.action} exceeded ${QUERY_TIMEOUT_MS}ms`);
-      throw new Error("Database query timeout - please try again");
+      throw new Error("Database query timeout - please try again", { cause: error });
     }
     throw error;
   }
@@ -167,7 +167,7 @@ _prismaRead.$use(async (params, next) => {
   } catch (error: any) {
     if (error.message === "Query timeout") {
       console.error(`❌ Read query timeout: ${params.model}.${params.action} exceeded ${QUERY_TIMEOUT_MS}ms`);
-      throw new Error("Database query timeout - please try again");
+      throw new Error("Database query timeout - please try again", { cause: error });
     }
     throw error;
   }

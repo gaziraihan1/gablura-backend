@@ -39,7 +39,6 @@ try {
   }
 } catch (error) {
   console.error("❌ Failed to load JWT keys:", error);
-  throw new Error("JWT keys not found. Run: node scripts/generate-keys.js");
 }
 
 export interface TokenPayload {

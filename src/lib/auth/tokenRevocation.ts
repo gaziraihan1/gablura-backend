@@ -1,8 +1,8 @@
 import { getRedisClient } from "../../redis/redis.client.js";
 
-const devRevokedAccess = new Set<string>();
-const devRefreshTokens = new Map<string, string>();
-const devSseTokens = new Map<string, string>();
+// const devRevokedAccess = new Set<string>();
+// const devRefreshTokens = new Map<string, string>();
+// const devSseTokens = new Map<string, string>();
 
 const refreshIndexKey = (userId: string) => `focura:refresh:index:${userId}`;
 const refreshTokenKey = (userId: string, jti: string) => `focura:refresh:${userId}:${jti}`;
