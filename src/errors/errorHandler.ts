@@ -16,7 +16,7 @@ export const errorHandler = (
   err: unknown,
   req: Request,
   res: Response,
-  // _next: NextFunction,
+  _next: NextFunction,
 ): void => {
   // ─── 1. Operational errors (AppError and subclasses) ──────────────────────
   if (err instanceof AppError) {
