@@ -254,7 +254,9 @@ export async function checkAndConsumeWorkspaceQuota(
 export async function rollbackPersonalQuota(userId: string): Promise<void> {
   try {
     await getRedisClient().decr(KEYS.personalDaily(userId));
-  } catch {}
+  } catch {
+    console.error(`Failed to rollback personal quota for user ${userId}`);
+  }
 }
 
 export async function rollbackWorkspaceQuota(
@@ -267,7 +269,9 @@ export async function rollbackWorkspaceQuota(
       redis.decr(KEYS.workspaceDaily(workspaceId)),
       redis.decr(KEYS.memberDaily(workspaceId, userId)),
     ]);
-  } catch {}
+  } catch {
+    console.error(`Failed to rollback workspace quota for user ${userId} in workspace ${workspaceId}`);
+  }
 }
 
 export async function getPersonalQuotaUsage(

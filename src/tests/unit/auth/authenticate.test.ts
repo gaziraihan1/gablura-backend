@@ -194,7 +194,7 @@ describe("authenticate middleware", () => {
 
     const err = getNextError(next);
     expect(err.statusCode).toBe(401);
-    expect(err.code).toBe("INVALID_TOKEN");
+    expect(err.code).toBe("TOKEN_VERSION_MISMATCH");
   });
 
   it("returns 401 INVALID_TOKEN_TYPE for refresh token used as access token", async () => {
@@ -215,7 +215,7 @@ describe("authenticate middleware", () => {
 
     const err = getNextError(next);
     expect(err.statusCode).toBe(401);
-    expect(err.code).toBe("INVALID_TOKEN");
+    expect(err.code).toBe("INVALID_TOKEN_TYPE");
   });
 
   it("returns 401 TOKEN_REVOKED when isAccessTokenRevoked returns true", async () => {

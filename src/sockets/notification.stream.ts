@@ -167,6 +167,11 @@ export async function notificationStreamHandler(
 
 // ─── Metrics ──────────────────────────────────────────────────────────────────
 
+export function resetLocalClients(): void {
+  localClients.clear();
+  channelState.clear();
+}
+
 export function getLocalConnectionCount(): number {
   let total = 0;
   for (const [, s] of localClients) total += s.size;

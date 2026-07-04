@@ -4,8 +4,7 @@ import { auditLog } from "./auditLog.js";
 const MAX_CONCURRENT_SESSIONS = 5;
 
 export async function trackUserSession(
-  userId: string,
-  sessionId: string,
+userId: string, sessionId: string, p0: string,
   // deviceInfo: string,
 ): Promise<void> {
   const redis = getRedisClient();
