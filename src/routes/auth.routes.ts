@@ -76,6 +76,11 @@ router.post(
   "/exchange",
   asyncHandler(async (req, res) => {
     const ip = getClientIp(req);
+    
+    if (!req.body) {
+      throw new BadRequestError("Request body is required", "MISSING_BODY");
+    }
+
     const { userId, email, role, sessionId, timestamp, signature } = req.body;
 
     if (!userId || !email || !role || !sessionId || !timestamp || !signature) {
@@ -180,6 +185,11 @@ router.post(
   "/refresh",
   asyncHandler(async (req, res) => {
     const ip = getClientIp(req);
+    
+    if (!req.body) {
+      throw new BadRequestError("Request body is required", "MISSING_BODY");
+    }
+
     const { refreshToken } = req.body;
 
     if (!refreshToken) {

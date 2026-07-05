@@ -43,7 +43,6 @@ describe("Public Job Endpoints", () => {
     await createJobPosting(user.id, { status: JobStatus.CLOSED, title: "Hidden Job" });
 
     const res = await request(app).get("/api/v1/jobs");
-    console.log(res.body);
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
@@ -57,7 +56,6 @@ describe("Public Job Endpoints", () => {
     await createJobPosting(user.id, { status: JobStatus.OPEN, department: "SALES" });
 
     const res = await request(app).get("/api/v1/jobs?department=ENGINEERING");
-    console.log(res.body);
 
     expect(res.status).toBe(200);
     expect(res.body.data).toHaveLength(1);
