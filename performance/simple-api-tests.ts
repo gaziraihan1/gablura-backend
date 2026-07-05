@@ -50,11 +50,22 @@ class SimpleApiPerformanceTester {
       const result = await autocannon(options);
       const endTime = performance.now();
       const testDuration = endTime - startTime;
+      const p95 =
+        (result.latency as any).p95 ??
+        (result.latency as any).percentiles?.[95] ??
+        (result.latency as any)["95"] ??
+        0;
+    const p99 =
+        (result.latency as any).p99 ??
+        (result.latency as any).percentiles?.[99] ??
+        (result.latency as any)["99"] ??
+        0;
 
       console.log(`\n✅ Test completed in ${(testDuration / 1000).toFixed(2)}s`);
       console.log(`   Requests/sec: ${result.throughput.mean.toFixed(2)}`);
       console.log(`   Latency (avg): ${result.latency.mean.toFixed(2)}ms`);
-      console.log(`   Latency (p95): ${result.latency.p95?.toFixed(2) || 'N/A'}ms`);
+      console.log(`   Latency (p95): ${p95.toFixed(2)}ms`);
+      console.log(`   Latency (p99): ${p99.toFixed(2)}ms`);
       console.log(`   Errors: ${result.errors} (${((result.errors / result.requests.total) * 100).toFixed(2)}%)`);
 
       return {

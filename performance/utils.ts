@@ -94,6 +94,11 @@ export async function runScenario(
   }
 
   const result = await autocannon(options);
+  const p95 =
+        (result.latency as any).p95 ??
+        (result.latency as any).percentiles?.[95] ??
+        (result.latency as any)["95"] ??
+        0;
   
   return {
     scenario: scenario.name,
@@ -105,7 +110,7 @@ export async function runScenario(
       failed: result.errors,
       average: result.latency.mean,
       p50: result.latency.p50,
-      p95: result.latency.p95,
+      p95: p95,
       p99: result.latency.p99,
     },
     throughput: {

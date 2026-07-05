@@ -26,7 +26,7 @@ async function main() {
   // Warm up the server
   try {
     await warmUpServer(defaultConfig.server.url);
-  } catch (error: any) {
+  } catch{
     console.error('\n❌ Cannot proceed with performance tests - server is not accessible');
     console.error('\nPlease start the server first:');
     console.error('  npm run dev          # For development');

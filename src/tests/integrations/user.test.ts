@@ -311,8 +311,8 @@ describe("GET /api/v1/user/workspace-members", () => {
       expect(m).toHaveProperty("name");
       expect(m).toHaveProperty("email");
       expect(m).toHaveProperty("image");
+      expect(m).toHaveProperty("role");
       expect(m).not.toHaveProperty("password");
-      expect(m).not.toHaveProperty("role");
     });
   });
 

@@ -126,7 +126,10 @@ describe("BillingController", () => {
 
       await BillingController.changePlan(mockRequest, mockResponse, () => {});
 
-      expect(mockResponse.json).toHaveBeenCalledWith(result);
+      expect(mockResponse.json).toHaveBeenCalledWith({
+        success: true,
+        data: result,
+      });
     });
 
     it("should call next with BadRequestError for invalid newPlanName", async () => {
@@ -147,7 +150,10 @@ describe("BillingController", () => {
 
       await BillingController.cancelSubscription(mockRequest, mockResponse, () => {});
 
-      expect(mockResponse.json).toHaveBeenCalledWith(result);
+      expect(mockResponse.json).toHaveBeenCalledWith({
+        success: true,
+        data: result,
+      });
     });
   });
 
@@ -157,7 +163,10 @@ describe("BillingController", () => {
 
       await BillingController.reactivateSubscription(mockRequest, mockResponse, () => {});
 
-      expect(mockResponse.json).toHaveBeenCalledWith({ reactivated: true });
+      expect(mockResponse.json).toHaveBeenCalledWith({
+        success: true,
+        data: { reactivated: true },
+      });
     });
   });
 

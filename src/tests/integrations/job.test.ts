@@ -43,11 +43,12 @@ describe("Public Job Endpoints", () => {
     await createJobPosting(user.id, { status: JobStatus.CLOSED, title: "Hidden Job" });
 
     const res = await request(app).get("/api/v1/jobs");
+    console.log(res.body);
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
-    expect(res.body.jobs).toHaveLength(1);
-    expect(res.body.jobs[0].title).toBe("Public Job");
+    expect(res.body.data).toHaveLength(1);
+    expect(res.body.data[0].title).toBe("Public Job");
   });
 
   it("GET /api/v1/jobs — 200 filters by department", async () => {
@@ -56,10 +57,11 @@ describe("Public Job Endpoints", () => {
     await createJobPosting(user.id, { status: JobStatus.OPEN, department: "SALES" });
 
     const res = await request(app).get("/api/v1/jobs?department=ENGINEERING");
+    console.log(res.body);
 
     expect(res.status).toBe(200);
-    expect(res.body.jobs).toHaveLength(1);
-    expect(res.body.jobs[0].department).toBe("ENGINEERING");
+    expect(res.body.data).toHaveLength(1);
+    expect(res.body.data[0].department).toBe("ENGINEERING");
   });
 
   it("GET /api/v1/jobs/:slug — 200 returns job details if open", async () => {
@@ -101,10 +103,11 @@ describe("Admin Job Endpoints", () => {
     const res = await request(app)
       .get("/api/v1/jobs/admin/all")
       .set(authHeaders(admin));
+      console.log(res.body);
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
-    expect(res.body.jobs).toHaveLength(2);
+    expect(res.body.data).toHaveLength(2);
   });
 
   it("GET /api/v1/jobs/admin/all — 401 unauthenticated", async () => {
