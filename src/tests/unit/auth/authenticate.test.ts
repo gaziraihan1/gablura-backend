@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { readFileSync } from "fs";
+// import { readFileSync } from "fs";
 import type { Response, NextFunction } from "express";
 import type { AuthRequest } from "../../../middleware/auth.js";
 
@@ -99,11 +99,11 @@ function getNextError(next: ReturnType<typeof makeNext>) {
   return calls[0][0] as any;
 }
 
-function getTestPrivateKey(): string {
-  const keyPath = process.env.JWT_PRIVATE_KEY_PATH;
-  if (!keyPath) throw new Error("JWT_PRIVATE_KEY_PATH is not set.");
-  return readFileSync(keyPath, "utf-8");
-}
+// function getTestPrivateKey(): string {
+//   const keyPath = process.env.JWT_PRIVATE_KEY_PATH;
+//   if (!keyPath) throw new Error("JWT_PRIVATE_KEY_PATH is not set.");
+//   return readFileSync(keyPath, "utf-8");
+// }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
@@ -177,17 +177,7 @@ describe("authenticate middleware", () => {
   });
 
   it("returns 401 TOKEN_VERSION_MISMATCH for token with wrong version", async () => {
-    const privateKey = getTestPrivateKey();
-    const { default: jwt } = await import("jsonwebtoken");
-
-    const token = jwt.sign(
-      {
-        sub: mockUser.id, email: mockUser.email, role: mockUser.role,
-        type: "access", version: 99, jti: "test-jti", sessionId: "test-session",
-      },
-      privateKey,
-      { algorithm: "RS256", issuer: "focura-app", audience: "focura-backend" },
-    );
+    const token = generateTestToken(mockUser, { version: 99 });
 
     const next = makeNext();
     await authenticate(makeReq(`Bearer ${token}`), makeRes(), next);
@@ -198,17 +188,7 @@ describe("authenticate middleware", () => {
   });
 
   it("returns 401 INVALID_TOKEN_TYPE for refresh token used as access token", async () => {
-    const privateKey = getTestPrivateKey();
-    const { default: jwt } = await import("jsonwebtoken");
-
-    const token = jwt.sign(
-      {
-        sub: mockUser.id, email: mockUser.email, role: mockUser.role,
-        type: "refresh", version: 1, jti: "test-jti", sessionId: "test-session",
-      },
-      privateKey,
-      { algorithm: "RS256", issuer: "focura-app", audience: "focura-backend" },
-    );
+    const token = generateTestToken(mockUser, { type: "refresh" });
 
     const next = makeNext();
     await authenticate(makeReq(`Bearer ${token}`), makeRes(), next);

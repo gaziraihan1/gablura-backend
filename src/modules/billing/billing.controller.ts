@@ -87,12 +87,15 @@ export class BillingController {
       billingCycle,
     });
 
-    res.json(result);
+    res.json({
+      success: true,
+      data: result ?? { message: "Plan updated successfully" },
+    });
   });
 
   static cancelSubscription = asyncHandler(
     async (req: AuthRequest, res: Response) => {
-      const { immediately = false, reason } = req.body as {
+      const { immediately = false, reason } = (req.body || {}) as {
         immediately?: boolean;
         reason?: string;
       };
@@ -104,7 +107,7 @@ export class BillingController {
         reason,
       });
 
-      res.json(result);
+      res.json({ success: true, data: result });
     },
   );
 
@@ -114,7 +117,7 @@ export class BillingController {
         req.params.workspaceId,
         req.user!.id,
       );
-      res.json({ reactivated: true });
+      res.json({ success: true, data: { reactivated: true } });
     },
   );
 

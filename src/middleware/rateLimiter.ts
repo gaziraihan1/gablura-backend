@@ -21,7 +21,11 @@ export const rateLimitMiddleware = (max = 100, windowSeconds = 60) => {
       pipe.expire(key, windowSeconds);
       const results = await pipe.exec();
 
-      const count = (results?.[2]?.[1] as number) ?? 0;
+      // results is an array of [err, result] tuples for each command in the pipeline
+      // zcard is the 3rd command (index 2)
+      const [err, zcardResult] = results?.[2] || [];
+
+      const count = typeof zcardResult === "number" ? zcardResult : 0;
 
       if (count > max) {
         return res.status(429).json({ error: "Too many requests", retryAfter: windowSeconds });

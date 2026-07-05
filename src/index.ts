@@ -42,7 +42,7 @@ import {
   workspaceAnnouncementRouter,
 } from "./modules/announcement/index.js";
 import { adminRouter } from "./admin/admin.routes.js";
-import { prisma, checkDatabaseHealth, getPoolMetrics, disconnectAll } from "./lib/prisma.js";
+import { checkDatabaseHealth, getPoolMetrics, disconnectAll } from "./lib/prisma.js";
 import { dbMonitoring, dbPoolGuard } from "./middleware/dbMonitoring.js";
 import { templatesRouter } from "./modules/templates/index.js";
 import { errorHandler, notFoundHandler } from "./errors/errorHandler.js";

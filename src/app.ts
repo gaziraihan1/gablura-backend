@@ -1,4 +1,4 @@
-import express, { Application, Request, Response } from "express";
+import express, { Application, NextFunction, Request, Response } from "express";
 import cors from "cors";
 import helmet from "helmet";
 
@@ -56,6 +56,25 @@ app.use(webhookRouter);
 // ── Body parsing ───────────────────────────────────────────
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+
+// ── Body Parser Error Handler ───────────────────────────────
+app.use((err: any, req: Request, res: Response, next: NextFunction) => {
+  if (err.type === 'entity.too.large') {
+    return res.status(413).json({
+      success: false,
+      message: 'Payload too large',
+      code: 'PAYLOAD_TOO_LARGE',
+    });
+  }
+  if (err.type === 'entity.parse.failed') {
+    return res.status(400).json({
+      success: false,
+      message: 'Malformed JSON payload',
+      code: 'MALFORMED_JSON',
+    });
+  }
+  next(err);
+});
 
 // ── CORS (match index.ts) ──────────────────────────────────
 app.use(

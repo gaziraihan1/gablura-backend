@@ -57,7 +57,7 @@ export async function setup() {
   console.log('🔧 [globalSetup] Pushing schema to test database...');
   
   try {
-    execSync('npx prisma db push --force-reset --accept-data-loss', {
+    execSync('npx prisma migrate reset --force', {
       env: {
         ...process.env,
         DATABASE_URL: testDb,

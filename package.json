@@ -29,7 +29,14 @@
     "test:ui": "vitest --ui",
     "test:file": "vitest run",
     "db:setup": "prisma generate && prisma db push --force-reset",
-    "db:seed": "tsx prisma/seed.ts"
+    "db:seed": "tsx prisma/seed.ts",
+    "test:performance": "tsx performance/run-tests.ts",
+    "test:performance:api": "tsx performance/api-tests.ts",
+    "test:performance:simple": "tsx performance/simple-api-tests.ts",
+    "test:performance:database": "tsx performance/database-tests.ts",
+    "test:performance:service": "tsx performance/service-tests.ts",
+    "test:performance:load": "tsx performance/load-tests.ts",
+    "test:performance:check": "tsx performance/check-server.ts"
   },
   "dependencies": {
     "@ngrok/ngrok": "^1.7.0",
@@ -60,6 +67,7 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@faker-js/faker": "^9.9.0",
+    "@types/autocannon": "^7.12.7",
     "@types/cookie-parser": "^1.4.10",
     "@types/cors": "^2.8.19",
     "@types/escape-html": "^1.0.4",

@@ -1,5 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { notificationStreamHandler, getLocalConnectionCount, resetLocalClients } from '../../../sockets/notification.stream.js';
+import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from 'vitest';
 import { verifyToken } from '../../../lib/auth/backendToken.js';
 import { getSubscriber } from '../../../lib/redis/redis.pubsub.js';
 // import type { Request, Response } from 'express';
@@ -13,7 +12,7 @@ vi.mock('../../../lib/redis/redis.pubsub.js', () => {
   const mockSubscriber = {
     on: vi.fn(),
     subscribe: vi.fn(),
-    unsubscribe: vi.fn(),
+    unsubscribe: vi.fn((channel, cb) => cb(null)),
   };
   return {
     getSubscriber: vi.fn(() => mockSubscriber),
@@ -24,11 +23,39 @@ describe('notificationStreamHandler', () => {
   let mockReq: any;
   let mockRes: any;
   let mockSubscriber: any;
+  let messageHandler: any;
+  
+  // Module exports
+  let notificationStreamHandler: any;
+  let getLocalConnectionCount: any;
+  let resetLocalClients: any;
+
+  beforeAll(async () => {
+    vi.useFakeTimers();
+    
+    // Dynamically import to ensure setInterval is tracked by fake timers
+    const module = await import('../../../sockets/notification.stream.js');
+    notificationStreamHandler = module.notificationStreamHandler;
+    getLocalConnectionCount = module.getLocalConnectionCount;
+    resetLocalClients = module.resetLocalClients;
+
+    mockSubscriber = getSubscriber();
+    // Capture the message handler that was registered during module load
+    const call = mockSubscriber.on.mock.calls.find(call => call[0] === 'message');
+    if (call) {
+      messageHandler = call[1];
+    }
+  });
+
+  afterAll(() => {
+    vi.useRealTimers();
+  });
 
   beforeEach(() => {
-    vi.resetAllMocks();
+    // Use clearAllMocks instead of resetAllMocks to preserve the initial 'on' call if needed
+    // although we captured messageHandler already.
+    vi.clearAllMocks();
     resetLocalClients();
-    mockSubscriber = getSubscriber();
 
     mockReq = {
       query: {},
@@ -64,7 +91,7 @@ describe('notificationStreamHandler', () => {
   it('should establish SSE connection for valid token', async () => {
     mockReq.query.token = 'valid-token';
     (verifyToken as any).mockReturnValue({ id: 'user-123' });
-    
+
     // Mock successful redis subscription
     mockSubscriber.subscribe.mockImplementation((channel: any, cb: any) => cb(null));
 
@@ -81,7 +108,7 @@ describe('notificationStreamHandler', () => {
   it('should handle redis subscription error gracefully', async () => {
     mockReq.query.token = 'valid-token';
     (verifyToken as any).mockReturnValue({ id: 'user-123' });
-    
+
     // Mock redis subscription failure
     mockSubscriber.subscribe.mockImplementation((channel: any, cb: any) => cb(new Error('Redis Error')));
 
@@ -97,7 +124,7 @@ describe('notificationStreamHandler', () => {
     mockSubscriber.subscribe.mockImplementation((channel: any, cb: any) => cb(null));
 
     await notificationStreamHandler(mockReq, mockRes);
-    
+
     const closeHandler = mockReq.on.mock.calls.find((call: any) => call[0] === 'close')[1];
     closeHandler();
 
@@ -121,5 +148,98 @@ describe('notificationStreamHandler', () => {
     await notificationStreamHandler(mockReq, mockRes2);
 
     expect(getLocalConnectionCount()).toBe(2);
+  });
+
+  describe('Redis Message Handling', () => {
+    it('should send notification to connected clients', async () => {
+      mockReq.query.token = 'valid-token';
+      (verifyToken as any).mockReturnValue({ id: 'user-123' });
+      mockSubscriber.subscribe.mockImplementation((channel: any, cb: any) => cb(null));
+      await notificationStreamHandler(mockReq, mockRes);
+
+      const payload = { type: 'notification', content: 'Hello' };
+      messageHandler('sse:user:user-123', JSON.stringify(payload));
+
+      expect(mockRes.write).toHaveBeenCalledWith(`data: ${JSON.stringify(payload)}\n\n`);
+    });
+
+    it('should return early if no clients are connected for the user', async () => {
+      // Try to send to a user that isn't connected
+      messageHandler('sse:user:unknown', JSON.stringify({ type: 'test' }));
+
+      expect(mockRes.write).not.toHaveBeenCalledWith(expect.stringContaining('test'));
+    });
+
+    it('should handle malformed JSON gracefully', async () => {
+      mockReq.query.token = 'valid-token';
+      (verifyToken as any).mockReturnValue({ id: 'user-123' });
+      mockSubscriber.subscribe.mockImplementation((channel: any, cb: any) => cb(null));
+      await notificationStreamHandler(mockReq, mockRes);
+
+      // Send invalid JSON
+      messageHandler('sse:user:user-123', 'invalid-json');
+
+      expect(mockRes.write).not.toHaveBeenCalledWith(expect.stringContaining('invalid-json'));
+    });
+
+    it('should remove client if writing fails', async () => {
+      mockReq.query.token = 'valid-token';
+      (verifyToken as any).mockReturnValue({ id: 'user-123' });
+      mockSubscriber.subscribe.mockImplementation((channel: any, cb: any) => cb(null));
+      await notificationStreamHandler(mockReq, mockRes);
+
+      mockRes.write.mockImplementation(() => {
+        throw new Error('Write failed');
+      });
+
+      messageHandler('sse:user:user-123', JSON.stringify({ type: 'test' }));
+
+      expect(getLocalConnectionCount()).toBe(0);
+    });
+  });
+
+  describe('Unsubscription and Heartbeat', () => {
+    it('should handle unsubscribe error by rolling back state to active', async () => {
+      mockReq.query.token = 'valid-token';
+      (verifyToken as any).mockReturnValue({ id: 'user-123' });
+      mockSubscriber.subscribe.mockImplementation((channel: any, cb: any) => cb(null));
+      await notificationStreamHandler(mockReq, mockRes);
+
+      // Mock unsubscribe to fail
+      mockSubscriber.unsubscribe.mockImplementation((channel: any, cb: any) => cb(new Error('Unsub failed')));
+
+      const closeHandler = mockReq.on.mock.calls.find((call: any) => call[0] === 'close')[1];
+      closeHandler();
+
+      expect(mockSubscriber.unsubscribe).toHaveBeenCalled();
+    });
+
+    it('should send heartbeat to connected clients', async () => {
+      mockReq.query.token = 'valid-token';
+      (verifyToken as any).mockReturnValue({ id: 'user-123' });
+      mockSubscriber.subscribe.mockImplementation((channel: any, cb: any) => cb(null));
+      await notificationStreamHandler(mockReq, mockRes);
+
+      mockRes.write.mockClear();
+      vi.advanceTimersByTime(25000);
+
+      expect(mockRes.write).toHaveBeenCalledWith(': heartbeat\n\n');
+    });
+
+    it('should handle heartbeat write failure', async () => {
+      mockReq.query.token = 'valid-token';
+      (verifyToken as any).mockReturnValue({ id: 'user-123' });
+      mockSubscriber.subscribe.mockImplementation((channel: any, cb: any) => cb(null));
+      await notificationStreamHandler(mockReq, mockRes);
+
+      mockRes.write.mockImplementation((data: string) => {
+        if (data === ': heartbeat\n\n') throw new Error('Heartbeat failed');
+        return {};
+      });
+      mockRes.write.mockClear();
+      vi.advanceTimersByTime(25000);
+
+      expect(mockRes.write).toHaveBeenCalledWith(': heartbeat\n\n');
+    });
   });
 });

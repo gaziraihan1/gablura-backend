@@ -34,6 +34,8 @@ export interface TokenOptions {
   expiresIn?: string | number;
   sessionId?: string;
   jti?: string;
+  version?: number;
+  type?: string;
 }
 
 export function generateTestToken(user: TestUser, opts: TokenOptions = {}): string {
@@ -42,8 +44,8 @@ export function generateTestToken(user: TestUser, opts: TokenOptions = {}): stri
       sub: user.id,
       email: user.email,
       role: user.role,
-      type: 'access',
-      version: 1,
+      type: opts.type ?? 'access',
+      version: opts.version ?? 1,
       jti: opts.jti ?? crypto.randomUUID(),
       sessionId: opts.sessionId ?? crypto.randomUUID(),
     },

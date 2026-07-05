@@ -39,11 +39,11 @@ async function addProjectManager(projectId: string, userId: string) {
 }
 
 /** Adds a user to a project as a regular MEMBER */
-async function addProjectMember(projectId: string, userId: string) {
-  return prisma.projectMember.create({
-    data: { projectId, userId, role: 'COLLABORATOR' },
-  });
-}
+// async function addProjectMember(projectId: string, userId: string) {
+//   return prisma.projectMember.create({
+//     data: { projectId, userId, role: 'COLLABORATOR' },
+//   });
+// }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Setup / teardown

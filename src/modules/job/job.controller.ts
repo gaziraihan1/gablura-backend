@@ -28,7 +28,6 @@ function assertAdmin(userId: string | undefined): void {
 }
 
 // ─── Public ───────────────────────────────────────────────────────────────────
-
 export const publicListJobs = asyncHandler(async (req: Request, res: Response) => {
   const parsed = listJobsQuerySchema.safeParse(req.query);
   if (!parsed.success) {
@@ -36,7 +35,11 @@ export const publicListJobs = asyncHandler(async (req: Request, res: Response) =
   }
 
   const result = await listOpenJobs(parsed.data);
-  res.json({ success: true, ...result });
+  res.json({ 
+    success: true, 
+    data: result.jobs, 
+    pagination: result.pagination 
+  });
 });
 
 export const publicGetJob = asyncHandler(async (req: Request, res: Response) => {
@@ -54,7 +57,11 @@ export const adminListJobs = asyncHandler(async (req: AuthRequest, res: Response
   const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 20));
 
   const result = await listAllJobs(page, limit);
-  res.json({ success: true, ...result });
+  res.json({ 
+    success: true, 
+    data: result.jobs, 
+    pagination: result.pagination 
+  });
 });
 
 export const adminCreateJob = asyncHandler(async (req: AuthRequest, res: Response) => {

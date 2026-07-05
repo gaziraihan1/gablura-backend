@@ -30,6 +30,8 @@ router.get('/workspace-members', authenticate, async (req: AuthRequest, res: Res
         name: true,
         email: true,
         image: true,
+        role: true,
+        createdAt: true,
       },
       distinct: ['id'],
     });
