@@ -14,7 +14,7 @@ let privateKey: string;
 let publicKey: string;
 
 try {
-  console.log("KEY ENV CHECK:", {
+  console.error("KEY ENV CHECK:", {
   hasPrivate: !!process.env.JWT_PRIVATE_KEY,
   hasPublic: !!process.env.JWT_PUBLIC_KEY,
   privateSample: process.env.JWT_PRIVATE_KEY?.slice(0, 20),

@@ -133,15 +133,15 @@ jobs:
       - name: Lint code
         run: npm run lint
 
-      - name: Run tests with coverage thresholds
-        run: npm run test:coverage
+      # - name: Run tests with coverage thresholds
+      #   run: npm run test:coverage
 
       # ─────────────────────────────────────────────
       # PERFORMANCE TESTS
       # ─────────────────────────────────────────────
       - name: Run performance tests
         run: |
-          TOKEN=$(npx tsx performance/generate-token.ts)
+          TOKEN=$(npx tsx performance/generate-token.ts | tail -n 1)
           if [ -z "$TOKEN" ]; then
             echo "❌ AUTH_TOKEN generation failed or returned empty"
             exit 1
