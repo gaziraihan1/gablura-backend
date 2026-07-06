@@ -133,8 +133,8 @@ jobs:
       - name: Lint code
         run: npm run lint
 
-      # - name: Run tests with coverage thresholds
-      #   run: npm run test:coverage
+      - name: Run tests with coverage thresholds
+        run: npm run test:coverage
 
       # ─────────────────────────────────────────────
       # PERFORMANCE TESTS
