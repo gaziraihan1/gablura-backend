@@ -67,43 +67,46 @@ jobs:
 
       - name: Set environment variables & generate RSA keys
         run: |
-           echo "NODE_ENV=test" >> $GITHUB_ENV
-           echo "PORT=5001" >> $GITHUB_ENV
+          echo "NODE_ENV=test" >> $GITHUB_ENV
+          echo "PORT=5001" >> $GITHUB_ENV
 
-           echo "DATABASE_URL=postgresql://postgres:test_password@localhost:5432/focura_test" >> $GITHUB_ENV
-           echo "DIRECT_URL=postgresql://postgres:test_password@localhost:5432/focura_test" >> $GITHUB_ENV
-           echo "TEST_DATABASE_URL=postgresql://postgres:test_password@localhost:5432/focura_test" >> $GITHUB_ENV
+          echo "DATABASE_URL=postgresql://postgres:test_password@localhost:5432/focura_test" >> $GITHUB_ENV
+          echo "DIRECT_URL=postgresql://postgres:test_password@localhost:5432/focura_test" >> $GITHUB_ENV
+          echo "TEST_DATABASE_URL=postgresql://postgres:test_password@localhost:5432/focura_test" >> $GITHUB_ENV
 
-           echo "REDIS_URL=redis://127.0.0.1:6379" >> $GITHUB_ENV
+          echo "REDIS_URL=redis://127.0.0.1:6379" >> $GITHUB_ENV
+          echo "UPSTASH_REDIS_REST_URL=${{ secrets.UPSTASH_REDIS_REST_URL }}" >> $GITHUB_ENV
+          echo "UPSTASH_REDIS_REST_TOKEN=${{ secrets.UPSTASH_REDIS_REST_TOKEN }}" >> $GITHUB_ENV
 
-           # RSA keys – expose both file paths and base64 strings (keys generated in a prior step)
-           echo "JWT_PRIVATE_KEY_PATH=./keys/private.pem" >> $GITHUB_ENV
-           echo "JWT_PUBLIC_KEY_PATH=./keys/public.pem" >> $GITHUB_ENV
-           echo "JWT_PRIVATE_KEY=$(cat keys/private.pem | base64 -w 0)" >> $GITHUB_ENV
-           echo "JWT_PUBLIC_KEY=$(cat keys/public.pem | base64 -w 0)" >> $GITHUB_ENV
+          # RSA keys – expose both file paths and base64 strings (keys generated in a prior step)
+          echo "JWT_PRIVATE_KEY_PATH=./keys/private.pem" >> $GITHUB_ENV
+          echo "JWT_PUBLIC_KEY_PATH=./keys/public.pem" >> $GITHUB_ENV
+          echo "JWT_PRIVATE_KEY=$(cat keys/private.pem | base64 -w 0)" >> $GITHUB_ENV
+          echo "JWT_PUBLIC_KEY=$(cat keys/public.pem | base64 -w 0)" >> $GITHUB_ENV
 
-           echo "NEXTAUTH_SECRET=${{ secrets.NEXTAUTH_SECRET }}" >> $GITHUB_ENV
-           echo "ACCESS_TOKEN_SECRET=${{ secrets.ACCESS_TOKEN_SECRET }}" >> $GITHUB_ENV
+          echo "NEXTAUTH_SECRET=${{ secrets.NEXTAUTH_SECRET }}" >> $GITHUB_ENV
+          echo "ACCESS_TOKEN_SECRET=${{ secrets.ACCESS_TOKEN_SECRET }}" >> $GITHUB_ENV
 
-           echo "STRIPE_SECRET_KEY=sk_test_fake_for_tests_only" >> $GITHUB_ENV
-           echo "STRIPE_WEBHOOK_SECRET=whsec_fake_for_tests_only" >> $GITHUB_ENV
-           echo "STRIPE_PRICE_PRO_MONTHLY=price_fake" >> $GITHUB_ENV
-           echo "STRIPE_PRICE_PRO_YEARLY=price_fake" >> $GITHUB_ENV
-           echo "STRIPE_PRICE_BUSINESS_MONTHLY=price_fake" >> $GITHUB_ENV
-           echo "STRIPE_PRICE_BUSINESS_YEARLY=price_fake" >> $GITHUB_ENV
 
-           echo "CLOUDINARY_CLOUD_NAME=test" >> $GITHUB_ENV
-           echo "CLOUDINARY_API_KEY=test" >> $GITHUB_ENV
-           echo "CLOUDINARY_API_SECRET=test" >> $GITHUB_ENV
+          echo "STRIPE_SECRET_KEY=sk_test_fake_for_tests_only" >> $GITHUB_ENV
+          echo "STRIPE_WEBHOOK_SECRET=whsec_fake_for_tests_only" >> $GITHUB_ENV
+          echo "STRIPE_PRICE_PRO_MONTHLY=price_fake" >> $GITHUB_ENV
+          echo "STRIPE_PRICE_PRO_YEARLY=price_fake" >> $GITHUB_ENV
+          echo "STRIPE_PRICE_BUSINESS_MONTHLY=price_fake" >> $GITHUB_ENV
+          echo "STRIPE_PRICE_BUSINESS_YEARLY=price_fake" >> $GITHUB_ENV
 
-           echo "CLIENT_URL=http://localhost:3000" >> $GITHUB_ENV
-           echo "FRONTEND_URL=http://localhost:3000" >> $GITHUB_ENV
+          echo "CLOUDINARY_CLOUD_NAME=test" >> $GITHUB_ENV
+          echo "CLOUDINARY_API_KEY=test" >> $GITHUB_ENV
+          echo "CLOUDINARY_API_SECRET=test" >> $GITHUB_ENV
 
-           echo "PAYMENT_PROVIDER=STRIPE" >> $GITHUB_ENV
-           echo "FOCURA_ADMIN_IDS=cmq13or010006crfhieczji8v" >> $GITHUB_ENV
+          echo "CLIENT_URL=http://localhost:3000" >> $GITHUB_ENV
+          echo "FRONTEND_URL=http://localhost:3000" >> $GITHUB_ENV
 
-            # Enable CSRF enforcement for integration tests
-            echo "ENFORCE_CSRF_IN_TESTS=true" >> $GITHUB_ENV
+          echo "PAYMENT_PROVIDER=STRIPE" >> $GITHUB_ENV
+          echo "FOCURA_ADMIN_IDS=cmq13or010006crfhieczji8v" >> $GITHUB_ENV
+
+           # Enable CSRF enforcement for integration tests
+           echo "ENFORCE_CSRF_IN_TESTS=true" >> $GITHUB_ENV
 
       # ─────────────────────────────────────────────
       # RSA KEYS
@@ -138,36 +141,44 @@ jobs:
       # ─────────────────────────────────────────────
       - name: Run performance tests
         run: |
-          # Generate auth token for authenticated scenarios
           TOKEN=$(npx tsx performance/generate-token.ts)
+          if [ -z "$TOKEN" ]; then
+            echo "❌ AUTH_TOKEN generation failed or returned empty"
+            exit 1
+          fi
+          echo "Token length: ${#TOKEN}"
           export AUTH_TOKEN=$TOKEN
           export TEST_SERVER_URL=http://localhost:5001
-          
-          # Start server in background using tsx to avoid slow build step
+
           npx tsx src/index.ts &
           SERVER_PID=$!
-          
-          # Wait for server to be ready
-          echo "Waiting for server to start on http://localhost:5001..."
+
+          echo "Waiting for server..."
+          SERVER_UP=false
           for i in {1..20}; do
             if curl -s http://localhost:5001/health > /dev/null; then
-              echo "✅ Server is up and healthy"
+              echo "✅ Server is up"
+              SERVER_UP=true
               break
             fi
-            echo "Waiting... ($i/20)"
             sleep 2
           done
-          
-          if ! curl -s http://localhost:5001/health > /dev/null; then
+
+          if [ "$SERVER_UP" != "true" ]; then
             echo "❌ Server failed to start in time"
             kill $SERVER_PID
             exit 1
           fi
-          
-          # Execute performance test suite
+
+          echo "=== Diagnostic: GET /api/v1/workspaces ==="
+          curl -v -m 10 -H "Authorization: Bearer $TOKEN" http://localhost:5001/api/v1/workspaces \
+            -w "\n>>> HTTP_STATUS:%{http_code} TIME_TOTAL:%{time_total}s\n"
+
+          echo "=== Diagnostic: GET /api/v1/tasks ==="
+          curl -v -m 10 -H "Authorization: Bearer $TOKEN" http://localhost:5001/api/v1/tasks \
+            -w "\n>>> HTTP_STATUS:%{http_code} TIME_TOTAL:%{time_total}s\n"
+
           npm run test:performance
-          
-          # Cleanup
           kill $SERVER_PID
 
       # ─────────────────────────────────────────────
