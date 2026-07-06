@@ -55,7 +55,7 @@ describe("backendToken", () => {
       expect(decoded.type).toBe("access");
       expect(decoded.version).toBe(CURRENT_TOKEN_VERSION);
       expect(decoded.jti).toBeDefined();
-      expect(decoded.sid).toBe(payload.sessionId);
+      expect(decoded.sessionId).toBe(payload.sessionId);
     });
 
     it("creates token with RS256 algorithm", () => {
@@ -106,7 +106,7 @@ describe("backendToken", () => {
       expect(decoded.type).toBe("refresh");
       expect(decoded.version).toBe(CURRENT_TOKEN_VERSION);
       expect(decoded.jti).toBeDefined();
-      expect(decoded.sid).toBe(payload.sessionId);
+      expect(decoded.sessionId).toBe(payload.sessionId);
     });
   });
 
@@ -139,8 +139,8 @@ describe("backendToken", () => {
       const accessDecoded = jwt.decode(pair.accessToken) as any;
       const refreshDecoded = jwt.decode(pair.refreshToken) as any;
 
-      expect(accessDecoded.sid).toBe(refreshDecoded.sid);
-      expect(accessDecoded.sid).toBeDefined();
+      expect(accessDecoded.sessionId).toBe(refreshDecoded.sessionId);
+      expect(accessDecoded.sessionId).toBeDefined();
     });
 
     it("uses provided sessionId if given", () => {
@@ -156,8 +156,8 @@ describe("backendToken", () => {
       const accessDecoded = jwt.decode(pair.accessToken) as any;
       const refreshDecoded = jwt.decode(pair.refreshToken) as any;
 
-      expect(accessDecoded.sid).toBe("custom-session");
-      expect(refreshDecoded.sid).toBe("custom-session");
+      expect(accessDecoded.sessionId).toBe("custom-session");
+      expect(refreshDecoded.sessionId).toBe("custom-session");
     });
   });
 
@@ -194,6 +194,7 @@ describe("backendToken", () => {
 
       const token = createAccessToken(payload);
       const verified = verifyToken(token, "access");
+      console.log("Verified payload:", verified);
 
       expect(verified.id).toBe(payload.id);
       expect(verified.email).toBe(payload.email);
@@ -215,7 +216,7 @@ describe("backendToken", () => {
         type: "access",
         version: 99, // Wrong version
         jti: "test-jti",
-        sid: "session-abc",
+        sessionId: "session-abc",
       } as any);
 
       expect(() => verifyToken("some-token", "access")).toThrow("Token version mismatch");

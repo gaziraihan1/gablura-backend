@@ -167,7 +167,7 @@ export function verifyToken(
     type: decoded.type,
     version: decoded.version,
     jti: decoded.jti!,
-    sessionId: decoded.sid,
+    sessionId: decoded.sessionId, // Support both 'sid' and 'sessionId' for backward compatibility
   };
 }
 
