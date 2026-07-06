@@ -194,7 +194,7 @@ export function generateReport(results: TestResult[]): PerformanceReport {
       totalScenarios: results.length,
       passedScenarios,
       failedScenarios: results.length - passedScenarios,
-      overallSuccessRate: (totalSuccessfulRequests / totalRequests) * 100,
+      overallSuccessRate: (passedScenarios / results.length) * 100,
     },
   };
 }

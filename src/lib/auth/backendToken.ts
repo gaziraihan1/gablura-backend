@@ -72,7 +72,7 @@ export function createAccessToken(p: {
       type: "access",
       version: CURRENT_TOKEN_VERSION,
       jti: crypto.randomUUID(),
-      sid: p.sessionId,
+      sessionId: p.sessionId,
     },
     privateKey,
     {
@@ -98,7 +98,7 @@ export function createRefreshToken(p: {
       type: "refresh",
       version: CURRENT_TOKEN_VERSION,
       jti: crypto.randomUUID(),
-      sid: p.sessionId,
+      sessionId: p.sessionId,
     },
     privateKey,
     {
