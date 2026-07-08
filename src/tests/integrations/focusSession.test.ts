@@ -46,6 +46,9 @@ describe("POST /api/v1/focus-sessions/start — start", () => {
       title: "Deep work task",
     });
 
+    // Ensure the task is committed to the DB
+    await prisma.$transaction([]);
+
     const res = await request(app)
       .post(`${BASE}/start`)
       .set(await authWithCsrfHeaders(user))

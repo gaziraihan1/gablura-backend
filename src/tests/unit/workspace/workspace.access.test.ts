@@ -101,6 +101,26 @@ describe("WorkspaceAccess", () => {
       expect(result).toEqual(mockMember);
     });
 
+    it("caches the membership check on subsequent calls", async () => {
+      const mockMember = {
+        id: "mem-1",
+        userId: mockUserId,
+        workspaceId: mockWorkspaceId,
+        role: "MEMBER",
+      };
+      vi.mocked(prisma.workspaceMember.findFirst).mockResolvedValue(
+        mockMember as any,
+      );
+
+      const result1 = await WorkspaceAccess.assertMember(mockWorkspaceId, mockUserId);
+      expect(result1).toEqual(mockMember);
+      expect(prisma.workspaceMember.findFirst).toHaveBeenCalledTimes(1);
+
+      const result2 = await WorkspaceAccess.assertMember(mockWorkspaceId, mockUserId);
+      expect(result2).toEqual(mockMember);
+      expect(prisma.workspaceMember.findFirst).toHaveBeenCalledTimes(1);
+    });
+
     it("throws ForbiddenError when user is not a member", async () => {
       vi.mocked(prisma.workspaceMember.findFirst).mockResolvedValue(null);
 
@@ -172,6 +192,24 @@ describe("WorkspaceAccess", () => {
         }),
       );
     });
+
+    it("caches the admin check on subsequent calls", async () => {
+      const mockMember = {
+        id: "mem-1",
+        userId: mockUserId,
+        workspaceId: mockWorkspaceId,
+        role: "ADMIN",
+      };
+      vi.mocked(prisma.workspaceMember.findFirst).mockResolvedValue(
+        mockMember as any,
+      );
+
+      await WorkspaceAccess.assertAdmin(mockWorkspaceId, mockUserId);
+      expect(prisma.workspaceMember.findFirst).toHaveBeenCalledTimes(1);
+
+      await WorkspaceAccess.assertAdmin(mockWorkspaceId, mockUserId);
+      expect(prisma.workspaceMember.findFirst).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe("assertOwner", () => {
@@ -214,6 +252,23 @@ describe("WorkspaceAccess", () => {
           where: { id: mockWorkspaceId, ownerId: mockUserId },
         }),
       );
+    });
+
+    it("caches the owner check on subsequent calls", async () => {
+      const mockWorkspace = {
+        id: mockWorkspaceId,
+        ownerId: mockUserId,
+        name: "Test WS",
+      };
+      vi.mocked(prisma.workspace.findFirst).mockResolvedValue(
+        mockWorkspace as any,
+      );
+
+      await WorkspaceAccess.assertOwner(mockWorkspaceId, mockUserId);
+      expect(prisma.workspace.findFirst).toHaveBeenCalledTimes(1);
+
+      await WorkspaceAccess.assertOwner(mockWorkspaceId, mockUserId);
+      expect(prisma.workspace.findFirst).toHaveBeenCalledTimes(1);
     });
   });
 });

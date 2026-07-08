@@ -73,6 +73,15 @@ export const CACHE_TTL = {
   AUTH_RESULT: parseInt(process.env.CACHE_TTL_AUTH_RESULT ?? "300"), // 5 min
   USER_SESSION: parseInt(process.env.CACHE_TTL_USER_SESSION ?? "3600"), // 1 hour
 
+  // Access Control — moderate TTLs for role/membership checks
+  ACCESS_CONTROL_WORKSPACE_MEMBER: parseInt(process.env.CACHE_TTL_ACCESS_CONTROL_WORKSPACE_MEMBER ?? "900"), // 15 min
+  ACCESS_CONTROL_WORKSPACE_ADMIN: parseInt(process.env.CACHE_TTL_ACCESS_CONTROL_WORKSPACE_ADMIN ?? "900"), // 15 min
+  ACCESS_CONTROL_WORKSPACE_OWNER: parseInt(process.env.CACHE_TTL_ACCESS_CONTROL_WORKSPACE_OWNER ?? "900"), // 15 min
+  ACCESS_CONTROL_PROJECT_ADMIN: parseInt(process.env.CACHE_TTL_ACCESS_CONTROL_PROJECT_ADMIN ?? "900"), // 15 min
+  ACCESS_CONTROL_PROJECT_MEMBER: parseInt(process.env.CACHE_TTL_ACCESS_CONTROL_PROJECT_MEMBER ?? "900"), // 15 min
+  ACCESS_CONTROL_TASK_EDIT: parseInt(process.env.CACHE_TTL_ACCESS_CONTROL_TASK_EDIT ?? "600"), // 10 min
+  ACCESS_CONTROL_TASK_ACCESS: parseInt(process.env.CACHE_TTL_ACCESS_CONTROL_TASK_ACCESS ?? "600"), // 10 min
+
   // External API caching — reduces external API calls and costs
   EXTERNAL_API_STRIPE_CUSTOMER: parseInt(process.env.CACHE_TTL_EXTERNAL_API_STRIPE_CUSTOMER ?? "300"), // 5 min
   EXTERNAL_API_STRIPE_SUBSCRIPTION: parseInt(process.env.CACHE_TTL_EXTERNAL_API_STRIPE_SUBSCRIPTION ?? "180"), // 3 min
@@ -190,6 +199,17 @@ export const CACHE_KEYS = {
   authResult: (tokenJti: string) => `auth:result:${tokenJti}`,
   userSession: (userId: string) => `session:user:${userId}`,
   activeSessions: (userId: string) => `sessions:active:${userId}`,
+
+  // Access Control caching
+  workspaceMember: (workspaceId: string, userId: string) => `access:workspace:member:${workspaceId}:${userId}`,
+  workspaceAdmin: (workspaceId: string, userId: string) => `access:workspace:admin:${workspaceId}:${userId}`,
+  workspaceOwner: (workspaceId: string, userId: string) => `access:workspace:owner:${workspaceId}:${userId}`,
+  workspaceAccess: (workspaceId: string, userId: string) => `access:workspace:access:${workspaceId}:${userId}`,
+  storageMemberWithWorkspace: (workspaceId: string, userId: string) => `access:workspace:storage-member-ws:${workspaceId}:${userId}`,
+  projectAdmin: (projectId: string, userId: string) => `access:project:admin:${projectId}:${userId}`,
+  projectMember: (projectId: string, userId: string) => `access:project:member:${projectId}:${userId}`,
+  taskEdit: (taskId: string, userId: string) => `access:task:edit:${taskId}:${userId}`,
+  taskAccess: (taskId: string, userId: string) => `access:task:access:${taskId}:${userId}`,
 
   // External API caching
   stripeCustomer: (customerId: string) => `api:stripe:customer:${customerId}`,
@@ -719,5 +739,113 @@ export const ExternalApiCache = {
    */
   async invalidateAllPaddle(): Promise<void> {
     await CacheClient.deletePattern("api:paddle:*");
+  },
+};
+
+// ─── Access Control Cache Invalidation ─────────────────────────────────────────────
+
+export const AccessControlCache = {
+  /**
+   * Invalidate workspace member access for a specific user
+   */
+  async invalidateWorkspaceMember(workspaceId: string, userId: string): Promise<void> {
+    await CacheClient.delete(CACHE_KEYS.workspaceMember(workspaceId, userId));
+  },
+
+  /**
+   * Invalidate workspace admin access for a specific user
+   */
+  async invalidateWorkspaceAdmin(workspaceId: string, userId: string): Promise<void> {
+    await CacheClient.delete(CACHE_KEYS.workspaceAdmin(workspaceId, userId));
+  },
+
+  /**
+   * Invalidate workspace owner access for a specific user
+   */
+  async invalidateWorkspaceOwner(workspaceId: string, userId: string): Promise<void> {
+    await CacheClient.delete(CACHE_KEYS.workspaceOwner(workspaceId, userId));
+  },
+
+  /**
+   * Invalidate all workspace access for a specific user in a workspace
+   */
+  async invalidateWorkspaceAccess(workspaceId: string, userId: string): Promise<void> {
+    await Promise.all([
+      this.invalidateWorkspaceMember(workspaceId, userId),
+      this.invalidateWorkspaceAdmin(workspaceId, userId),
+      this.invalidateWorkspaceOwner(workspaceId, userId),
+    ]);
+  },
+
+  /**
+   * Invalidate all workspace access for all users in a workspace
+   * Call this when workspace membership changes (add/remove member, role change)
+   */
+  async invalidateWorkspaceUsers(workspaceId: string): Promise<void> {
+    await CacheClient.deletePattern(`access:workspace:*:${workspaceId}:*`);
+  },
+
+  /**
+   * Invalidate project admin access for a specific user
+   */
+  async invalidateProjectAdmin(projectId: string, userId: string): Promise<void> {
+    await CacheClient.delete(CACHE_KEYS.projectAdmin(projectId, userId));
+  },
+
+  /**
+   * Invalidate project member access for a specific user
+   */
+  async invalidateProjectMember(projectId: string, userId: string): Promise<void> {
+    await CacheClient.delete(CACHE_KEYS.projectMember(projectId, userId));
+  },
+
+  /**
+   * Invalidate all project access for a specific user
+   */
+  async invalidateProjectAccess(projectId: string, userId: string): Promise<void> {
+    await Promise.all([
+      this.invalidateProjectAdmin(projectId, userId),
+      this.invalidateProjectMember(projectId, userId),
+    ]);
+  },
+
+  /**
+   * Invalidate all project access for all users in a project
+   * Call this when project membership changes
+   */
+  async invalidateProjectUsers(projectId: string): Promise<void> {
+    await CacheClient.deletePattern(`access:project:*:${projectId}:*`);
+  },
+
+  /**
+   * Invalidate task edit permission for a specific user
+   */
+  async invalidateTaskEdit(taskId: string, userId: string): Promise<void> {
+    await CacheClient.delete(CACHE_KEYS.taskEdit(taskId, userId));
+  },
+
+  /**
+   * Invalidate task access for a specific user
+   */
+  async invalidateTaskAccess(taskId: string, userId: string): Promise<void> {
+    await CacheClient.delete(CACHE_KEYS.taskAccess(taskId, userId));
+  },
+
+  /**
+   * Invalidate all task access for a specific user
+   */
+  async invalidateTaskPermissions(taskId: string, userId: string): Promise<void> {
+    await Promise.all([
+      this.invalidateTaskEdit(taskId, userId),
+      this.invalidateTaskAccess(taskId, userId),
+    ]);
+  },
+
+  /**
+   * Invalidate all task access for all users
+   * Call this when task assignments or project membership changes
+   */
+  async invalidateTaskUsers(taskId: string): Promise<void> {
+    await CacheClient.deletePattern(`access:task:${taskId}:*`);
   },
 };

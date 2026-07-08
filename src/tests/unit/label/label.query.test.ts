@@ -12,6 +12,20 @@ import {
 import { WorkspaceRole, TaskStatus, Priority } from '@prisma/client';
 
 describe('LabelQuery.getLabels', () => {
+  beforeEach(async () => {
+    try {
+      // Delete in order of dependency (children first, then parents)
+      await prisma.taskLabel.deleteMany();
+      await prisma.label.deleteMany();
+      await prisma.task.deleteMany();
+      await prisma.workspaceMember.deleteMany();
+      await prisma.workspace.deleteMany();
+      await prisma.user.deleteMany();
+    } catch (e) {
+      // Table might not exist yet in the test DB, safe to ignore during setup
+    }
+  });
+
   it('returns labels for workspace', async () => {
     const { user, workspace } = await createWorkspaceWithOwner();
     await createLabel(workspace.id, user.id, { name: 'Frontend' });
@@ -278,11 +292,11 @@ describe('LabelQuery.getLabelTasks', () => {
     await new Promise(r => setTimeout(r, 100)); // Ensure different timestamp
     const task2 = await createTask(workspace.id, user.id);
 
-    await prisma.taskLabel.createMany({
-      data: [
-        { taskId: task1.id, labelId: label.id },
-        { taskId: task2.id, labelId: label.id },
-      ],
+    await prisma.taskLabel.create({
+      data: { taskId: task1.id, labelId: label.id },
+    });
+    await prisma.taskLabel.create({
+      data: { taskId: task2.id, labelId: label.id },
     });
 
     const result = await LabelQuery.getLabelTasks(label.id, user.id);

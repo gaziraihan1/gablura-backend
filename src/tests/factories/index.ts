@@ -146,6 +146,11 @@ export async function createWorkspaceWithOwner(
 ): Promise<{ user: User; workspace: Workspace; membership: WorkspaceMember }> {
   const user = await createUser(userOpts);
   const workspace = await createWorkspace(user.id, wsOpts);
+  
+  if (!user.id || !workspace.id) {
+    throw new Error(`Failed to create user (${user?.id}) or workspace (${workspace?.id}) before membership`);
+  }
+
   const membership = await prisma.workspaceMember.create({
     data: {
       userId: user.id,
@@ -165,6 +170,9 @@ export async function addMemberToWorkspace(
   workspaceId: string,
   role: WorkspaceRole = WorkspaceRole.MEMBER
 ): Promise<WorkspaceMember> {
+  if (!userId || !workspaceId) {
+    throw new Error(`userId (${userId}) and workspaceId (${workspaceId}) are required to add a member`);
+  }
   return prisma.workspaceMember.create({
     data: { userId, workspaceId, role },
   });
@@ -217,6 +225,7 @@ export interface CreateTaskOptions {
   estimatedHours?: number;
   parentId?: string;
   completedAt?: Date | null;
+  workspaceId?: string;
 }
 
 export async function createTask(

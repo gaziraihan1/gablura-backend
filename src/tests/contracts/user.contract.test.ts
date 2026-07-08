@@ -6,8 +6,8 @@ import { createWorkspaceWithOwner } from '../factories/index.js';
 
 vi.mock('../../middleware/auth.js', () => ({
   authenticate: (req: any, res: any, next: any) => {
-    if (global.testUser) {
-      req.user = global.testUser;
+    if ((global as any).testUser) {
+      req.user = (global as any).testUser;
     } else {
       req.user = {
         id: 'test-user-id',

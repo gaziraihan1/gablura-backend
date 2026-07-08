@@ -126,7 +126,6 @@ describe('Task Quota Service', () => {
       mockRedis.eval.mockResolvedValueOnce(3001); // memberKey
       
       const result = await checkAndConsumeWorkspaceQuota('user-1', 'ws-1', 'PRO', 1);
-      // console.log(result)
       expect(result.allowed).toBe(false);
       expect(result.reason).toContain('Your daily task limit reached');
     });

@@ -15,7 +15,7 @@
 
 import { execSync }          from 'child_process';
 import { generateKeyPairSync } from 'crypto';
-import { writeFileSync, existsSync } from 'fs';
+import { writeFileSync, existsSync, unlinkSync } from 'fs';
 import { tmpdir }            from 'os';
 import path                  from 'path';
 
@@ -23,7 +23,15 @@ const PRIVATE_KEY_PATH = path.join(tmpdir(), 'focura-test-private.pem');
 const PUBLIC_KEY_PATH  = path.join(tmpdir(), 'focura-test-public.pem');
 
 export async function setup() {
-  // ── 1. RSA key pair ────────────────────────────────────────────────────────
+  // ── 1. Clean up any existing keys ────────────────────────────────────────────
+  if (existsSync(PRIVATE_KEY_PATH)) {
+    try { unlinkSync(PRIVATE_KEY_PATH); } catch {}
+  }
+  if (existsSync(PUBLIC_KEY_PATH)) {
+    try { unlinkSync(PUBLIC_KEY_PATH); } catch {}
+  }
+
+  // ── 2. RSA key pair ────────────────────────────────────────────────────────
   console.log('\n🔑 [globalSetup] Generating RSA-2048 key pair for tests...');
   
   const { privateKey, publicKey } = generateKeyPairSync('rsa', {
@@ -45,7 +53,12 @@ export async function setup() {
   console.log(`✅ [globalSetup] Private key: ${PRIVATE_KEY_PATH}`);
   console.log(`✅ [globalSetup] JWT_PUBLIC_KEY set (${publicKey.length} chars PEM → base64)`);
 
-  // ── 2. Push schema to test DB ──────────────────────────────────────────────
+  // ── 3. Disable Sentry in tests ───────────────────────────────────────────────
+  // Sentry can interfere with tests and cause timeouts
+  process.env.SENTRY_DSN = '';
+  process.env.SENTRY_ENVIRONMENT = 'test';
+
+  // ── 4. Push schema to test DB ──────────────────────────────────────────────
   const testDb = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL;
   if (!testDb) {
     throw new Error(
@@ -57,7 +70,7 @@ export async function setup() {
   console.log('🔧 [globalSetup] Pushing schema to test database...');
   
   try {
-    execSync('npx prisma migrate reset --force', {
+    execSync('npx prisma db push --force-reset', {
       env: {
         ...process.env,
         DATABASE_URL: testDb,
@@ -65,8 +78,22 @@ export async function setup() {
         NODE_ENV:     'test',
       },
       stdio: 'pipe',
+      timeout: 60000, // 60 second timeout
     });
-    console.log('✅ [globalSetup] Test database ready.\n');
+    
+    console.log('🌱 [globalSetup] Seeding test database...');
+    execSync('npm run db:seed', {
+      env: {
+        ...process.env,
+        DATABASE_URL: testDb,
+        DIRECT_URL:   testDb,
+        NODE_ENV:     'test',
+      },
+      stdio: 'pipe',
+      timeout: 30000, // 30 second timeout
+    });
+
+    console.log('✅ [globalSetup] Test database ready and seeded.\n');
   } catch (err) {
     const msg = (err as any).stderr?.toString() ?? (err as Error).message;
     console.error('❌ [globalSetup] prisma db push failed:\n', msg);
@@ -75,5 +102,15 @@ export async function setup() {
 }
 
 export async function teardown() {
-  // /tmp files cleaned by OS. Nothing to do.
+  // Clean up key files
+  try {
+    if (existsSync(PRIVATE_KEY_PATH)) {
+      unlinkSync(PRIVATE_KEY_PATH);
+    }
+    if (existsSync(PUBLIC_KEY_PATH)) {
+      unlinkSync(PUBLIC_KEY_PATH);
+    }
+  } catch (err) {
+    console.warn('[globalSetup] Warning: Could not clean up key files:', err);
+  }
 }

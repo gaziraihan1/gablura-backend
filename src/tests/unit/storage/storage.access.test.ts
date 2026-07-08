@@ -33,6 +33,18 @@ describe("StorageAccess", () => {
       });
     });
 
+    it("should cache user role on subsequent calls", async () => {
+      vi.mocked(prisma.workspaceMember.findUnique).mockResolvedValue({
+        role: "ADMIN",
+      } as any);
+
+      await StorageAccess.getUserRole("user1", "workspace1");
+      expect(prisma.workspaceMember.findUnique).toHaveBeenCalledTimes(1);
+
+      await StorageAccess.getUserRole("user1", "workspace1");
+      expect(prisma.workspaceMember.findUnique).toHaveBeenCalledTimes(1);
+    });
+
     it("should return null when member does not exist", async () => {
       vi.mocked(prisma.workspaceMember.findUnique).mockResolvedValue(null);
 
@@ -160,6 +172,26 @@ describe("StorageAccess", () => {
         },
         role: "ADMIN",
       });
+    });
+
+    it("should cache member and workspace info on subsequent calls", async () => {
+      vi.mocked(prisma.workspaceMember.findUnique).mockResolvedValue({
+        role: "ADMIN",
+      } as any);
+      vi.mocked(prisma.workspace.findUnique).mockResolvedValue({
+        id: "workspace1",
+        name: "Test Workspace",
+        plan: "PRO",
+        maxStorage: 1000,
+      } as any);
+
+      await StorageAccess.assertMemberWithWorkspace("user1", "workspace1");
+      expect(prisma.workspaceMember.findUnique).toHaveBeenCalledTimes(1);
+      expect(prisma.workspace.findUnique).toHaveBeenCalledTimes(1);
+
+      await StorageAccess.assertMemberWithWorkspace("user1", "workspace1");
+      expect(prisma.workspaceMember.findUnique).toHaveBeenCalledTimes(1);
+      expect(prisma.workspace.findUnique).toHaveBeenCalledTimes(1);
     });
 
     it("should throw ForbiddenError when user is not a member", async () => {

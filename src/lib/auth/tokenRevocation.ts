@@ -59,7 +59,9 @@ export async function rotateRefreshToken(
   const newKey = refreshTokenKey(userId, newJti);
   const indexKey = refreshIndexKey(userId);
 
-  // ioredis eval: (script, numkeys, ...keys, ...args)
+  const existsBefore = await redis.exists(oldKey);
+  console.log("[rotateRefreshToken] entering", { oldKey, existsBefore, redisStatus: redis.status });
+
   const result = await redis.eval(
     `
     if redis.call("EXISTS", KEYS[1]) == 1 then
@@ -72,13 +74,15 @@ export async function rotateRefreshToken(
       return 0
     end
     `,
-    3,           // numkeys
+    3,
     oldKey,
     newKey,
     indexKey,
     expiresInSeconds.toString(),
     JSON.stringify({ jti: newJti, createdAt: Date.now() }),
   );
+
+  console.log("[rotateRefreshToken] result", { oldKey, result });
 
   return result === 1;
 }

@@ -39,6 +39,21 @@ describe("TaskAccess", () => {
       expect(result.canEdit).toBe(true);
     });
 
+    it("should cache edit permission on subsequent calls", async () => {
+      vi.mocked(prisma.task.findFirst).mockResolvedValue({
+        id: "t1",
+        createdById: "u1",
+        workspaceId: null,
+        projectId: null,
+      } as any);
+
+      await TaskAccess.checkEditPermission("t1", "u1");
+      expect(prisma.task.findFirst).toHaveBeenCalledTimes(1);
+
+      await TaskAccess.checkEditPermission("t1", "u1");
+      expect(prisma.task.findFirst).toHaveBeenCalledTimes(1);
+    });
+
     it("should deny non-owner for personal tasks", async () => {
       vi.mocked(prisma.task.findFirst).mockResolvedValue({
         id: "t1",
@@ -166,6 +181,28 @@ describe("TaskAccess", () => {
     it("should throw ForbiddenError if task not found", async () => {
       vi.mocked(prisma.task.findUnique).mockResolvedValue(null);
       await expect(TaskAccess.assertDeletePermission("t1", "u1")).rejects.toThrow(ForbiddenError);
+    });
+  });
+
+  describe("assertTaskAccess", () => {
+    it("should allow workspace owner/member access", async () => {
+      vi.mocked(prisma.task.findFirst).mockResolvedValue({ id: "t1" } as any);
+      const result = await TaskAccess.assertTaskAccess("t1", "u1");
+      expect(result.id).toBe("t1");
+    });
+
+    it("should cache task access on subsequent calls", async () => {
+      vi.mocked(prisma.task.findFirst).mockResolvedValue({ id: "t1" } as any);
+      await TaskAccess.assertTaskAccess("t1", "u1");
+      expect(prisma.task.findFirst).toHaveBeenCalledTimes(1);
+
+      await TaskAccess.assertTaskAccess("t1", "u1");
+      expect(prisma.task.findFirst).toHaveBeenCalledTimes(1);
+    });
+
+    it("should throw NotFoundError if task not found", async () => {
+      vi.mocked(prisma.task.findFirst).mockResolvedValue(null);
+      await expect(TaskAccess.assertTaskAccess("t1", "u1")).rejects.toThrow(NotFoundError);
     });
   });
 });

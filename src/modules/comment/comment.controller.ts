@@ -131,7 +131,7 @@ export const addComment = asyncHandler(
           );
         }
 
-        void Promise.allSettled(jobs);
+        await Promise.allSettled(jobs);
       },
     );
 

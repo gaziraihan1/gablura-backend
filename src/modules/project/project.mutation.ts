@@ -11,7 +11,7 @@ import { projectListInclude, projectMemberInclude } from './project.selects.js';
 import { ProjectAccess }   from './project.access.js';
 import { SlugService }     from '../../services/slug.service.js';
 import { ProjectStatus }   from '@prisma/client';
-import { WorkspaceCache, AnalyticsCache, ProjectCache } from '../../lib/redis/cache.client.js';
+import { WorkspaceCache, AnalyticsCache, ProjectCache, AccessControlCache } from '../../lib/redis/cache.client.js';
 
 export const ProjectMutation = {
   async createProject(data: CreateProjectDto) {
@@ -108,18 +108,19 @@ export const ProjectMutation = {
 
 await prisma.project.delete({ where: { id: projectId } });
 
-if (project?.workspaceId) {
-  const workspaceId = project.workspaceId as string;
-  const slug = project?.workspace?.slug || project.slug;
-  // Invalidate caches in a non-blocking way
-  Promise.all([
-    ProjectCache.invalidateProject(projectId, slug),
-    ProjectCache.invalidateWorkspaceProjects(workspaceId),
-    ProjectCache.invalidateUserProjects(userId),
-    WorkspaceCache.invalidateWorkspace(workspaceId, slug),
-    AnalyticsCache.invalidateWorkspace(workspaceId),
-  ]).catch(() => {});
-}
+  if (project?.workspaceId) {
+    const workspaceId = project.workspaceId as string;
+    const slug = project?.workspace?.slug || project.slug;
+    // Invalidate caches in a non-blocking way
+    Promise.all([
+      ProjectCache.invalidateProject(projectId, slug),
+      ProjectCache.invalidateWorkspaceProjects(workspaceId),
+      ProjectCache.invalidateUserProjects(userId),
+      WorkspaceCache.invalidateWorkspace(workspaceId, slug),
+      AnalyticsCache.invalidateWorkspace(workspaceId),
+      AccessControlCache.invalidateProjectUsers(projectId),
+    ]).catch(() => {});
+  }
   },
 
   // ── Member mutations — unchanged ──────────────────────────────────────────
@@ -144,6 +145,8 @@ if (project?.workspaceId) {
 
     // Invalidate project cache (non-blocking)
     ProjectCache.invalidateProject(projectId).catch(() => {});
+    AccessControlCache.invalidateProjectAccess(projectId, data.userId).catch(() => {});
+    AccessControlCache.invalidateProjectUsers(projectId).catch(() => {});
 
     return member;
   },
@@ -164,6 +167,8 @@ if (project?.workspaceId) {
 
     // Invalidate project cache (non-blocking)
     ProjectCache.invalidateProject(projectId).catch(() => {});
+    AccessControlCache.invalidateProjectAccess(projectId, memberId).catch(() => {});
+    AccessControlCache.invalidateProjectUsers(projectId).catch(() => {});
 
     return member;
   },
@@ -177,5 +182,7 @@ if (project?.workspaceId) {
 
     // Invalidate project cache (non-blocking)
     ProjectCache.invalidateProject(projectId).catch(() => {});
+    AccessControlCache.invalidateProjectAccess(projectId, memberId).catch(() => {});
+    AccessControlCache.invalidateProjectUsers(projectId).catch(() => {});
   },
 };

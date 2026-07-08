@@ -68,15 +68,17 @@ export const CommentMutation = {
     });
 
     if (onCreated) {
-      onCreated({
-        commentId:    comment.id,
-        content:      input.content,
-        parentId:     resolvedParentId,
-        mentionedIds,
-      }).catch((err) => console.error('Post-comment callback failed:', err));
+      await Promise.allSettled([
+        onCreated({
+          commentId: comment.id,
+          content: input.content,
+          parentId: resolvedParentId,
+          mentionedIds,
+        }),
+      ]);
     }
 
-    return comment;
+return comment;
   },
 
   async updateComment(

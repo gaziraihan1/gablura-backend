@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { PaddleProvider } from "../../../payment/providers/paddle/paddle.provider.js";
 import { getPaddle, getPaddleWebhookSecret } from "../../../modules/billing/config/paddle.js";
+import { CacheClient, CACHE_KEYS } from "../../../lib/redis/cache.client.js";
 
 // Mock Paddle SDK
 vi.mock("../../../modules/billing/config/paddle.js", () => ({
@@ -19,9 +20,15 @@ describe("PaddleProvider", () => {
   let provider: PaddleProvider;
   let paddleMock: any;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
     
+    // Clear common cache keys used in tests to avoid leakage between tests
+    await CacheClient.delete(
+      CACHE_KEYS.paddleCustomer("test@example.com"),
+      `api:paddle:portal:cus_paddle_123`
+    );
+
     paddleMock = {
       customers: { create: vi.fn() },
       transactions: { create: vi.fn() },
@@ -59,7 +66,26 @@ describe("PaddleProvider", () => {
       });
       expect(result).toEqual({ providerCustomerId: "cus_paddle_123" });
     });
+
+    it("should return cached customer if already exists", async () => {
+      const mockCustomer = { id: "cus_paddle_cached" };
+      paddleMock.customers.create.mockResolvedValue(mockCustomer);
+      const email = "test@example.com";
+
+      // First call - hits API
+      await provider.createCustomer({ email, name: "User", metadata: {} });
+      expect(paddleMock.customers.create).toHaveBeenCalledTimes(1);
+
+      // Second call - hits cache
+      const result = await provider.createCustomer({ email, name: "User", metadata: {} });
+      expect(paddleMock.customers.create).toHaveBeenCalledTimes(1);
+      expect(result).toEqual({ providerCustomerId: "cus_paddle_cached" });
+    });
   });
+
+  describe("createCheckoutSession", () => {
+// ... (keep existing tests)
+
 
   describe("createCheckoutSession", () => {
     it("should create a transaction for checkout", async () => {
@@ -132,6 +158,28 @@ describe("PaddleProvider", () => {
         prorationBillingMode: "prorated_immediately",
         customData: { reason: "upgrade" },
       });
+    });
+
+    it("should invalidate cache on changePlan", async () => {
+      paddleMock.subscriptions.get.mockResolvedValue({
+        id: "sub_paddle_cache_123",
+        items: [{ priceId: "price_old", quantity: 1 }],
+      });
+
+      const cacheKey = CACHE_KEYS.paddleSubscription("sub_paddle_cache_123");
+      await CacheClient.set(cacheKey, { id: "sub_paddle_cache_123", items: [{ priceId: "price_old", quantity: 1 }] }, 60);
+
+      await provider.changePlan({
+        providerSubscriptionId: "sub_paddle_cache_123",
+        newProviderPriceId: "price_pro_yr",
+        isUpgrade: true,
+        metadata: { reason: "upgrade" },
+      });
+
+      expect(paddleMock.subscriptions.get).not.toHaveBeenCalled();
+
+      const cached = await CacheClient.get(cacheKey);
+      expect(cached).toBeNull();
     });
   });
 
@@ -227,3 +275,4 @@ describe("PaddleProvider", () => {
     });
   });
 });
+})

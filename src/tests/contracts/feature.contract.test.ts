@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, vi } from 'vitest';
+import { describe, it, expect, beforeAll, vi, beforeEach } from 'vitest';
 import request from 'supertest';
 import { z } from 'zod';
 import { validateContract, APIResponseSchema } from './contract.util.js';

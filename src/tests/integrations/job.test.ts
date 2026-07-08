@@ -101,7 +101,6 @@ describe("Admin Job Endpoints", () => {
     const res = await request(app)
       .get("/api/v1/jobs/admin/all")
       .set(authHeaders(admin));
-      console.log(res.body);
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);

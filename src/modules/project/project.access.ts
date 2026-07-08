@@ -1,54 +1,76 @@
 import { prisma }                              from '../../lib/prisma.js';
 import { ForbiddenError, NotFoundError }       from '../../errors/index.js';
 import type { ProjectForPermission }           from './project.types.js';
+import { CacheClient, CACHE_KEYS, CACHE_TTL } from '../../lib/redis/cache.client.js';
 
 export const ProjectAccess = {
   async assertWorkspaceAccess(userId: string, workspaceId: string) {
-    const workspace = await prisma.workspace.findFirst({
-      where: {
-        id: workspaceId,
-        OR: [{ ownerId: userId }, { members: { some: { userId } } }],
-      },
-    });
+    const cacheKey = CACHE_KEYS.workspaceAccess(workspaceId, userId);
+    const workspace = await CacheClient.getOrSet(
+      cacheKey,
+      () =>
+        prisma.workspace.findFirst({
+          where: {
+            id: workspaceId,
+            OR: [{ ownerId: userId }, { members: { some: { userId } } }],
+          },
+        }),
+      CACHE_TTL.ACCESS_CONTROL_WORKSPACE_MEMBER,
+    );
 
     if (!workspace) throw new ForbiddenError('No access to this workspace');
     return workspace;
   },
 
   async assertProjectAdminAccess(userId: string, projectId: string) {
-    // Workspace owner or admin
-    const project = await prisma.project.findFirst({
-      where: {
-        id: projectId,
-        workspace: {
-          OR: [
-            { ownerId: userId },
-            { members: { some: { userId, role: { in: ['ADMIN', 'OWNER'] } } } },
-          ],
-        },
-      },
-      include: { workspace: true },
-    });
-    if (project) return project;
+    const cacheKey = CACHE_KEYS.projectAdmin(projectId, userId);
+    const project = await CacheClient.getOrSet(
+      cacheKey,
+      async () => {
+        // Workspace owner or admin
+        const proj = await prisma.project.findFirst({
+          where: {
+            id: projectId,
+            workspace: {
+              OR: [
+                { ownerId: userId },
+                { members: { some: { userId, role: { in: ['ADMIN', 'OWNER'] } } } },
+              ],
+            },
+          },
+          include: { workspace: true },
+        });
+        if (proj) return proj;
 
-    // Project MANAGER
-    const projectWithManager = await prisma.project.findFirst({
-      where:   { id: projectId, members: { some: { userId, role: 'MANAGER' } } },
-      include: { workspace: true },
-    });
-    if (!projectWithManager) throw new ForbiddenError('Only admins can perform this action');
-    return projectWithManager;
+        // Project MANAGER
+        const projectWithManager = await prisma.project.findFirst({
+          where:   { id: projectId, members: { some: { userId, role: 'MANAGER' } } },
+          include: { workspace: true },
+        });
+        return projectWithManager;
+      },
+      CACHE_TTL.ACCESS_CONTROL_PROJECT_ADMIN,
+    );
+
+    if (!project) throw new ForbiddenError('Only admins can perform this action');
+    return project;
   },
 
   async assertProjectAccess(userId: string, projectId: string) {
-    const project = await prisma.project.findFirst({
-      where: {
-        id: projectId,
-        workspace: {
-          OR: [{ ownerId: userId }, { members: { some: { userId } } }],
-        },
-      },
-    });
+    const cacheKey = CACHE_KEYS.projectMember(projectId, userId);
+    const project = await CacheClient.getOrSet(
+      cacheKey,
+      () =>
+        prisma.project.findFirst({
+          where: {
+            id: projectId,
+            workspace: {
+              OR: [{ ownerId: userId }, { members: { some: { userId } } }],
+            },
+          },
+        }),
+      CACHE_TTL.ACCESS_CONTROL_PROJECT_MEMBER,
+    );
 
     if (!project) throw new NotFoundError('Project', 'PROJECT_NOT_FOUND');
     return project;

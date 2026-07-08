@@ -22,6 +22,15 @@ describe("ProjectAccess", () => {
       await expect(ProjectAccess.assertWorkspaceAccess("u1", "ws1")).resolves.toBeDefined();
     });
 
+    it("should cache workspace access on subsequent calls", async () => {
+      (prisma.workspace.findFirst as any).mockResolvedValue({ id: "ws1" });
+      await ProjectAccess.assertWorkspaceAccess("u1", "ws1");
+      expect(prisma.workspace.findFirst).toHaveBeenCalledTimes(1);
+
+      await ProjectAccess.assertWorkspaceAccess("u1", "ws1");
+      expect(prisma.workspace.findFirst).toHaveBeenCalledTimes(1);
+    });
+
     it("should throw ForbiddenError if no access", async () => {
       (prisma.workspace.findFirst as any).mockResolvedValue(null);
       await expect(ProjectAccess.assertWorkspaceAccess("u1", "ws1")).rejects.toThrow(ForbiddenError);
@@ -32,6 +41,15 @@ describe("ProjectAccess", () => {
     it("should allow workspace owner/admin access", async () => {
       (prisma.project.findFirst as any).mockResolvedValueOnce({ id: "p1", workspace: { id: "ws1" } });
       await expect(ProjectAccess.assertProjectAdminAccess("u1", "p1")).resolves.toBeDefined();
+    });
+
+    it("should cache project admin access on subsequent calls", async () => {
+      (prisma.project.findFirst as any).mockResolvedValue({ id: "p1", workspace: { id: "ws1" } });
+      await ProjectAccess.assertProjectAdminAccess("u1", "p1");
+      expect(prisma.project.findFirst).toHaveBeenCalledTimes(1);
+
+      await ProjectAccess.assertProjectAdminAccess("u1", "p1");
+      expect(prisma.project.findFirst).toHaveBeenCalledTimes(1);
     });
 
     it("should allow project MANAGER role access", async () => {
@@ -51,6 +69,15 @@ describe("ProjectAccess", () => {
     it("should allow project member access", async () => {
       (prisma.project.findFirst as any).mockResolvedValue({ id: "p1" });
       await expect(ProjectAccess.assertProjectAccess("u1", "p1")).resolves.toBeDefined();
+    });
+
+    it("should cache project access on subsequent calls", async () => {
+      (prisma.project.findFirst as any).mockResolvedValue({ id: "p1" });
+      await ProjectAccess.assertProjectAccess("u1", "p1");
+      expect(prisma.project.findFirst).toHaveBeenCalledTimes(1);
+
+      await ProjectAccess.assertProjectAccess("u1", "p1");
+      expect(prisma.project.findFirst).toHaveBeenCalledTimes(1);
     });
 
     it("should throw NotFoundError if project not accessible", async () => {

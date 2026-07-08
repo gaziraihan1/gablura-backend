@@ -51,7 +51,7 @@ describe('File Management API Contract Tests', () => {
       id: user.id,
       email: user.email,
       role: 'SUPER_ADMIN',
-      name: user.name,
+      name: user.name || 'File Management Test User',
       sessionId: 'fm-session-id',
     };
 

@@ -6,9 +6,9 @@
 // the data layer, not routing/middleware.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { prisma } from '../../../lib/prisma.js';
-import { WorkspacePlan, WorkspaceRole } from '@prisma/client';
+import { WorkspacePlan } from '@prisma/client';
 
 vi.mock('../../../lib/redis/cache.client.js', () => ({
   UserCache: {
@@ -20,11 +20,8 @@ vi.mock('../../../lib/redis/cache.client.js', () => ({
 import {
   createUser,
   createAdminUser,
-  createWorkspace,
   createWorkspaceWithOwner,
-  addMemberToWorkspace,
-  createProject,
-  createTask,
+  
 } from '../../factories/index.js';
 
 // ── Mutations under test ─────────────────────────────────────────────────────

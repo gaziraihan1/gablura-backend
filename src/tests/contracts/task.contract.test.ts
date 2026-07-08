@@ -212,3 +212,8 @@ describe('Task API Contract Tests', () => {
     });
   });
 });
+
+function next() {
+  throw new Error('Function not implemented.');
+}
+

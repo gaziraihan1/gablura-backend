@@ -41,7 +41,7 @@ describe('notificationStreamHandler', () => {
 
     mockSubscriber = getSubscriber();
     // Capture the message handler that was registered during module load
-    const call = mockSubscriber.on.mock.calls.find(call => call[0] === 'message');
+    const call = mockSubscriber.on.mock.calls.find((call: string[]) => call[0] === 'message');
     if (call) {
       messageHandler = call[1];
     }

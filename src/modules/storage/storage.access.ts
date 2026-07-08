@@ -1,13 +1,23 @@
 import { prisma }                              from '../../lib/prisma.js';
 import { ForbiddenError, NotFoundError }       from '../../errors/index.js';
+import { CacheClient, CACHE_KEYS, CACHE_TTL } from '../../lib/redis/cache.client.js';
 
 export const StorageAccess = {
   async getUserRole(userId: string, workspaceId: string): Promise<string | null> {
+    const key = CACHE_KEYS.userPermissions(userId, workspaceId);
+    const cached = await CacheClient.get<string>(key);
+    if (cached !== null) {
+      return cached === 'none' ? null : cached;
+    }
+
     const member = await prisma.workspaceMember.findUnique({
       where:  { userId_workspaceId: { userId, workspaceId } },
       select: { role: true },
     });
-    return member?.role ?? null;
+
+    const role = member?.role ?? null;
+    await CacheClient.set(key, role ?? 'none', CACHE_TTL.USER_PERMISSIONS);
+    return role;
   },
 
   async assertMember(userId: string, workspaceId: string): Promise<string> {
@@ -27,6 +37,12 @@ export const StorageAccess = {
   },
 
   async assertMemberWithWorkspace(userId: string, workspaceId: string) {
+    const cacheKey = CACHE_KEYS.storageMemberWithWorkspace(workspaceId, userId);
+    const cached = await CacheClient.get<{ workspace: any; role: string }>(cacheKey);
+    if (cached !== null) {
+      return cached;
+    }
+
     const [member, workspace] = await Promise.all([
       prisma.workspaceMember.findUnique({
         where:  { userId_workspaceId: { userId, workspaceId } },
@@ -41,6 +57,8 @@ export const StorageAccess = {
     if (!member)    throw new ForbiddenError('You do not have access to this workspace');
     if (!workspace) throw new NotFoundError('Workspace');
 
-    return { workspace, role: member.role };
+    const result = { workspace, role: member.role };
+    await CacheClient.set(cacheKey, result, CACHE_TTL.ACCESS_CONTROL_WORKSPACE_MEMBER);
+    return result;
   },
 };

@@ -19,6 +19,7 @@ const redisStore = new Map<string, string>();
 const createInMemoryRedisMock = () => {
   const mock = {
     get:    vi.fn(async (key: string) => redisStore.get(key) ?? null),
+    exists:   vi.fn(async (key: string) => redisStore.has(key) ? 1 : 0),
     set:    vi.fn(async (key: string, value: string) => { redisStore.set(key, value); return 'OK'; }),
     setex:  vi.fn(async (key: string, _ttl: number, value: string) => { redisStore.set(key, value); return 'OK'; }),
     del:    vi.fn(async (...keys: string[]) => {
@@ -65,6 +66,7 @@ const createInMemoryRedisMock = () => {
       exec:             vi.fn().mockResolvedValue([[null, 0], [null, 1], [null, 1], [null, 1]]),
     }),
     on:     vi.fn().mockReturnThis(),
+    publish:   vi.fn().mockResolvedValue('OK'),
     quit:   vi.fn().mockResolvedValue('OK'),
     status: 'ready',
   };
@@ -148,7 +150,13 @@ vi.mock('cloudinary', () => ({
   v2: {
     config:   vi.fn(),
     uploader: {
-      upload:  vi.fn().mockResolvedValue({ secure_url: 'https://cdn.test/img.png', public_id: 'test_id' }),
+      upload:  vi.fn().mockResolvedValue({
+        secure_url:    'https://cdn.test/img.png',
+        public_id:     'test_id',
+        bytes:         12345,
+        format:        'txt',
+        thumbnail_url: 'https://cdn.test/img_thumb.png',
+      }),
       destroy: vi.fn().mockResolvedValue({ result: 'ok' }),
     },
   },
@@ -175,7 +183,9 @@ vi.mock('nodemailer', () => ({
 }));
 
 // ── Table truncation ──────────────────────────────────────────────────────────
-const TRUNCATE_ORDER = [
+// All tables that need to be cleaned between tests.
+// Order doesn't matter — PostgreSQL handles FK dependencies via CASCADE.
+const ALL_TABLES = [
   'CommentMention', 'Comment', 'TaskLabel', 'TaskAssignee', 'TaskDependency',
   'TaskRecurrence', 'DailyTask', 'TimeEntry', 'FocusSession', 'AnnouncementTarget',
   'MeetingAttendee', 'FeatureVote', 'ProjectFavorite', 'ProjectMember',
@@ -185,23 +195,70 @@ const TRUNCATE_ORDER = [
   'Task', 'Label', 'FeatureRequest', 'Announcement', 'Meeting', 'Project',
   'JobPosting', 'Invoice', 'Subscription', 'Payment', 'UsageRecord', 'BillingEvent',
   'WorkspaceInvitation', 'WorkspaceMember', 'Workspace', 'RefreshToken',
-  'Session', 'Account', 'VerificationToken', 'PasswordResetToken', 'User', 'Plan',
+  'Session', 'Account', 'VerificationToken', 'PasswordResetToken', 'User',
+  'ContactMessage', 'TemplateList', 'SubscribeList', 'Integration', 'popular_resources', 'product_updates',
 ] as const;
 
+// Build a single atomic TRUNCATE statement for all tables.
+// A single TRUNCATE of multiple tables in one statement is fully atomic
+// in PostgreSQL and handles all FK cycles via CASCADE — no ordering needed.
+const TRUNCATE_ALL_SQL = `TRUNCATE TABLE ${
+  ALL_TABLES.map((t) => `"${t}"`).join(', ')
+} RESTART IDENTITY CASCADE`;
+
+// Per-file DB-availability probe.
+// IMPORTANT: We reset this to `null` in afterAll so that the NEXT test file
+// (which shares the same prog
+// If we kept it permanently set to `true` and the connection drops or tables
+// disappear, subsequent files would run a broken truncation silently.
+let dbAvailable: boolean | null = null;
+
+async function checkDbAvailable(): Promise<boolean> {
+  if (dbAvailable !== null) return dbAvailable;
+  try {
+    // Quick ping to confirm the connection is alive
+    await prisma.$queryRaw`SELECT 1`;
+    // Check that the core schema has actually been applied
+    const result = await prisma.$queryRaw<{ exists: boolean }[]>`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables
+        WHERE table_schema = 'public'
+          AND table_name = 'User'
+      ) AS "exists"`;
+    dbAvailable = result[0]?.exists === true;
+  } catch {
+    dbAvailable = false;
+  }
+  return dbAvailable;
+}
+
 afterEach(async () => {
+  // Always clear the in-memory Redis mock, even when the DB is unavailable.
   redisStore.clear();
-  for (const table of TRUNCATE_ORDER) {
-    try {
-      await prisma.$executeRawUnsafe(`TRUNCATE TABLE "${table}" RESTART IDENTITY CASCADE`);
-    } catch {
-      // Table doesn't exist in this schema version — skip
-    }
+
+  if (!(await checkDbAvailable())) return;
+
+  // Single atomic TRUNCATE: faster than 47 sequential calls, and fully
+  // consistent — PostgreSQL either cleans everything or nothing.
+  try {
+    await prisma.$executeRawUnsafe(TRUNCATE_ALL_SQL);
+  } catch (err: any) {
+    // If the truncation fails, the next test's beforeEach will also fail.
+    // Log clearly so the failure is visible rather than silently swallowed.
+    // Then reset the probe so we re-check on the next afterEach.
+    console.warn('[setup] afterEach TRUNCATE failed (DB may have reset):', err?.message ?? err);
+    dbAvailable = null;
   }
 });
+
 afterEach(() => {
+  // Clear admin IDs registered during this test.
   process.env.FOCURA_ADMIN_IDS = '';
 });
 
 afterAll(async () => {
+  // Reset the probe so the next test FILE (which shares this process in
+  // singleFork mode) will re-probe DB availability from scratch.
+  dbAvailable = null;
   await prisma.$disconnect();
 });

@@ -33,17 +33,23 @@ vi.mock("../../../lib/prisma.js", () => ({
   },
 }));
 
-vi.mock("../../../lib/redis/cache.client.js", () => ({
-  CacheClient: {
-    get: vi.fn(),
-    set: vi.fn(),
-  },
-  WorkspaceCache: {
-    invalidateUserWorkspaces: vi.fn(),
-    invalidateWorkspace: vi.fn(),
-    invalidateMembers: vi.fn(),
-  },
-}));
+vi.mock("../../../lib/redis/cache.client.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../../lib/redis/cache.client.js")>();
+  return {
+    ...actual,
+    CacheClient: {
+      ...actual.CacheClient,
+      get: vi.fn(),
+      set: vi.fn(),
+    },
+    WorkspaceCache: {
+      ...actual.WorkspaceCache,
+      invalidateUserWorkspaces: vi.fn(),
+      invalidateWorkspace: vi.fn(),
+      invalidateMembers: vi.fn(),
+    },
+  };
+});
 
 vi.mock("../../../utils/email.js", () => ({
   sendInvitationEmail: vi.fn(),

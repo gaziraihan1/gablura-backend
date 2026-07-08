@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, vi } from 'vitest';
+import { describe, it, expect, beforeAll, vi, beforeEach } from 'vitest';
 import request from 'supertest';
 import { z } from 'zod';
 import { validateContract, APIResponseSchema } from './contract.util.js';
@@ -6,8 +6,8 @@ import { prisma } from '../../lib/prisma.js';
 
 vi.mock('../../middleware/auth.js', () => ({
   authenticate: (req: any, res: any, next: any) => {
-    if (global.testUser) {
-      req.user = global.testUser;
+    if ((global as any).testUser) {
+      req.user = (global as any).testUser;
     } else {
       req.user = {
         id: 'test-admin-id',

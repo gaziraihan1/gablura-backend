@@ -256,7 +256,7 @@ export const BillingService = {
         if (Array.isArray(cached) && cached.length > 0) {
           const firstInvoice = cached[0];
           if (firstInvoice && firstInvoice.id && firstInvoice.amount) {
-            return cached;
+            return cached.slice(0, limit);
           }
         }
       }

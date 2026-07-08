@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { StripeProvider } from "../../../payment/providers/stripe/stripe.provider.js";
 import { prisma } from "../../../lib/prisma.js";
 import Stripe from "stripe";
+import { CacheClient, CACHE_KEYS } from "../../../lib/redis/cache.client.js";
 
 // Mock Stripe SDK
 vi.mock("stripe", () => {
@@ -57,12 +58,18 @@ describe("StripeProvider", () => {
   let provider: StripeProvider;
   let stripeMock: any;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
     process.env.STRIPE_SECRET_KEY = "sk_test_123";
     process.env.STRIPE_WEBHOOK_SECRET = "whsec_test_123";
     process.env.STRIPE_PRICE_PRO_MONTHLY = "price_pro_mo";
     process.env.STRIPE_PRICE_PRO_YEARLY = "price_pro_yr";
+
+    // Clear common cache keys used in tests to avoid leakage between tests
+    await CacheClient.delete(
+      CACHE_KEYS.stripeCustomer("test@example.com"),
+      `api:stripe:portal:cus_123`
+    );
 
     provider = new StripeProvider();
     stripeMock = getStripeMock();
@@ -86,7 +93,26 @@ describe("StripeProvider", () => {
       });
       expect(result).toEqual({ providerCustomerId: "cus_123" });
     });
+
+    it("should return cached customer if already exists", async () => {
+      const mockCustomer = { id: "cus_cached" };
+      stripeMock.customers.create.mockResolvedValue(mockCustomer);
+      const email = "test@example.com";
+
+      // First call - hits API
+      await provider.createCustomer({ email, name: "User", metadata: {} });
+      expect(stripeMock.customers.create).toHaveBeenCalledTimes(1);
+
+      // Second call - hits cache
+      const result = await provider.createCustomer({ email, name: "User", metadata: {} });
+      expect(stripeMock.customers.create).toHaveBeenCalledTimes(1);
+      expect(result).toEqual({ providerCustomerId: "cus_cached" });
+    });
   });
+
+  describe("createCheckoutSession", () => {
+// ... (keep existing tests)
+
 
   describe("createCheckoutSession", () => {
     it("should create a checkout session with correct params", async () => {
@@ -178,6 +204,29 @@ describe("StripeProvider", () => {
         proration_behavior: "always_invoice",
         metadata: { reason: "upgrade" },
       });
+    });
+
+    it("should invalidate cache on changePlan", async () => {
+      const mockSub = {
+        id: "sub_123",
+        items: { data: [{ id: "si_123" }] },
+      };
+      stripeMock.subscriptions.retrieve.mockResolvedValue(mockSub);
+
+      const cacheKey = CACHE_KEYS.stripeSubscription("sub_123");
+      await CacheClient.set(cacheKey, mockSub, 60);
+
+      await provider.changePlan({
+        providerSubscriptionId: "sub_123",
+        newProviderPriceId: "price_new",
+        isUpgrade: true,
+        metadata: { reason: "upgrade" },
+      });
+
+      expect(stripeMock.subscriptions.retrieve).not.toHaveBeenCalled();
+
+      const cached = await CacheClient.get(cacheKey);
+      expect(cached).toBeNull();
     });
   });
 
@@ -363,5 +412,50 @@ describe("StripeProvider", () => {
       }));
       expect(result?.metadata).toEqual({ workspaceId: "ws_123", custom: "meta" });
     });
+
+    it("should cache subscription retrieve when parsing invoice events", async () => {
+      const mockEvent = {
+        id: "evt_inv_paid_cache",
+        type: "invoice.payment_succeeded",
+        data: {
+          object: {
+            id: "in_123_cache",
+            customer: "cus_123",
+            subscription: "sub_123_cache",
+            payment_intent: "pi_123_cache",
+            amount_due: 1000,
+            amount_paid: 1000,
+            amount_remaining: 0,
+            currency: "usd",
+            status: "paid",
+            number: "INV-001",
+            invoice_pdf: "pdf_url",
+            hosted_invoice_url: "hosted_url",
+            period_start: 1700000000,
+            period_end: 1702600000,
+            due_date: 1701000000,
+            status_transitions: { paid_at: 1700500000 },
+            attempt_count: 1,
+            lines: { data: [] },
+            metadata: { custom: "meta" },
+          },
+        },
+      };
+      stripeMock.webhooks.constructEvent.mockReturnValue(mockEvent);
+      stripeMock.paymentIntents.retrieve.mockResolvedValue({
+        payment_method_types: ["card"],
+        charges: { data: [{ payment_method_details: { card: { last4: "4242" } } }] },
+      });
+      stripeMock.subscriptions.retrieve.mockResolvedValue({
+        metadata: { workspaceId: "ws_123" },
+      });
+
+      await provider.verifyAndParseWebhook(mockRawBody, mockHeaders);
+      expect(stripeMock.subscriptions.retrieve).toHaveBeenCalledTimes(1);
+
+      await provider.verifyAndParseWebhook(mockRawBody, mockHeaders);
+      expect(stripeMock.subscriptions.retrieve).toHaveBeenCalledTimes(1);
+    });
   });
 });
+})

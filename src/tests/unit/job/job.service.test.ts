@@ -161,7 +161,6 @@ describe('JobService', () => {
     await createJobPosting(user.id, { status: JobStatus.CLOSED });
     
     const result = await listAllJobs();
-    // console.log(result)
     expect(result.jobs).toHaveLength(2);
   });
 

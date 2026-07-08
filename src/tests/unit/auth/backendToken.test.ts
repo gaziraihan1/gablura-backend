@@ -194,7 +194,6 @@ describe("backendToken", () => {
 
       const token = createAccessToken(payload);
       const verified = verifyToken(token, "access");
-      console.log("Verified payload:", verified);
 
       expect(verified.id).toBe(payload.id);
       expect(verified.email).toBe(payload.email);

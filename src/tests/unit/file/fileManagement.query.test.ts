@@ -16,10 +16,15 @@ describe('FileManagementQuery', () => {
 
   beforeEach(async () => {
     // Clean up and setup
-    await prisma.file.deleteMany();
-    await prisma.workspaceMember.deleteMany();
-    await prisma.workspace.deleteMany();
-    await prisma.user.deleteMany();
+    try {
+      // Delete in order of dependency (children first, then parents)
+      await prisma.file.deleteMany();
+      await prisma.workspaceMember.deleteMany();
+      await prisma.workspace.deleteMany();
+      await prisma.user.deleteMany();
+    } catch (e) {
+      // Table might not exist yet in the test DB, safe to ignore during setup
+    }
 
     const ownerData = await createWorkspaceWithOwner();
     user = ownerData.user;

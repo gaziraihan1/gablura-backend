@@ -62,7 +62,6 @@ describe('GET /api/v1/admin/stats', () => {
     const res   = await request(app)
       .get(`${BASE}/stats`)
       .set(authHeaders(admin));
-      // console.log(res.body, admin)
 
     expect(res.status).toBe(200);
     expect(res.body.data.totals).toMatchObject({
@@ -334,7 +333,6 @@ describe('PATCH /api/v1/admin/workspaces/:slug/limits', () => {
       .set(headers)
       .send({ plan: 'ENTERPRISE', maxMembers: 10, maxStorages: 1000 });
 
-      // console.log(res.status, res.body)
     expect(res.status).toBe(400);
   });
 

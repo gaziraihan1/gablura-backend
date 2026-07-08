@@ -9,11 +9,11 @@ import type {
   UpdateWorkspaceInput,
   WorkspaceRole,
 } from "./workspace.types.js";
-import { WorkspaceCache } from "../../lib/redis/cache.client.js";
+import { WorkspaceCache, AccessControlCache } from "../../lib/redis/cache.client.js";
 import { ConflictError, BadRequestError, ForbiddenError, NotFoundError, PlanLimitError } from "../../errors/AppError.js";
 
 type OnWorkspaceCreated = (data: { workspace: any }) => Promise<void>;
-type OnWorkspaceUpdated = (data: { workspaceId: string }) => Promise<void>;
+type OnWorkspaceUpdated = (data: { workspace: any }) => Promise<void>;
 type OnMemberInvited = (data: {
   invitation: any;
   inviterName: string;
@@ -74,7 +74,7 @@ export const WorkspaceMutation = {
     // Invalidate workspace cache
     await WorkspaceCache.invalidateWorkspace(workspaceId, workspace.slug);
 
-    if (onUpdated) onUpdated({ workspaceId }).catch(console.error);
+    if (onUpdated) onUpdated({ workspace }).catch(console.error);
     return workspace;
   },
 
@@ -186,6 +186,8 @@ if (invitation.workspaceId) {
   await WorkspaceCache.invalidateUserWorkspaces(userId);
   const workspaceSlug = invitation.workspace?.slug ?? undefined;
   await WorkspaceCache.invalidateWorkspace(invitation.workspaceId, workspaceSlug);
+  await AccessControlCache.invalidateWorkspaceAccess(invitation.workspaceId, userId).catch(() => {});
+  await AccessControlCache.invalidateWorkspaceUsers(invitation.workspaceId).catch(() => {});
 }
 
     if (onAccepted && invitation.invitedById) {
@@ -216,6 +218,10 @@ if (invitation.workspaceId) {
     if (!member) throw new NotFoundError("Member");
 
     await prisma.workspaceMember.delete({ where: { id: memberId } });
+    Promise.all([
+      AccessControlCache.invalidateWorkspaceAccess(workspaceId, member.userId),
+      AccessControlCache.invalidateWorkspaceUsers(workspaceId),
+    ]).catch(() => {});
     if (onRemoved) onRemoved({ member }).catch(console.error);
   },
 
@@ -251,6 +257,10 @@ if (invitation.workspaceId) {
       onUpdated({ member, workspaceName: updater.workspace?.name ?? "" }).catch(
         console.error,
       );
+    Promise.all([
+      AccessControlCache.invalidateWorkspaceAccess(workspaceId, member.userId),
+      AccessControlCache.invalidateWorkspaceUsers(workspaceId),
+    ]).catch(() => {});
     return member;
   },
 
@@ -263,5 +273,9 @@ if (invitation.workspaceId) {
       throw new BadRequestError("Transfer ownership before leaving", "OWNER_CANNOT_LEAVE");
 
     await prisma.workspaceMember.delete({ where: { id: member.id } });
+    Promise.all([
+      AccessControlCache.invalidateWorkspaceAccess(workspaceId, userId),
+      AccessControlCache.invalidateWorkspaceUsers(workspaceId),
+    ]).catch(() => {});
   },
 };

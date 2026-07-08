@@ -28,23 +28,17 @@ vi.mock("../../../lib/prisma.js", () => ({
   },
 }));
 
-vi.mock("../../../lib/redis/cache.client.js", () => ({
-  CacheClient: {
-    get: vi.fn(),
-    set: vi.fn(),
-  },
-  CACHE_KEYS: {
-    workspaceBySlug: vi.fn((slug) => `ws:slug:${slug}`),
-    workspaceById: vi.fn((id) => `ws:id:${id}`),
-    workspaceOverview: vi.fn((slug) => `ws:ov:${slug}`),
-    workspaceStats: vi.fn((id) => `ws:stats:${id}`),
-  },
-  CACHE_TTL: {
-    WORKSPACE_METADATA: 3600,
-    WORKSPACE_OVERVIEW: 3600,
-    WORKSPACE_STATS: 3600,
-  },
-}));
+vi.mock("../../../lib/redis/cache.client.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../../lib/redis/cache.client.js")>();
+  return {
+    ...actual,
+    CacheClient: {
+      ...actual.CacheClient,
+      get: vi.fn(),
+      set: vi.fn(),
+    },
+  };
+});
 
 describe("WorkspaceQuery", () => {
   const mockUser = { id: "user-1" };

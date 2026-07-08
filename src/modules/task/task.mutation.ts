@@ -9,7 +9,7 @@ import {
   rollbackPersonalQuota,
   rollbackWorkspaceQuota,
 } from './task.quota.service.js';
-import { AnalyticsCache, WorkspaceCache, TaskCache, CalendarCache } from '../../lib/redis/cache.client.js';
+import { AnalyticsCache, WorkspaceCache, TaskCache, CalendarCache, AccessControlCache } from '../../lib/redis/cache.client.js';
 import { getRedisClient }  from '../../redis/redis.client.js';
 import { ProjectAccess }   from '../project/project.access.js';
 import { BadRequestError, ForbiddenError, NotFoundError } from '../../errors/index.js';
@@ -281,6 +281,7 @@ export const TaskMutation = {
         TaskCache.invalidateTaskStats(userId, existingTask.workspaceId),
         CalendarCache.invalidateAggregates(userId, existingTask.workspaceId),
         CalendarCache.invalidateInsights(userId, existingTask.workspaceId),
+        AccessControlCache.invalidateTaskUsers(taskId),
       ]).catch((err) => console.error('[Cache] Failed to invalidate after task update:', err));
     } else {
       Promise.all([
@@ -288,6 +289,7 @@ export const TaskMutation = {
         TaskCache.invalidateTaskStats(userId),
         CalendarCache.invalidateAggregates(userId),
         CalendarCache.invalidateInsights(userId),
+        AccessControlCache.invalidateTaskUsers(taskId),
       ]).catch((err) => console.error('[Cache] Failed to invalidate after personal task update:', err));
     }
 
@@ -394,6 +396,7 @@ export const TaskMutation = {
         TaskCache.invalidateTaskStats(userId, workspaceId),
         CalendarCache.invalidateAggregates(userId, workspaceId),
         CalendarCache.invalidateInsights(userId, workspaceId),
+        AccessControlCache.invalidateTaskUsers(taskId),
       ]).catch((err) => console.error('[Cache] Failed to invalidate after task deletion:', err));
     } else {
       Promise.all([
@@ -401,6 +404,7 @@ export const TaskMutation = {
         TaskCache.invalidateTaskStats(userId),
         CalendarCache.invalidateAggregates(userId),
         CalendarCache.invalidateInsights(userId),
+        AccessControlCache.invalidateTaskUsers(taskId),
       ]).catch((err) => console.error('[Cache] Failed to invalidate after personal task deletion:', err));
     }
 

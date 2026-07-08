@@ -458,7 +458,6 @@ describe("PUT /api/v1/tasks/:id", () => {
       .put(`/api/v1/tasks/${task.id}`)
       .set(await authWithCsrfHeaders(admin))
       .send({ title: "Admin Updated" });
-      // console.log(res.body, task, admin, res.status)
 
     expect(res.status).toBe(200);
     expect(res.body.data.title).toBe("Admin Updated");

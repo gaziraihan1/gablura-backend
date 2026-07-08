@@ -18,6 +18,7 @@ import type {
 } from "../../IpaymentProvider.js";
 import { BillingCycle } from "@prisma/client";
 import { prisma } from "../../../lib/prisma.js";
+import { CacheClient, CACHE_KEYS, CACHE_TTL, ExternalApiCache } from "../../../lib/redis/cache.client.js";
 // import { prisma } from "../../../index.js";
 
 if (!process.env.STRIPE_SECRET_KEY) {
@@ -109,17 +110,27 @@ export class StripeProvider implements IPaymentProvider {
   readonly name = "stripe";
 
   async createCustomer(params: CreateCustomerParams): Promise<CustomerResult> {
-    const customer = await stripeClient.customers.create({
-      email: params.email,
-      name: params.name,
-      metadata: params.metadata,
-    });
-    return { providerCustomerId: customer.id };
+    const cacheKey = CACHE_KEYS.stripeCustomer(`${params.email}`);
+    
+    return CacheClient.getOrSet(
+      cacheKey,
+      async () => {
+        const customer = await stripeClient.customers.create({
+          email: params.email,
+          name: params.name,
+          metadata: params.metadata,
+        });
+        return { providerCustomerId: customer.id };
+      },
+      CACHE_TTL.EXTERNAL_API_STRIPE_CUSTOMER,
+    );
   }
 
   async createCheckoutSession(
     params: CreateCheckoutParams,
   ): Promise<CheckoutResult> {
+    // Checkout sessions are typically short-lived and specific to a session, 
+    // so we don't cache the session URL itself, but we can cache the price lookup.
     const priceEnvKey = `STRIPE_PRICE_${params.planName}_${params.billingCycle}`;
     const priceId = process.env[priceEnvKey];
 
@@ -147,16 +158,28 @@ export class StripeProvider implements IPaymentProvider {
   }
 
   async createPortalSession(params: CreatePortalParams): Promise<PortalResult> {
-    const session = await stripeClient.billingPortal.sessions.create({
-      customer: params.providerCustomerId,
-      return_url: params.returnUrl,
-    });
-    return { url: session.url };
+    // Portal sessions are also typically unique per request, but can be cached for a very short time
+    const cacheKey = `api:stripe:portal:${params.providerCustomerId}`;
+    
+    return CacheClient.getOrSet(
+      cacheKey,
+      async () => {
+        const session = await stripeClient.billingPortal.sessions.create({
+          customer: params.providerCustomerId,
+          return_url: params.returnUrl,
+        });
+        return { url: session.url };
+      },
+      60, // 1 minute TTL for portal sessions
+    );
   }
 
   async changePlan(params: ChangePlanParams): Promise<void> {
-    const sub = await stripeClient.subscriptions.retrieve(
-      params.providerSubscriptionId,
+    const cacheKey = CACHE_KEYS.stripeSubscription(params.providerSubscriptionId);
+    const sub = await CacheClient.getOrSet<Stripe.Subscription>(
+      cacheKey,
+      () => stripeClient.subscriptions.retrieve(params.providerSubscriptionId),
+      CACHE_TTL.EXTERNAL_API_STRIPE_SUBSCRIPTION,
     );
     const itemId = sub.items.data[0]?.id;
 
@@ -167,6 +190,7 @@ export class StripeProvider implements IPaymentProvider {
         : "create_prorations",
       metadata: params.metadata,
     });
+    await ExternalApiCache.invalidateStripeSubscription(params.providerSubscriptionId);
   }
 
   async cancelSubscription(params: CancelSubscriptionParams): Promise<void> {
@@ -178,6 +202,7 @@ export class StripeProvider implements IPaymentProvider {
         metadata: { cancelReason: params.reason ?? "" },
       });
     }
+    await ExternalApiCache.invalidateStripeSubscription(params.providerSubscriptionId);
   }
 
   async reactivateSubscription(
@@ -186,6 +211,7 @@ export class StripeProvider implements IPaymentProvider {
     await stripeClient.subscriptions.update(params.providerSubscriptionId, {
       cancel_at_period_end: false,
     });
+    await ExternalApiCache.invalidateStripeSubscription(params.providerSubscriptionId);
   }
 
   async verifyAndParseWebhook(
@@ -297,7 +323,12 @@ export class StripeProvider implements IPaymentProvider {
           typeof inv.subscription === "string"
             ? inv.subscription
             : (inv.subscription as Stripe.Subscription).id;
-        const sub = await stripeClient.subscriptions.retrieve(subId);
+        const cacheKey = CACHE_KEYS.stripeSubscription(subId);
+        const sub = await CacheClient.getOrSet<Stripe.Subscription>(
+          cacheKey,
+          () => stripeClient.subscriptions.retrieve(subId),
+          CACHE_TTL.EXTERNAL_API_STRIPE_SUBSCRIPTION,
+        );
         subMetadata = (sub.metadata ?? {}) as Record<string, string>;
       }
 

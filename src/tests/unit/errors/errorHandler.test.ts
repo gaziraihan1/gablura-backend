@@ -82,7 +82,6 @@ describe("errorHandler", () => {
   it("should handle AppError with meta fields", () => {
     const error = new AppError("Error with meta", 400, "META_ERROR");
     errorHandler(error, mockRequest as Request, mockResponse as Response, nextFunction);
-    // console.log(mockResponse.json);
 
     expect(mockResponse.json).toHaveBeenCalledWith({
       success: false,

@@ -93,7 +93,6 @@ describe('GET /api/v1/analytics/:workspaceId/tasks/trends', () => {
     const res = await request(app)
       .get(`/api/v1/analytics/${workspace.id}/tasks/trends`)
       .set(authHeaders(user));
-      console.log(res.status, JSON.stringify(res.body))
 
     expect(res.status).toBe(200);
     expect(res.body.data).toHaveProperty('completionTrend');

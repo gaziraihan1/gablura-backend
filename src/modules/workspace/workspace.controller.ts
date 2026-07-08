@@ -89,9 +89,9 @@ export const updateWorkspace = asyncHandler(
       req.params.id,
       req.user!.id,
       parsed.data,
-      async ({ workspaceId }) => {
+      async ({ workspace }) => {
         void WorkspaceActivity.logUpdated({
-          workspaceId,
+          workspaceId: workspace.id,
           workspaceSlug: workspace.slug,
           userId: req.user!.id,
         });

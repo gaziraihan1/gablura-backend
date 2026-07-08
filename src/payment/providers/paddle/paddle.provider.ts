@@ -38,6 +38,7 @@ import {
   PADDLE_PRICE_TO_PLAN,
   getPaddleWebhookSecret,
 } from '../../../modules/billing/config/paddle.js';
+import { CacheClient, CACHE_KEYS, CACHE_TTL, ExternalApiCache } from '../../../lib/redis/cache.client.js';
 
 // ✅ LAZY CLIENT (critical fix)
 function getClient() {
@@ -174,13 +175,20 @@ export class PaddleProvider implements IPaymentProvider {
   readonly name = 'paddle';
 
   async createCustomer(params: CreateCustomerParams): Promise<CustomerResult> {
-    const customer = await getClient().customers.create({
-      email: params.email,
-      name: params.name,
-      customData: params.metadata,
-    });
-
-    return { providerCustomerId: customer.id };
+    const cacheKey = CACHE_KEYS.paddleCustomer(`${params.email}`);
+    
+    return CacheClient.getOrSet(
+      cacheKey,
+      async () => {
+        const customer = await getClient().customers.create({
+          email: params.email,
+          name: params.name,
+          customData: params.metadata,
+        });
+        return { providerCustomerId: customer.id };
+      },
+      CACHE_TTL.EXTERNAL_API_PADDLE_CUSTOMER,
+    );
   }
 
   async createCheckoutSession(
@@ -209,20 +217,27 @@ export class PaddleProvider implements IPaymentProvider {
   async createPortalSession(
     params: CreatePortalParams,
   ): Promise<PortalResult> {
-    const session = await getClient().customerPortalSessions.create(
-      params.providerCustomerId,
-      [],
+    const cacheKey = `api:paddle:portal:${params.providerCustomerId}`;
+    
+    return CacheClient.getOrSet(
+      cacheKey,
+      async () => {
+        const session = await getClient().customerPortalSessions.create(
+          params.providerCustomerId,
+          [],
+        );
+        return { url: session.urls?.general?.overview ?? '' };
+      },
+      60, // 1 minute TTL for portal sessions
     );
-
-    const url = session.urls?.general?.overview;
-    if (!url) throw new Error('[PaddleProvider] No portal URL');
-
-    return { url };
   }
 
   async changePlan(params: ChangePlanParams): Promise<void> {
-    const sub = await getClient().subscriptions.get(
-      params.providerSubscriptionId,
+    const cacheKey = CACHE_KEYS.paddleSubscription(params.providerSubscriptionId);
+    const sub = await CacheClient.getOrSet(
+      cacheKey,
+      () => getClient().subscriptions.get(params.providerSubscriptionId),
+      CACHE_TTL.EXTERNAL_API_PADDLE_SUBSCRIPTION,
     );
 
     const updatedItems = (sub.items ?? []).map((item) => ({
@@ -237,6 +252,7 @@ export class PaddleProvider implements IPaymentProvider {
         : 'prorated_next_billing_period',
       customData: params.metadata,
     });
+    await ExternalApiCache.invalidatePaddleSubscription(params.providerSubscriptionId);
   }
 
   async cancelSubscription(params: CancelSubscriptionParams): Promise<void> {
@@ -245,6 +261,7 @@ export class PaddleProvider implements IPaymentProvider {
         ? 'immediately'
         : 'next_billing_period',
     });
+    await ExternalApiCache.invalidatePaddleSubscription(params.providerSubscriptionId);
   }
 
   async reactivateSubscription(
@@ -253,6 +270,7 @@ export class PaddleProvider implements IPaymentProvider {
     await getClient().subscriptions.update(params.providerSubscriptionId, {
       scheduledChange: null,
     });
+    await ExternalApiCache.invalidatePaddleSubscription(params.providerSubscriptionId);
   }
 
   async verifyAndParseWebhook(

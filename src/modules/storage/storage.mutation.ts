@@ -2,7 +2,7 @@ import { v2 as cloudinary } from "cloudinary";
 import { prisma } from "../../lib/prisma.js";
 import type { BulkDeleteResult, UploadCheckResult } from "./storage.types.js";
 import { StorageAccess } from "./storage.access.js";
-import { toMB, getMaxFileSizeForPlan } from "./storage.utils.js";
+import { toMB } from "./storage.utils.js";
 import {
   getWorkspaceStorageBytes,
   incrementWorkspaceStorage,
