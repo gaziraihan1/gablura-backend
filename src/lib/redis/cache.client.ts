@@ -742,7 +742,36 @@ export const ExternalApiCache = {
   },
 };
 
+// ─── Notification Cache Invalidation ──────────────────────────────────────────────
+
+export const NotificationCache = {
+  /**
+   * Invalidate unread count for a user
+   */
+  async invalidateUnreadCount(userId: string): Promise<void> {
+    await CacheClient.delete(`notifications:unread:${userId}`);
+  },
+
+  /**
+   * Invalidate notification list for a user (all cursors)
+   */
+  async invalidateList(userId: string): Promise<void> {
+    await CacheClient.deletePattern(`notifications:list:${userId}:*`);
+  },
+
+  /**
+   * Invalidate all notification caches for a user
+   */
+  async invalidateAll(userId: string): Promise<void> {
+    await Promise.all([
+      this.invalidateUnreadCount(userId),
+      this.invalidateList(userId),
+    ]);
+  },
+};
+
 // ─── Access Control Cache Invalidation ─────────────────────────────────────────────
+
 
 export const AccessControlCache = {
   /**

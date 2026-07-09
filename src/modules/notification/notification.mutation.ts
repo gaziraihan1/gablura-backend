@@ -1,6 +1,7 @@
 import { prisma } from '../../lib/prisma.js';
 import { notificationInclude } from './notification.selects.js';
 import type { CreateNotificationInput } from './notification.types.js';
+import { NotificationCache } from '../../lib/redis/cache.client.js';
 
 export const NotificationMutation = {
   async create(data: CreateNotificationInput) {
@@ -22,6 +23,9 @@ export const NotificationMutation = {
       where: { userId, read: false },
       data: { read: true, readAt: new Date() },
     });
+
+    await NotificationCache.invalidateAll(userId);
+
     return { count: result.count };
   },
 
