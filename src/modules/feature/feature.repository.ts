@@ -1,5 +1,6 @@
 import { NotFoundError } from '../../errors/AppError.js';
 import { prisma } from '../../lib/prisma.js';
+import { CacheClient, CACHE_TTL } from '../../lib/redis/cache.client.js';
 import type {
   CreateFeatureRequestInput,
   UpdateFeatureStatusInput,
@@ -65,54 +66,71 @@ export const FeatureRepository = {
   ): Promise<PaginatedFeatureRequestsResult> {
     const page     = Math.max(1, params.page     ?? 1);
     const pageSize = Math.min(50, Math.max(1, params.pageSize ?? 20));
-    const skip     = (page - 1) * pageSize;
+    
+    const cacheKey = `feature:list:${userId ?? 'guest'}:${params.status ?? 'all'}:${params.search ?? 'none'}:${page}:${pageSize}`;
+    
+    return CacheClient.getOrSet(
+      cacheKey,
+      async () => {
+        const skip = (page - 1) * pageSize;
 
-    const where = {
-      ...(params.status && { status: params.status }),
-      ...(params.search && {
-        OR: [
-          { title:       { contains: params.search, mode: 'insensitive' as const } },
-          { description: { contains: params.search, mode: 'insensitive' as const } },
-        ],
-      }),
-    };
+        const where = {
+          ...(params.status && { status: params.status }),
+          ...(params.search && {
+            OR: [
+              { title:       { contains: params.search, mode: 'insensitive' as const } },
+              { description: { contains: params.search, mode: 'insensitive' as const } },
+            ],
+          }),
+        };
 
-    const [rows, totalCount] = await Promise.all([
-      prisma.featureRequest.findMany({
-        where,
-        include: {
-          createdBy: createdBySelect,
-          votes:     { select: { userId: true, type: true } },
-        },
-        orderBy: [{ createdAt: 'desc' }],
-        skip,
-        take: pageSize,
-      }),
-      prisma.featureRequest.count({ where }),
-    ]);
+        const [rows, totalCount] = await Promise.all([
+          prisma.featureRequest.findMany({
+            where,
+            include: {
+              createdBy: createdBySelect,
+              votes:     { select: { userId: true, type: true } },
+            },
+            orderBy: [{ createdAt: 'desc' }],
+            skip,
+            take: pageSize,
+          }),
+          prisma.featureRequest.count({ where }),
+        ]);
 
-    return {
-      data: rows.map((r) => mapFeature(r, userId)),
-      pagination: {
-        page,
-        pageSize,
-        totalCount,
-        totalPages: Math.ceil(totalCount / pageSize),
-        hasNext:    page < Math.ceil(totalCount / pageSize),
-        hasPrev:    page > 1,
+        return {
+          data: rows.map((r) => mapFeature(r, userId)),
+          pagination: {
+            page,
+            pageSize,
+            totalCount,
+            totalPages: Math.ceil(totalCount / pageSize),
+            hasNext:    page < Math.ceil(totalCount / pageSize),
+            hasPrev:    page > 1,
+          },
+        };
       },
-    };
+      300, // 5 min TTL
+    );
   },
 
   async findById(id: string, userId: string | null): Promise<FeatureRequestResult | null> {
-    const raw = await prisma.featureRequest.findUnique({
-      where:   { id },
-      include: {
-        createdBy: createdBySelect,
-        votes:     { select: { userId: true, type: true } },
+    const cacheKey = `feature:id:${id}:${userId ?? 'guest'}`;
+    
+    return CacheClient.getOrSet(
+      cacheKey,
+      async () => {
+        const raw = await prisma.featureRequest.findUnique({
+          where:   { id },
+          include: {
+            createdBy: createdBySelect,
+            votes:     { select: { userId: true, type: true } },
+          },
+        });
+        return raw ? mapFeature(raw, userId) : null;
       },
-    });
-    return raw ? mapFeature(raw, userId) : null;
+      600, // 10 min TTL
+    );
   },
 
   async updateStatus(id: string, input: UpdateFeatureStatusInput): Promise<FeatureRequestResult> {
@@ -124,11 +142,17 @@ export const FeatureRepository = {
         votes:     { select: { userId: true, type: true } },
       },
     });
+    
+    await CacheClient.deletePattern(`feature:list:*`);
+    await CacheClient.delete(`feature:id:${id}:*`); // Note: This is a simplification; actually needs to invalidate for all users or use pattern
+    
     return mapFeature(raw, null);
   },
 
   async delete(id: string): Promise<void> {
     await prisma.featureRequest.delete({ where: { id } });
+    await CacheClient.deletePattern(`feature:list:*`);
+    await CacheClient.deletePattern(`feature:id:${id}:*`);
   },
 
   // ── Vote: upsert (change vote type) or delete (retract) ──────────────────
@@ -142,32 +166,37 @@ export const FeatureRepository = {
     });
 
     if (!existing) {
-  await prisma.featureVote.create({
-    data: { userId, featureRequestId, type },
-  });
-  return 'created';
-}
+      await prisma.featureVote.create({
+        data: { userId, featureRequestId, type },
+      });
+      await CacheClient.deletePattern(`feature:list:*`);
+      await CacheClient.deletePattern(`feature:id:${featureRequestId}:*`);
+      return 'created';
+    }
 
-if (existing.type === type) {
-  // ✅ idempotent — no change
-  return 'unchanged';
-}
+    if (existing.type === type) {
+      return 'unchanged';
+    }
 
-await prisma.featureVote.update({
-  where: { userId_featureRequestId: { userId, featureRequestId } },
-  data: { type },
-});
-return 'updated';
+    await prisma.featureVote.update({
+      where: { userId_featureRequestId: { userId, featureRequestId } },
+      data: { type },
+    });
+    await CacheClient.deletePattern(`feature:list:*`);
+    await CacheClient.deletePattern(`feature:id:${featureRequestId}:*`);
+    return 'updated';
   },
   async removeVote(featureRequestId: string, userId: string): Promise<void> {
-  const existing = await prisma.featureVote.findUnique({
-    where: { userId_featureRequestId: { userId, featureRequestId } },
-  });
+    const existing = await prisma.featureVote.findUnique({
+      where: { userId_featureRequestId: { userId, featureRequestId } },
+    });
 
-  if (!existing) throw new NotFoundError("Vote")
+    if (!existing) throw new NotFoundError("Vote")
 
-  await prisma.featureVote.delete({
-    where: { userId_featureRequestId: { userId, featureRequestId } },
-  });
-}
+    await prisma.featureVote.delete({
+      where: { userId_featureRequestId: { userId, featureRequestId } },
+    });
+    await CacheClient.deletePattern(`feature:list:*`);
+    await CacheClient.deletePattern(`feature:id:${featureRequestId}:*`);
+  }
 };

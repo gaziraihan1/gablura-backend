@@ -110,17 +110,28 @@ export const ProjectQuery = {
     // Verify access for cached data
     const cachedProject = cached as any;
     if (cachedProject.workspaceId) {
-      const hasAccess = await prisma.workspace.findFirst({
-        where: {
-          id: cachedProject.workspaceId,
-          OR: [
-            { ownerId: userId },
-            { members: { some: { userId } } },
-            { isPublic: true },
-          ],
+      const workspaceId = cachedProject.workspaceId;
+      const accessCacheKey = `access:workspace:public-check:${workspaceId}:${userId}`;
+      
+      const hasAccess = await CacheClient.getOrSet(
+        accessCacheKey,
+        async () => {
+          const ws = await prisma.workspace.findFirst({
+            where: {
+              id: workspaceId,
+              OR: [
+                { ownerId: userId },
+                { members: { some: { userId } } },
+                { isPublic: true },
+              ],
+            },
+            select: { id: true },
+          });
+          return !!ws;
         },
-        select: { id: true },
-      });
+        300, // 5 min TTL
+      );
+
       if (!hasAccess) throw new NotFoundError('Project');
     }
     return cached;
@@ -136,18 +147,28 @@ export const ProjectQuery = {
 
   // Then verify access separately using workspaceId directly
   if (project.workspaceId) {
-    const hasAccess = await prisma.workspace.findFirst({
-      where: {
-        id: project.workspaceId,
-        OR: [
-          { ownerId: userId },
-          { members: { some: { userId } } },
-          { isPublic: true },
-        ],
+    const workspaceId = project.workspaceId;
+    const accessCacheKey = `access:workspace:public-check:${workspaceId}:${userId}`;
+    
+    const hasAccess = await CacheClient.getOrSet(
+      accessCacheKey,
+      async () => {
+        const ws = await prisma.workspace.findFirst({
+          where: {
+            id: workspaceId,
+            OR: [
+              { ownerId: userId },
+              { members: { some: { userId } } },
+              { isPublic: true },
+            ],
+          },
+          select: { id: true },
+        });
+        return !!ws;
       },
-      select: { id: true },
-    });
-    console.log(hasAccess ? "User has access to the project" : "User does NOT have access to the project"); // Debugging log
+      300, // 5 min TTL
+    );
+
     if (!hasAccess) throw new NotFoundError('Project');
   }
 

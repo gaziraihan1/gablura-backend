@@ -16,6 +16,7 @@
 
 import { prismaRead, prisma } from "../../lib/prisma.js";
 import { notificationInclude } from "./notification.selects.js";
+import { CacheClient } from "../../lib/redis/cache.client.js";
 
 const PAGE_SIZE = 20;
 
@@ -28,21 +29,29 @@ export const NotificationQuery = {
    *   { items, nextCursor, hasMore }
    */
   async getUserNotification(userId: string, cursor?: string) {
-    const notifications = await prismaRead.notification.findMany({
-      where: { userId },
-      include: notificationInclude,
-      orderBy: { createdAt: "desc" },
-      take: PAGE_SIZE + 1,           // fetch one extra to determine hasMore
-      ...(cursor
-        ? { skip: 1, cursor: { id: cursor } }
-        : {}),
-    });
+    const cacheKey = `notifications:list:${userId}:${cursor ?? 'start'}`;
+    
+    return CacheClient.getOrSet(
+      cacheKey,
+      async () => {
+        const notifications = await prismaRead.notification.findMany({
+          where: { userId },
+          include: notificationInclude,
+          orderBy: { createdAt: "desc" },
+          take: PAGE_SIZE + 1,           // fetch one extra to determine hasMore
+          ...(cursor
+            ? { skip: 1, cursor: { id: cursor } }
+            : {}),
+        });
 
-    const hasMore = notifications.length > PAGE_SIZE;
-    const items = hasMore ? notifications.slice(0, PAGE_SIZE) : notifications;
-    const nextCursor = hasMore ? items[items.length - 1].id : null;
+        const hasMore = notifications.length > PAGE_SIZE;
+        const items = hasMore ? notifications.slice(0, PAGE_SIZE) : notifications;
+        const nextCursor = hasMore ? items[items.length - 1].id : null;
 
-    return { items, nextCursor, hasMore };
+        return { items, nextCursor, hasMore };
+      },
+      60, // 1 min TTL as per CACHING_STRATEGY.md
+    );
   },
 
   /**
@@ -50,9 +59,17 @@ export const NotificationQuery = {
    * Uses PRIMARY — must be consistent immediately after mark-as-read.
    */
   async getUnreadCount(userId: string): Promise<{ count: number }> {
-    const count = await prisma.notification.count({
-      where: { userId, read: false },
-    });
-    return { count };
+    const cacheKey = `notifications:unread:${userId}`;
+    
+    return CacheClient.getOrSet(
+      cacheKey,
+      async () => {
+        const count = await prisma.notification.count({
+          where: { userId, read: false },
+        });
+        return { count };
+      },
+      30, // 30 sec TTL as per CACHING_STRATEGY.md
+    );
   },
 };
