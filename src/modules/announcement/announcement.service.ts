@@ -74,11 +74,13 @@ export const AnnouncementService = {
 
     const announcement = await AnnouncementRepository.create(input);
 
-    onCreated?.({
-      announcement,
-      workspaceSlug: input.workspaceSlug,
-      creatorName: announcement.createdBy.name ?? 'Someone',
-    }).catch(() => {});
+    if (onCreated) {
+      await onCreated({
+        announcement,
+        workspaceSlug: input.workspaceSlug,
+        creatorName: announcement.createdBy.name ?? 'Someone',
+      }).catch((e) => console.error("Error in onCreated callback:", e));
+    }
 
     return announcement;
   },
@@ -157,7 +159,10 @@ export const AnnouncementService = {
 
     await AnnouncementRepository.delete(id);
 
-    onDeleted?.({ announcement, workspaceSlug: announcement.workspaceSlug }).catch(() => {});
+    if (onDeleted) {
+      await onDeleted({ announcement, workspaceSlug: announcement.workspaceSlug })
+        .catch((e) => console.error("Error in onDeleted callback:", e));
+    }
   },
 
   async togglePin(id: string, userId: string) {

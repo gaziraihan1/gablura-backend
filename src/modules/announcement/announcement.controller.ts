@@ -31,37 +31,42 @@ export const createAnnouncement = asyncHandler(
       async ({ announcement, workspaceSlug: wsSlug, creatorName }) => {
         const actionUrl = `/dashboard/workspaces/${workspaceSlug}/announcements/${announcement.id}`;
 
-        void prisma.activity
-          .create({
-            data: {
-              action: "CREATED",
-              entityType: "ANNOUNCEMENT",
-              entityId: announcement.id,
-              user: { connect: { id: req.user!.id } },
-              workspace: { connect: { id: workspace.id } },
-              workspaceSlug: wsSlug,
-              metadata: {
-                announcementTitle: announcement.title,
-                visibility: announcement.visibility,
-                isPinned: announcement.isPinned,
+        try {
+          await prisma.activity
+            .create({
+              data: {
+                action: "CREATED",
+                entityType: "ANNOUNCEMENT",
+                entityId: announcement.id,
+                user: { connect: { id: req.user!.id } },
+                workspace: { connect: { id: workspace.id } },
+                workspaceSlug: wsSlug,
+                metadata: {
+                  announcementTitle: announcement.title,
+                  visibility: announcement.visibility,
+                  isPinned: announcement.isPinned,
+                },
               },
-            },
-          })
-          .catch((e) =>
-            console.error("Failed to log announcement activity:", e),
-          );
+            });
+        } catch (e) {
+          console.error("Failed to log announcement activity:", e);
+        }
 
         if (announcement.visibility === "PUBLIC") {
-          void notifyWorkspaceMembers({
-            workspaceSlug: wsSlug,
-            workspaceId: workspace.id,
-            senderId: req.user!.id,
-            type: "PROJECT_UPDATE",
-            title: "📢 New Announcement",
-            message: `${creatorName}: ${announcement.title}`,
-            actionUrl,
-            excludeUserId: req.user!.id,
-          });
+          try {
+            await notifyWorkspaceMembers({
+              workspaceSlug: wsSlug,
+              workspaceId: workspace.id,
+              senderId: req.user!.id,
+              type: "PROJECT_UPDATE",
+              title: "📢 New Announcement",
+              message: `${creatorName}: ${announcement.title}`,
+              actionUrl,
+              excludeUserId: req.user!.id,
+            });
+          } catch (e) {
+            console.error("Failed to notify workspace members:", e);
+          }
         } else {
           const targetIds = (announcement.targets ?? [])
             .map((t: any) => t.userId)
@@ -80,8 +85,8 @@ export const createAnnouncement = asyncHandler(
             ),
           );
         }
-      },
-    );
+        },
+        );
 
     res
       .status(201)
@@ -147,21 +152,22 @@ export const deleteAnnouncement = asyncHandler(
       req.params.id,
       req.user!.id,
       async ({ announcement, workspaceSlug }) => {
-        void prisma.activity
-          .create({
-            data: {
-              action: "DELETED",
-              entityType: "ANNOUNCEMENT",
-              entityId: announcement.id,
-              user: { connect: { id: req.user!.id } },
-              workspace: { connect: { slug: workspaceSlug } },
-              workspaceSlug,
-              metadata: { announcementTitle: announcement.title },
-            },
-          })
-          .catch((e) =>
-            console.error("Failed to log announcement deletion:", e),
-          );
+        try {
+          await prisma.activity
+            .create({
+              data: {
+                action: "DELETED",
+                entityType: "ANNOUNCEMENT",
+                entityId: announcement.id,
+                user: { connect: { id: req.user!.id } },
+                workspace: { connect: { slug: workspaceSlug } },
+                workspaceSlug,
+                metadata: { announcementTitle: announcement.title },
+              },
+            });
+        } catch (e) {
+          console.error("Failed to log announcement deletion:", e);
+        }
       },
     );
 
