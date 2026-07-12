@@ -18,9 +18,16 @@ import type {
   MostActiveDay,
   MemberWorkload,
   DeadlineRiskAnalysis,
+  ProjectAnalyticsKPIs,
+  ProjectTaskStatusDistribution,
+  ProjectTaskPriorityDistribution,
+  ProjectMemberContribution,
+  ProjectTimeTrackingSummary,
+  ProjectCompletionTrend,
+  ProjectDeadlineRisk,
 } from "./analytics.types.js";
 import { CacheClient, CACHE_KEYS, CACHE_TTL, AnalyticsCache } from "../../lib/redis/cache.client.js";
-import { Prisma, TaskStatus } from "@prisma/client";
+import { TaskStatus } from "@prisma/client";
 
 export const AnalyticsQuery = {
 
@@ -684,6 +691,368 @@ export const AnalyticsQuery = {
         ...task,
         assignedTo: assignees.map((a) => a.user.name).join(", "),
       })),
+      dueIn7DaysCount,
+      highPriorityNearDeadline,
+      riskLevel,
+    };
+
+    await CacheClient.set(cacheKey, result, CACHE_TTL.ANALYTICS_RISK_ANALYSIS);
+
+    return result;
+  },
+
+  async getProjectAnalyticsKPIs(
+    workspaceId: string,
+    projectId: string,
+    userId: string,
+  ): Promise<ProjectAnalyticsKPIs> {
+    await AnalyticsAccess.assertProjectAnalyticsAccess(userId, workspaceId, projectId);
+
+    const cacheKey = CACHE_KEYS.analyticsProjectKPIs(workspaceId, projectId);
+    const cached = await CacheClient.get<ProjectAnalyticsKPIs>(cacheKey);
+    if (cached) return cached;
+
+    const [
+      totalTasks,
+      completedTasks,
+      inProgressTasks,
+      overdueTasks,
+      totalMembers,
+      totalHours,
+      storageUsed,
+    ] = await Promise.all([
+      prisma.task.count({ where: { workspaceId, projectId } }),
+      prisma.task.count({ where: { workspaceId, projectId, status: "COMPLETED" } }),
+      prisma.task.count({ where: { workspaceId, projectId, status: "IN_PROGRESS" } }),
+      prisma.task.count({
+        where: {
+          workspaceId,
+          projectId,
+          status: { in: ["TODO", "IN_PROGRESS"] },
+          dueDate: { lt: new Date() },
+        },
+      }),
+      prisma.projectMember.count({ where: { projectId } }),
+      prisma.timeEntry
+        .aggregate({
+          where: { task: { workspaceId, projectId } },
+          _sum: { duration: true },
+        })
+        .then((result) => minutesToHours(result._sum.duration)),
+      prisma.file
+        .aggregate({
+          where: { workspaceId, projectId },
+          _sum: { size: true },
+        })
+        .then((result) => bytesToMB(result._sum.size)),
+    ]);
+
+    const completionRate =
+      totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+
+    const kpis: ProjectAnalyticsKPIs = {
+      totalTasks,
+      completedTasks,
+      inProgressTasks,
+      overdueTasks,
+      completionRate,
+      totalMembers,
+      totalHours,
+      storageUsed,
+    };
+
+    await CacheClient.set(cacheKey, kpis, CACHE_TTL.ANALYTICS_KPI);
+
+    return kpis;
+  },
+
+  async getProjectTaskStatusDistribution(
+    workspaceId: string,
+    projectId: string,
+    userId: string,
+  ): Promise<ProjectTaskStatusDistribution[]> {
+    await AnalyticsAccess.assertProjectAnalyticsAccess(userId, workspaceId, projectId);
+
+    const cacheKey = CACHE_KEYS.analyticsProjectTaskStatusDistribution(workspaceId, projectId);
+    const cached = await CacheClient.get<ProjectTaskStatusDistribution[]>(cacheKey);
+    if (cached) return cached;
+
+    const distribution = await prisma.task.groupBy({
+      by: ["status"],
+      where: { workspaceId, projectId },
+      _count: { status: true },
+    });
+
+    const total = distribution.reduce((sum, item) => sum + item._count.status, 0);
+
+    const result = distribution.map((item) => ({
+      status: item.status,
+      count: item._count.status,
+      percentage: total > 0 ? Math.round((item._count.status / total) * 100) : 0,
+    }));
+
+    await CacheClient.set(cacheKey, result, CACHE_TTL.ANALYTICS_DISTRIBUTION);
+
+    return result;
+  },
+
+  async getProjectTaskPriorityDistribution(
+    workspaceId: string,
+    projectId: string,
+    userId: string,
+  ): Promise<ProjectTaskPriorityDistribution[]> {
+    await AnalyticsAccess.assertProjectAnalyticsAccess(userId, workspaceId, projectId);
+
+    const cacheKey = CACHE_KEYS.analyticsProjectTaskPriorityDistribution(workspaceId, projectId);
+    const cached = await CacheClient.get<ProjectTaskPriorityDistribution[]>(cacheKey);
+    if (cached) return cached;
+
+    const distribution = await prisma.task.groupBy({
+      by: ["priority"],
+      where: { workspaceId, projectId, status: { not: "CANCELLED" } },
+      _count: { priority: true },
+    });
+
+    const total = distribution.reduce((sum, item) => sum + item._count.priority, 0);
+
+    const result = distribution.map((item) => ({
+      priority: item.priority,
+      count: item._count.priority,
+      percentage: total > 0 ? Math.round((item._count.priority / total) * 100) : 0,
+    }));
+
+    await CacheClient.set(cacheKey, result, CACHE_TTL.ANALYTICS_DISTRIBUTION);
+
+    return result;
+  },
+
+  async getProjectMemberContribution(
+    workspaceId: string,
+    projectId: string,
+    userId: string,
+  ): Promise<ProjectMemberContribution[]> {
+    await AnalyticsAccess.assertProjectAnalyticsAccess(userId, workspaceId, projectId);
+
+    const cacheKey = CACHE_KEYS.analyticsProjectMemberContribution(workspaceId, projectId);
+    const cached = await CacheClient.get<ProjectMemberContribution[]>(cacheKey);
+    if (cached) return cached;
+
+    const members = await prisma.projectMember.findMany({
+      where: { projectId },
+      include: {
+        user: { select: { id: true, name: true, email: true, image: true } },
+      },
+    });
+
+    const memberIds = members.map((m) => m.userId);
+
+    const [completedTaskRows, timeRows, commentRows] = await Promise.all([
+      prisma.taskAssignee.groupBy({
+        by: ["userId"],
+        where: { task: { workspaceId, projectId, status: "COMPLETED" }, userId: { in: memberIds } },
+        _count: { taskId: true },
+      }),
+      prisma.timeEntry.groupBy({
+        by: ["userId"],
+        where: { userId: { in: memberIds }, task: { workspaceId, projectId } },
+        _sum: { duration: true },
+      }),
+      prisma.comment.groupBy({
+        by: ["userId"],
+        where: { userId: { in: memberIds }, task: { workspaceId, projectId } },
+        _count: { userId: true },
+      }),
+    ]);
+
+    const completedTaskMap = new Map(completedTaskRows.map((r) => [r.userId, r._count.taskId]));
+    const timeMap = new Map(timeRows.map((r) => [r.userId, minutesToHours(r._sum.duration)]));
+    const commentMap = new Map(commentRows.map((r) => [r.userId, r._count.userId]));
+
+    const result = members
+      .map((member) => {
+        const completedTasks = completedTaskMap.get(member.userId) ?? 0;
+        const totalHours = timeMap.get(member.userId) ?? 0;
+        const commentsCount = commentMap.get(member.userId) ?? 0;
+        return {
+          userId: member.user.id,
+          userName: member.user.name,
+          userEmail: member.user.email,
+          userImage: member.user.image,
+          role: member.role,
+          completedTasks,
+          totalHours,
+          commentsCount,
+          contributionScore: completedTasks * 2 + totalHours + commentsCount * 0.5,
+        };
+      })
+      .sort((a, b) => b.contributionScore - a.contributionScore);
+
+    await CacheClient.set(cacheKey, result, CACHE_TTL.ANALYTICS_MEMBER_METRICS);
+
+    return result;
+  },
+
+  async getProjectTimeTrackingSummary(
+    workspaceId: string,
+    projectId: string,
+    userId: string,
+    days: number = 7,
+  ): Promise<ProjectTimeTrackingSummary> {
+    await AnalyticsAccess.assertProjectAnalyticsAccess(userId, workspaceId, projectId);
+
+    const cacheKey = CACHE_KEYS.analyticsProjectTimeSummary(workspaceId, projectId, days);
+    const cached = await CacheClient.get<ProjectTimeTrackingSummary>(cacheKey);
+    if (cached) return cached;
+
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - days);
+
+    const timeWhere = { task: { workspaceId, projectId }, startedAt: { gte: startDate } };
+
+    const [totalResult, memberGroups] = await Promise.all([
+      prisma.timeEntry.aggregate({ where: timeWhere, _sum: { duration: true } }),
+      prisma.timeEntry.groupBy({ by: ["userId"], where: timeWhere, _sum: { duration: true } }),
+    ]);
+
+    const totalHours = minutesToHours(totalResult._sum.duration);
+
+    const memberIds = memberGroups.map((g) => g.userId).filter(Boolean) as string[];
+    const users = memberIds.length > 0
+      ? await prisma.user.findMany({
+          where: { id: { in: memberIds } },
+          select: { id: true, name: true, email: true },
+        })
+      : [];
+
+    const userMap = new Map(users.map((u) => [u.id, u]));
+
+    const topContributors = memberGroups
+      .map((g) => {
+        const user = userMap.get(g.userId!);
+        if (!user) return null;
+        return {
+          userId: user.id,
+          userName: user.name,
+          userEmail: user.email,
+          hours: minutesToHours(g._sum.duration),
+        };
+      })
+      .filter((u): u is NonNullable<typeof u> => u !== null)
+      .sort((a, b) => b.hours - a.hours)
+      .slice(0, 10);
+
+    const avgHoursPerMember = memberGroups.length > 0
+      ? Math.round(
+          (memberGroups.reduce((sum, g) => sum + (g._sum.duration ?? 0), 0) /
+            memberGroups.length / 60) * 100,
+        ) / 100
+      : 0;
+
+    const result = { totalHours, avgHoursPerMember, topContributors };
+
+    await CacheClient.set(cacheKey, result, CACHE_TTL.ANALYTICS_MEMBER_METRICS);
+
+    return result;
+  },
+
+  async getProjectCompletionTrend(
+    workspaceId: string,
+    projectId: string,
+    userId: string,
+    days: number = 30,
+  ): Promise<ProjectCompletionTrend[]> {
+    await AnalyticsAccess.assertProjectAnalyticsAccess(userId, workspaceId, projectId);
+
+    const cacheKey = CACHE_KEYS.analyticsProjectCompletionTrend(workspaceId, projectId, days);
+    const cached = await CacheClient.get<ProjectCompletionTrend[]>(cacheKey);
+    if (cached) return cached;
+
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - days);
+    startDate.setHours(0, 0, 0, 0);
+
+    const rows = await prisma.$queryRaw<{ day: Date; count: bigint }[]>`
+      SELECT
+        DATE_TRUNC('day', "completedAt") AS day,
+        COUNT(*)                         AS count
+      FROM   "Task"
+      WHERE  "workspaceId" = ${workspaceId}
+        AND  "projectId"   = ${projectId}
+        AND  status        = 'COMPLETED'
+        AND  "completedAt" >= ${startDate}
+      GROUP  BY DATE_TRUNC('day', "completedAt")
+      ORDER  BY day ASC
+    `;
+
+    const dbMap = new Map<string, number>(
+      rows.map((r) => [getDayKey(r.day), Number(r.count)]),
+    );
+
+    const trend: ProjectCompletionTrend[] = [];
+    for (let i = 0; i < days; i++) {
+      const date = new Date(startDate);
+      date.setDate(date.getDate() + i);
+      const key = getDayKey(date);
+      trend.push({ date: new Date(date), count: dbMap.get(key) ?? 0 });
+    }
+
+    await CacheClient.set(cacheKey, trend, CACHE_TTL.ANALYTICS_TREND);
+
+    return trend;
+  },
+
+  async getProjectDeadlineRisk(
+    workspaceId: string,
+    projectId: string,
+    userId: string,
+  ): Promise<ProjectDeadlineRisk> {
+    await AnalyticsAccess.assertProjectAnalyticsAccess(userId, workspaceId, projectId);
+
+    const cacheKey = CACHE_KEYS.analyticsProjectDeadlineRisk(workspaceId, projectId);
+    const cached = await CacheClient.get<ProjectDeadlineRisk>(cacheKey);
+    if (cached) return cached;
+
+    const now = new Date();
+    const threeDaysLater = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
+    const sevenDaysLater = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+    const activeStatuses: TaskStatus[] = ["TODO", "IN_PROGRESS"];
+
+    const [dueIn3DaysCount, dueIn7DaysCount, highPriorityNearDeadline] = await Promise.all([
+      prisma.task.count({
+        where: {
+          workspaceId,
+          projectId,
+          status: { in: activeStatuses },
+          dueDate: { gte: now, lte: threeDaysLater },
+        },
+      }),
+      prisma.task.count({
+        where: {
+          workspaceId,
+          projectId,
+          status: { in: activeStatuses },
+          dueDate: { gte: now, lte: sevenDaysLater },
+        },
+      }),
+      prisma.task.findMany({
+        where: {
+          workspaceId,
+          projectId,
+          status: { in: activeStatuses },
+          priority: { in: ["URGENT", "HIGH"] },
+          dueDate: { gte: now, lte: sevenDaysLater },
+        },
+        select: { id: true, title: true, dueDate: true, priority: true },
+      }),
+    ]);
+
+    const riskLevel = (highPriorityNearDeadline.length >= 3 ? "high"
+      : highPriorityNearDeadline.length >= 2 ? "medium"
+      : "low") as ProjectDeadlineRisk['riskLevel'];
+
+    const result = {
+      dueIn3DaysCount,
       dueIn7DaysCount,
       highPriorityNearDeadline,
       riskLevel,

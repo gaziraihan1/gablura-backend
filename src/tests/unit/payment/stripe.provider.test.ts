@@ -13,6 +13,7 @@ vi.mock("stripe", () => {
     checkout: {
       sessions: {
         create: vi.fn(),
+        retrieve: vi.fn(),
       },
     },
     billingPortal: {
@@ -139,10 +140,10 @@ describe("StripeProvider", () => {
         cancel_url: "https://example.com/cancel",
         allow_promotion_codes: true,
         subscription_data: {
-          metadata: { workspaceId: "ws_123", ownerId: "user_123" },
+          metadata: { workspaceId: "ws_123", ownerId: "user_123", planName: "PRO", billingCycle: "MONTHLY", some: "meta" },
           trial_period_days: 14,
         },
-        metadata: { some: "meta" },
+        metadata: { workspaceId: "ws_123", ownerId: "user_123", planName: "PRO", billingCycle: "MONTHLY", some: "meta" },
       });
       expect(result).toEqual({ url: "https://checkout.stripe.com/pay/cs_test_123" });
     });
@@ -336,6 +337,7 @@ describe("StripeProvider", () => {
         type: "checkout.session.completed",
         data: {
           object: {
+            id: "cs_test_123",
             mode: "subscription",
             subscription: "sub_123",
             customer: "cus_123",
@@ -344,6 +346,9 @@ describe("StripeProvider", () => {
         },
       };
       stripeMock.webhooks.constructEvent.mockReturnValue(mockEvent);
+      stripeMock.checkout.sessions.retrieve.mockResolvedValue({
+        line_items: { data: [{ price: { id: "price_pro_mo" } }] },
+      });
 
       const result = await provider.verifyAndParseWebhook(mockRawBody, mockHeaders);
 
@@ -353,6 +358,10 @@ describe("StripeProvider", () => {
         planName: "PRO",
         status: "INCOMPLETE",
       }));
+      expect(stripeMock.checkout.sessions.retrieve).toHaveBeenCalledWith(
+        "cs_test_123",
+        { expand: ["line_items"] },
+      );
     });
 
     it("should normalize an invoice.payment_succeeded event", async () => {

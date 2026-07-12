@@ -165,4 +165,83 @@ export class AnalyticsController {
     );
     res.json({ success: true, data: tasksPerMember });
   });
+
+  // ─── Project Analytics ───────────────────────────────────────────────────────
+
+  static getProjectOverview = asyncHandler(async (req: AuthRequest, res: Response) => {
+    const { workspaceId, projectId } = req.params;
+    const days = parseDays(req.query.days, 30);
+
+    const [kpis, taskStatus, priority, trend, deadlineRisk] = await Promise.allSettled([
+      AnalyticsQuery.getProjectAnalyticsKPIs(workspaceId, projectId, req.user!.id),
+      AnalyticsQuery.getProjectTaskStatusDistribution(workspaceId, projectId, req.user!.id),
+      AnalyticsQuery.getProjectTaskPriorityDistribution(workspaceId, projectId, req.user!.id),
+      AnalyticsQuery.getProjectCompletionTrend(workspaceId, projectId, req.user!.id, days),
+      AnalyticsQuery.getProjectDeadlineRisk(workspaceId, projectId, req.user!.id),
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        kpis: kpis.status === "fulfilled" ? kpis.value : null,
+        taskStatus: taskStatus.status === "fulfilled" ? taskStatus.value : null,
+        priority: priority.status === "fulfilled" ? priority.value : null,
+        completionTrend: trend.status === "fulfilled" ? trend.value : null,
+        deadlineRisk: deadlineRisk.status === "fulfilled" ? deadlineRisk.value : null,
+      },
+      partial: [kpis, taskStatus, priority, trend, deadlineRisk].some((r) => r.status === "rejected"),
+    });
+  });
+
+  static getProjectCompletionTrend = asyncHandler(async (req: AuthRequest, res: Response) => {
+    const { workspaceId, projectId } = req.params;
+    await AnalyticsAccess.assertProjectAnalyticsAccess(req.user!.id, workspaceId, projectId);
+
+    const days = parseDays(req.query.days, 30);
+    const trend = await AnalyticsQuery.getProjectCompletionTrend(
+      workspaceId,
+      projectId,
+      req.user!.id,
+      days,
+    );
+    res.json({ success: true, data: trend });
+  });
+
+  static getProjectMemberContribution = asyncHandler(async (req: AuthRequest, res: Response) => {
+    const { workspaceId, projectId } = req.params;
+    await AnalyticsAccess.assertProjectAnalyticsAccess(req.user!.id, workspaceId, projectId);
+
+    const contributions = await AnalyticsQuery.getProjectMemberContribution(
+      workspaceId,
+      projectId,
+      req.user!.id,
+    );
+    res.json({ success: true, data: contributions });
+  });
+
+  static getProjectTimeSummary = asyncHandler(async (req: AuthRequest, res: Response) => {
+    const { workspaceId, projectId } = req.params;
+    await AnalyticsAccess.assertProjectAnalyticsAccess(req.user!.id, workspaceId, projectId);
+
+    const days = parseDays(req.query.days, 7);
+    const summary = await AnalyticsQuery.getProjectTimeTrackingSummary(
+      workspaceId,
+      projectId,
+      req.user!.id,
+      days,
+    );
+    res.json({ success: true, data: summary });
+  });
+
+  static getProjectDeadlineRisk = asyncHandler(async (req: AuthRequest, res: Response) => {
+    const { workspaceId, projectId } = req.params;
+    await AnalyticsAccess.assertProjectAnalyticsAccess(req.user!.id, workspaceId, projectId);
+
+    const risk = await AnalyticsQuery.getProjectDeadlineRisk(
+      workspaceId,
+      projectId,
+      req.user!.id,
+    );
+    res.json({ success: true, data: risk });
+  });
 }

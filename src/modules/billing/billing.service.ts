@@ -1,7 +1,7 @@
 import { prisma } from "../../lib/prisma.js";
 import { getPaymentProvider } from "../../payment/provider.registry.js";
 import { BILLING_CACHE } from "../../redis/redis.client.js";
-import { UserCache } from "../../lib/redis/cache.client.js";
+import { UserCache, WorkspaceCache } from "../../lib/redis/cache.client.js";
 import { APP_URL, PLAN_LIMITS, PlanName } from "./plans.config.js";
 import {
   ForbiddenError,
@@ -63,9 +63,20 @@ export const BillingService = {
   async createCheckoutSession(input: CreateCheckoutInput): Promise<string> {
     const { workspaceId, workspaceSlug, ownerId, planName, billingCycle } =
       input;
+    
+    console.log("[BillingService] Creating checkout session with input:", JSON.stringify({
+      workspaceId,
+      workspaceSlug,
+      ownerId,
+      planName,
+      billingCycle,
+    }, null, 2));
+
     await assertOwner(workspaceId, ownerId);
 
     const existing = await BillingService.getWorkspaceSubscription(workspaceId);
+    console.log("[BillingService] Existing subscription:", existing ? JSON.stringify(existing) : 'None');
+    
     if (existing?.planName === planName) {
       throw new ConflictError(
         `This workspace is already on the ${planName} plan`,
@@ -73,19 +84,28 @@ export const BillingService = {
     }
 
     const providerCustomerId = await ensureProviderCustomer(ownerId);
+    console.log("[BillingService] Provider customer ID:", providerCustomerId);
+    
     const provider = getPaymentProvider();
+    console.log("[BillingService] Payment provider:", provider.name);
 
-    const result = await provider.createCheckoutSession({
+const checkoutParams = {
       workspaceId,
       ownerId,
       providerCustomerId,
       planName,
       billingCycle,
       trialDays: existing ? undefined : 7,
-      successUrl: `${APP_URL}/dashboard/workspaces/${workspaceSlug}/billing/success`,
+      successUrl: `${APP_URL}/dashboard/workspaces/${workspaceSlug}/billing/success?plan=${planName}&cycle=${billingCycle}`,
       cancelUrl: `${APP_URL}/dashboard/workspaces/${workspaceSlug}/billing/upgrade?canceled=true`,
       metadata: { workspaceId, ownerId, planName, billingCycle },
-    });
+    };
+    
+    console.log("[BillingService] Calling provider.createCheckoutSession with params:", JSON.stringify(checkoutParams, null, 2));
+
+    const result = await provider.createCheckoutSession(checkoutParams);
+    
+    console.log("[BillingService] Checkout session created, URL:", result.url);
     return result.url;
   },
 
@@ -184,7 +204,13 @@ export const BillingService = {
       metadata: { workspaceId, planName: newPlanName, ownerId },
     });
 
+    const workspace = await prisma.workspace.findUnique({
+      where: { id: workspaceId },
+      select: { slug: true },
+    });
+    
     await BILLING_CACHE.invalidateWorkspace(workspaceId, ownerId);
+    await WorkspaceCache.invalidateWorkspace(workspaceId, workspace?.slug);
     return null;
   },
 
@@ -208,7 +234,13 @@ export const BillingService = {
       reason,
     });
 
+    const workspace = await prisma.workspace.findUnique({
+      where: { id: workspaceId },
+      select: { slug: true },
+    });
+    
     await BILLING_CACHE.invalidateWorkspace(workspaceId, ownerId);
+    await WorkspaceCache.invalidateWorkspace(workspaceId, workspace?.slug);
     return { cancelAtPeriodEnd: !immediately };
   },
 
@@ -233,7 +265,14 @@ export const BillingService = {
       where: { workspaceId },
       data: { cancelAtPeriodEnd: false, canceledAt: null, cancelReason: null },
     });
+    
+    const workspace = await prisma.workspace.findUnique({
+      where: { id: workspaceId },
+      select: { slug: true },
+    });
+    
     await BILLING_CACHE.invalidateWorkspace(workspaceId, ownerId);
+    await WorkspaceCache.invalidateWorkspace(workspaceId, workspace?.slug);
   },
 
   async getInvoices(
@@ -255,7 +294,7 @@ export const BillingService = {
         // Validate cached data structure
         if (Array.isArray(cached) && cached.length > 0) {
           const firstInvoice = cached[0];
-          if (firstInvoice && firstInvoice.id && firstInvoice.amount) {
+          if (firstInvoice && firstInvoice.id && typeof firstInvoice.amount === 'number') {
             return cached.slice(0, limit);
           }
         }

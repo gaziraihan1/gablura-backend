@@ -82,7 +82,10 @@ async function resolvePlanNameFromPriceId(priceId: string): Promise<string> {
       OR: [{ stripePriceIdMonthly: priceId }, { stripePriceIdYearly: priceId }],
     },
   });
-  return plan?.name ?? "FREE";
+  if (!plan) {
+    throw new Error(`[StripeProvider] No Plan row matches Stripe price ID: ${priceId}`);
+  }
+  return plan.name;
 }
 
 function extractLast4(pi: Stripe.PaymentIntent): string | null {
@@ -140,6 +143,17 @@ export class StripeProvider implements IPaymentProvider {
       );
     }
 
+    const sessionMetadata = {
+      workspaceId: params.workspaceId,
+      ownerId: params.ownerId,
+      planName: params.planName,
+      billingCycle: params.billingCycle,
+      ...params.metadata,
+    };
+
+    console.log("[StripeProvider] Creating checkout session with metadata:", JSON.stringify(sessionMetadata, null, 2));
+    console.log("[StripeProvider] Price ID:", priceId, "for plan:", params.planName, params.billingCycle);
+
     const session = await stripeClient.checkout.sessions.create({
       mode: "subscription",
       customer: params.providerCustomerId,
@@ -148,11 +162,15 @@ export class StripeProvider implements IPaymentProvider {
       cancel_url: params.cancelUrl,
       allow_promotion_codes: true,
       subscription_data: {
-        metadata: { workspaceId: params.workspaceId, ownerId: params.ownerId },
+        metadata: sessionMetadata,
         trial_period_days: params.trialDays,
       },
-      metadata: params.metadata,
+      metadata: sessionMetadata,
     });
+
+    console.log("[StripeProvider] Checkout session created:", session.id, "URL:", session.url);
+    console.log("[StripeProvider] Session metadata set:", JSON.stringify(session.metadata, null, 2));
+    console.log("[StripeProvider] Subscription ID:", session.subscription);
 
     return { url: session.url! };
   }
@@ -229,7 +247,7 @@ export class StripeProvider implements IPaymentProvider {
       );
     } catch (err) {
       throw new Error(
-        `[StripeProvider] Webhook signature invalid: ${(err as Error).message}`,
+        `[StripeProvider] Webhook signature invalid: ${(err as Error).message}`, { cause: err },
       );
     }
 
@@ -246,8 +264,37 @@ export class StripeProvider implements IPaymentProvider {
     ) {
       const sub = obj as StripeSubscriptionExtended;
       const priceId = sub.items.data[0]?.price.id;
-      const planName =
-        sub.metadata?.planName ?? (await resolvePlanNameFromPriceId(priceId));
+      // Resolve planName — if price-to-plan lookup fails (e.g. misconfigured price IDs),
+      // fall back to empty string so the handler can record the event + error properly
+      // instead of the error being swallowed as "verification failed" (which prevents
+      // the event from being persisted in BillingEvent at all).
+      let planName: string;
+      try {
+        planName = await resolvePlanNameFromPriceId(priceId);
+      } catch {
+        planName = "";
+      }
+
+      // Fallback: If subscription metadata is missing workspaceId, try to get it from the checkout session
+      let metadata = (sub.metadata ?? {}) as Record<string, string>;
+      if (!metadata.workspaceId || metadata.workspaceId === "") {
+        try {
+          // Try to find the checkout session from the subscription
+          const sessions = await stripeClient.checkout.sessions.list({
+            subscription: sub.id,
+            limit: 1,
+          });
+          if (sessions.data.length > 0 && sessions.data[0].metadata?.workspaceId) {
+            console.log('[StripeProvider] Retrieved missing metadata from checkout session for subscription:', sub.id);
+            metadata = { ...metadata, ...sessions.data[0].metadata };
+            planName = sessions.data[0].metadata?.planName ?? planName;
+          } else {
+            console.error('[StripeProvider] Checkout session found but missing workspaceId metadata for subscription:', sub.id);
+          }
+        } catch (err) {
+          console.error('[StripeProvider] Failed to fetch checkout session for metadata fallback:', err);
+        }
+      }
 
       const normalised: NormalisedSubscriptionEvent = {
         type: eventType,
@@ -264,7 +311,7 @@ export class StripeProvider implements IPaymentProvider {
         canceledAt: sub.canceled_at ? new Date(sub.canceled_at * 1000) : null,
         trialStart: sub.trial_start ? new Date(sub.trial_start * 1000) : null,
         trialEnd: sub.trial_end ? new Date(sub.trial_end * 1000) : null,
-        metadata: (sub.metadata ?? {}) as Record<string, string>,
+        metadata,
         raw: event,
       };
 
@@ -275,12 +322,25 @@ export class StripeProvider implements IPaymentProvider {
       const session = obj as Stripe.Checkout.Session;
       if (session.mode !== "subscription") return null;
 
+      // Retrieve the session with line_items expanded (not included by default in webhook payload)
+      const expandedSession = await stripeClient.checkout.sessions.retrieve(
+        session.id,
+        { expand: ['line_items'] },
+      );
+
+      // session.subscription can be a string (ID) or an expanded Subscription object
+      const subscriptionId = typeof session.subscription === "string"
+        ? session.subscription
+        : session.subscription?.id ?? null;
+
+      const priceId = expandedSession.line_items?.data?.[0]?.price?.id ?? "";
+
       const normalised: NormalisedSubscriptionEvent = {
         type: "CHECKOUT_COMPLETED",
         providerEventId: event.id,
-        providerSubscriptionId: (session.subscription as string) ?? "",
+        providerSubscriptionId: subscriptionId,
         providerCustomerId: (session.customer as string) ?? "",
-        providerPriceId: "",
+        providerPriceId: priceId,
         planName: session.metadata?.planName ?? "",
         status: "INCOMPLETE",
         billingCycle:
@@ -330,6 +390,24 @@ export class StripeProvider implements IPaymentProvider {
           CACHE_TTL.EXTERNAL_API_STRIPE_SUBSCRIPTION,
         );
         subMetadata = (sub.metadata ?? {}) as Record<string, string>;
+        
+        // Fallback: If subscription metadata is missing workspaceId, try to get it from the checkout session
+        if (!subMetadata.workspaceId) {
+          try {
+            const sessions = await stripeClient.checkout.sessions.list({
+              subscription: subId,
+              limit: 1,
+            });
+            if (sessions.data.length > 0 && sessions.data[0].metadata?.workspaceId) {
+              console.log('[StripeProvider] Retrieved missing metadata from checkout session for invoice:', inv.id);
+              subMetadata = { ...subMetadata, ...sessions.data[0].metadata };
+            } else {
+              console.error('[StripeProvider] Checkout session found but missing workspaceId metadata for invoice:', inv.id);
+            }
+          } catch (err) {
+            console.error('[StripeProvider] Failed to fetch checkout session for invoice metadata fallback:', err);
+          }
+        }
       }
 
       const normalised: NormalisedInvoiceEvent = {

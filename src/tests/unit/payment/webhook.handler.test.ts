@@ -116,6 +116,16 @@ describe("webhook.handler", () => {
         providerEventId: "evt_123",
         type: "SUBSCRIPTION_CREATED",
         raw: {},
+        metadata: { workspaceId: "ws_123", planName: "PRO" },
+        planName: "PRO",
+        providerSubscriptionId: "sub_123",
+        providerCustomerId: "cus_123",
+        providerPriceId: "price_123",
+        billingCycle: "MONTHLY",
+        status: "ACTIVE",
+        currentPeriodStart: new Date(),
+        currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        cancelAtPeriodEnd: false,
       };
 
       vi.mocked(getPaymentProvider).mockReturnValue({
@@ -126,6 +136,20 @@ describe("webhook.handler", () => {
       vi.mocked(prisma.billingEvent.upsert).mockResolvedValue({
         id: "billing_123",
       } as any);
+
+      vi.mocked(prisma.plan.findUnique).mockResolvedValue({
+        id: "plan_123",
+        name: "PRO",
+        maxMembersPerWs: 10,
+        maxStorageMb: 5000,
+      } as any);
+
+      vi.mocked(prisma.subscription.upsert).mockResolvedValue({
+        id: "sub_123",
+        workspaceId: "ws_123",
+      } as any);
+
+      vi.mocked(prisma.workspace.update).mockResolvedValue({} as any);
 
       await webhookHandler(mockReq, mockRes);
 
@@ -144,6 +168,14 @@ describe("webhook.handler", () => {
         raw: {},
         metadata: { workspaceId: "ws_123" },
         planName: "PRO",
+        providerSubscriptionId: "sub_123",
+        providerCustomerId: "cus_123",
+        providerPriceId: "price_123",
+        billingCycle: "MONTHLY",
+        status: "ACTIVE",
+        currentPeriodStart: new Date(),
+        currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        cancelAtPeriodEnd: false,
       };
 
       vi.mocked(getPaymentProvider).mockReturnValue({

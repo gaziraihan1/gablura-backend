@@ -66,7 +66,7 @@ export type NormalisedEventType =
 export interface NormalisedSubscriptionEvent {
   type: NormalisedEventType;
   providerEventId: string; // for idempotency (Stripe event.id / Paddle event_id)
-  providerSubscriptionId: string;
+  providerSubscriptionId: string | null; // null when checkout.session.completed fires before subscription exists
   providerCustomerId: string;
   providerPriceId: string;
   planName: string; // resolved from price ID

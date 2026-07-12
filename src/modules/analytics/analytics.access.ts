@@ -33,6 +33,44 @@ export const AnalyticsAccess = {
     await this.assertWorkspaceAdminOrOwner(userId, workspaceId);
   },
 
+  async assertProjectAnalyticsAccess(userId: string, workspaceId: string, projectId: string) {
+    const workspace = await prisma.workspace.findUnique({
+      where:  { id: workspaceId },
+      select: { plan: true },
+    });
+
+    if (!workspace) throw new NotFoundError('Workspace');
+
+    if (workspace.plan === 'FREE') {
+      throw new PlanLimitError('Upgrade your workspace plan to access analytics');
+    }
+
+    const member = await prisma.workspaceMember.findUnique({
+      where: { userId_workspaceId: { userId, workspaceId } },
+      select: { role: true },
+    });
+
+    if (!member) {
+      throw new ForbiddenError('You do not have access to this workspace');
+    }
+
+    const isAdminOrOwner = member.role === 'ADMIN' || member.role === 'OWNER';
+
+    if (!isAdminOrOwner) {
+      const isProjectManager = await prisma.project.findFirst({
+        where: {
+          id: projectId,
+          members: { some: { userId, role: 'MANAGER' } },
+        },
+        select: { id: true },
+      });
+
+      if (!isProjectManager) {
+        throw new ForbiddenError('Analytics access is restricted to workspace admins, owners, or project managers');
+      }
+    }
+  },
+
   async isWorkspaceAdminOrOwner(userId: string, workspaceId: string): Promise<boolean> {
     const member = await prisma.workspaceMember.findUnique({
       where:  { userId_workspaceId: { userId, workspaceId } },

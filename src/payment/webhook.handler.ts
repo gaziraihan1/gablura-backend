@@ -11,9 +11,11 @@ import {
   SubStatus,
   WorkspacePlan,
   InvoiceStatus,
+  BillingCycle,
 } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { BILLING_CACHE } from "../redis/redis.client.js";
+import { WorkspaceCache } from "../lib/redis/cache.client.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -172,108 +174,216 @@ async function processEvent(
 
 async function handleCheckoutCompleted(event: NormalisedSubscriptionEvent) {
   const workspaceId = event.metadata?.workspaceId;
-  console.log(`[Webhook] Checkout completed for workspace ${workspaceId}`);
-  // Provisioning is handled by SUBSCRIPTION_CREATED which fires right after.
+  const ownerId = event.metadata?.ownerId;
+  const planName = event.metadata?.planName;
+  const billingCycle = event.metadata?.billingCycle;
+
+  console.log(`[Webhook] Checkout completed for workspace ${workspaceId}, plan: ${planName}`);
+
+  if (!workspaceId || !planName) {
+    console.error("[Webhook] Checkout completed event missing workspaceId or planName — cannot provision subscription");
+    // Throw so the error is recorded in BillingEvent and Stripe retries
+    throw new Error(`Checkout completed event missing workspaceId or planName`);
+  }
+
+  // If Stripe hasn't created the subscription yet (rare edge case), defer to customer.subscription.created
+  if (!event.providerSubscriptionId) {
+    console.log("[Webhook] No subscription ID yet in checkout.session.completed — deferring to customer.subscription.created");
+    return;
+  }
+
+  try {
+    const plan = await prisma.plan.findUnique({ where: { name: planName } });
+    if (!plan) {
+      console.error("[Webhook] Plan not found in DB:", planName);
+      // Throw so the error is recorded in BillingEvent and Stripe retries
+      throw new Error(`Plan not found in DB: ${planName}`);
+    }
+
+    const existingSub = await prisma.subscription.findUnique({ where: { workspaceId } });
+    if (existingSub) {
+      console.log(`[Webhook] Subscription already exists for workspace ${workspaceId}, skipping creation`);
+      return;
+    }
+
+    await prisma.subscription.create({
+      data: {
+        workspaceId,
+        stripeSubscriptionId: event.providerSubscriptionId,
+        stripeCustomerId: event.providerCustomerId,
+        stripePriceId: event.providerPriceId,
+        planId: plan.id,
+        billingCycle: billingCycle as BillingCycle ?? "MONTHLY",
+        status: "INCOMPLETE",
+        currentPeriodStart: new Date(),
+        currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        cancelAtPeriodEnd: false,
+        metadata: event.metadata as any,
+      },
+    });
+
+    await prisma.workspace.update({
+      where: { id: workspaceId },
+      data: {
+        plan: planName as WorkspacePlan,
+        maxMembers: plan.maxMembersPerWs,
+        maxStorage: plan.maxStorageMb,
+      },
+    });
+
+    await BILLING_CACHE.invalidateWorkspace(workspaceId, ownerId);
+    await WorkspaceCache.invalidateWorkspace(workspaceId, (await prisma.workspace.findUnique({ where: { id: workspaceId }, select: { slug: true } }))?.slug ?? '');
+
+    console.log(`[Webhook] ✅ Subscription created from checkout.session.completed for workspace ${workspaceId}`);
+  } catch (error) {
+    console.error(`[Webhook] ❌ Error creating subscription from checkout for workspace ${workspaceId}:`, error);
+    throw error;
+  }
 }
 
 async function handleSubscriptionUpserted(event: NormalisedSubscriptionEvent) {
   const workspaceId = event.metadata?.workspaceId;
   const ownerId = event.metadata?.ownerId;
 
+  console.log("[Webhook] ===== SUBSCRIPTION UPSERT START =====");
+  console.log("[Webhook] Event type:", event.type);
+  console.log("[Webhook] Provider event ID:", event.providerEventId);
+  console.log("[Webhook] Provider subscription ID:", event.providerSubscriptionId);
   console.log("[Webhook] Subscription upsert payload:", JSON.stringify({
     workspaceId,
+    ownerId,
     planName:               event.planName,
     providerSubscriptionId: event.providerSubscriptionId,
     providerCustomerId:     event.providerCustomerId,
     status:                 event.status,
+    allMetadata:            event.metadata,
   }, null, 2));
 
   if (!workspaceId) {
-    console.warn("[Webhook] Subscription event missing workspaceId metadata — skipping");
-    return;
-  }
-
-
-  const plan = await prisma.plan.findUnique({ where: { name: event.planName } });
-  if (!plan) throw new Error(`Plan not found in DB: ${event.planName}`);
-
-  await prisma.subscription.upsert({
-    where: { workspaceId },
-    create: {
-      workspaceId,
-      // STRIPE: providerSubscriptionId = sub_xxx
-      // PADDLE: providerSubscriptionId = sub_xxx
-      // Column is named stripeSubscriptionId — legacy label, stores any provider's sub ID.
-      // TO SWITCH BACK TO STRIPE: no change needed here.
-      stripeSubscriptionId: event.providerSubscriptionId,
-      // STRIPE: providerCustomerId = cus_xxx
-      // PADDLE: providerCustomerId = ctm_xxx
-      // Same pattern — legacy column name, provider-agnostic value stored.
-      stripeCustomerId:     event.providerCustomerId,
-      stripePriceId:        event.providerPriceId,
-      planId:               plan.id,
-      billingCycle:         event.billingCycle,
-      status:               event.status as SubStatus,
-      currentPeriodStart:   safeDate(event.currentPeriodStart),
-      currentPeriodEnd:     safeDate(
-        event.currentPeriodEnd,
-        new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-      ),
-      cancelAtPeriodEnd: event.cancelAtPeriodEnd,
-      canceledAt:        event.canceledAt,
-      trialStart:        event.trialStart,
-      trialEnd:          event.trialEnd,
-      metadata:          event.metadata as any,
-    },
-    update: {
-      stripeSubscriptionId: event.providerSubscriptionId,
-      stripePriceId:        event.providerPriceId,
-      planId:               plan.id,
-      billingCycle:         event.billingCycle,
-      status:               event.status as SubStatus,
-      currentPeriodStart:   safeDate(event.currentPeriodStart),
-      currentPeriodEnd:     safeDate(
-        event.currentPeriodEnd,
-        new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-      ),
-      cancelAtPeriodEnd: event.cancelAtPeriodEnd,
-      canceledAt:        event.canceledAt,
-      trialEnd:          event.trialEnd,
-      metadata:          event.metadata as any,
-    },
-  });
-
-  await prisma.workspace.update({
-    where: { id: workspaceId },
-    data: {
-      plan:       event.planName as WorkspacePlan,
-      maxMembers: plan.maxMembersPerWs,
-      maxStorage: plan.maxStorageMb,
-    },
-  });
-
-  await BILLING_CACHE.invalidateWorkspace(workspaceId, ownerId);
-  console.log(
-    `[Webhook] Subscription upserted: workspace=${workspaceId} plan=${event.planName} status=${event.status}`,
+  console.error("[Webhook] ❌ CRITICAL: Subscription event missing workspaceId metadata");
+  console.error("[Webhook] Available metadata keys:", Object.keys(event.metadata || {}));
+  // 🔧 throw so the outer handler marks processed=false + records the error,
+  // and Stripe retries the delivery instead of us silently swallowing it
+  throw new Error(
+    `Subscription event ${event.providerEventId} missing workspaceId metadata`,
   );
+}
 
-  // Backfill any invoices that arrived before the subscription row was created
-  const savedSub = await prisma.subscription.findUnique({ where: { workspaceId } });
-  if (savedSub) {
-    const backfilled = await prisma.invoice.updateMany({
-      where: { workspaceId, subscriptionId: null },
-      data:  { subscriptionId: savedSub.id, payerId: ownerId ?? undefined },
-    });
-    if (backfilled.count > 0) {
-      console.log(`[Webhook] Backfilled ${backfilled.count} invoices for workspace ${workspaceId}`);
-      await BILLING_CACHE.invalidateWorkspace(workspaceId, ownerId);
+  // providerSubscriptionId is always present for subscription.* events; null only on checkout.session.completed
+  if (!event.providerSubscriptionId) {
+    throw new Error(
+      `Subscription event ${event.providerEventId} missing providerSubscriptionId`,
+    );
+  }
+  try {
+    console.log("[Webhook] Looking up plan:", event.planName);
+    const plan = await prisma.plan.findUnique({ where: { name: event.planName } });
+    if (!plan) {
+      console.error("[Webhook] ❌ Plan not found in DB:", event.planName);
+      throw new Error(`Plan not found in DB: ${event.planName}`);
     }
+    console.log("[Webhook] Plan found:", plan.name, "ID:", plan.id);
+
+    console.log("[Webhook] Attempting subscription upsert for workspace:", workspaceId);
+    const subscription = await prisma.subscription.upsert({
+      where: { workspaceId },
+      create: {
+        workspaceId,
+        // STRIPE: providerSubscriptionId = sub_xxx
+        // PADDLE: providerSubscriptionId = sub_xxx
+        // Column is named stripeSubscriptionId — legacy label, stores any provider's sub ID.
+        // TO SWITCH BACK TO STRIPE: no change needed here.
+        stripeSubscriptionId: event.providerSubscriptionId,
+        // STRIPE: providerCustomerId = cus_xxx
+        // PADDLE: providerCustomerId = ctm_xxx
+        // Same pattern — legacy column name, provider-agnostic value stored.
+        stripeCustomerId:     event.providerCustomerId,
+        stripePriceId:        event.providerPriceId,
+        planId:               plan.id,
+        billingCycle:         event.billingCycle,
+        status:               event.status as SubStatus,
+        currentPeriodStart:   safeDate(event.currentPeriodStart),
+        currentPeriodEnd:     safeDate(
+          event.currentPeriodEnd,
+          new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        ),
+        cancelAtPeriodEnd: event.cancelAtPeriodEnd,
+        canceledAt:        event.canceledAt,
+        trialStart:        event.trialStart,
+        trialEnd:          event.trialEnd,
+        metadata:          event.metadata as any,
+      },
+      update: {
+        stripeSubscriptionId: event.providerSubscriptionId,
+        stripePriceId:        event.providerPriceId,
+        planId:               plan.id,
+        billingCycle:         event.billingCycle,
+        status:               event.status as SubStatus,
+        currentPeriodStart:   safeDate(event.currentPeriodStart),
+        currentPeriodEnd:     safeDate(
+          event.currentPeriodEnd,
+          new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        ),
+        cancelAtPeriodEnd: event.cancelAtPeriodEnd,
+        canceledAt:        event.canceledAt,
+        trialEnd:          event.trialEnd,
+        metadata:          event.metadata as any,
+      },
+    });
+
+    console.log(`[Webhook] ✅ Subscription upsert successful: id=${subscription.id} workspace=${workspaceId}`);
+
+    console.log("[Webhook] Updating workspace plan for workspace:", workspaceId);
+    const workspace = await prisma.workspace.update({
+      where: { id: workspaceId },
+      data: {
+        plan:       event.planName as WorkspacePlan,
+        maxMembers: plan.maxMembersPerWs,
+        maxStorage: plan.maxStorageMb,
+      },
+    });
+    console.log("[Webhook] ✅ Workspace updated:", workspace.id, "plan:", workspace.plan);
+
+    await BILLING_CACHE.invalidateWorkspace(workspaceId, ownerId);
+    await WorkspaceCache.invalidateWorkspace(workspaceId, workspace.slug);
+    console.log(
+      `[Webhook] ✅ Cache invalidated for workspace=${workspaceId} plan=${event.planName} status=${event.status}`,
+    );
+
+    // Backfill any invoices that arrived before the subscription row was created
+    const savedSub = await prisma.subscription.findUnique({ where: { workspaceId } });
+    if (savedSub) {
+      const backfilled = await prisma.invoice.updateMany({
+        where: { workspaceId, subscriptionId: null },
+        data:  { subscriptionId: savedSub.id, payerId: ownerId ?? undefined },
+      });
+      if (backfilled.count > 0) {
+        console.log(`[Webhook] ✅ Backfilled ${backfilled.count} invoices for workspace ${workspaceId}`);
+        await BILLING_CACHE.invalidateWorkspace(workspaceId, ownerId);
+      }
+    }
+
+    console.log("[Webhook] ===== SUBSCRIPTION UPSERT COMPLETED SUCCESSFULLY =====");
+  } catch (error) {
+    console.error(`[Webhook] ❌ Error during subscription upsert for workspace ${workspaceId}:`, error);
+    console.error("[Webhook] Error details:", error instanceof Error ? error.message : String(error));
+    console.error("[Webhook] Error stack:", error instanceof Error ? error.stack : 'No stack trace');
+    console.log("[Webhook] ===== SUBSCRIPTION UPSERT FAILED (ERROR) =====");
+    throw error;
   }
 }
 
 async function handleSubscriptionCanceled(event: NormalisedSubscriptionEvent) {
   const { workspaceId } = event.metadata;
-  if (!workspaceId) return;
+  if (!workspaceId) {
+  console.error("[Webhook] ❌ CRITICAL: Subscription event missing workspaceId metadata");
+  console.error("[Webhook] Available metadata keys:", Object.keys(event.metadata || {}));
+  // 🔧 throw so the outer handler marks processed=false + records the error,
+  // and Stripe retries the delivery instead of us silently swallowing it
+  throw new Error(
+    `Subscription event ${event.providerEventId} missing workspaceId metadata`,
+  );
+}
 
   await prisma.subscription.update({
     where: { workspaceId },
@@ -281,7 +391,7 @@ async function handleSubscriptionCanceled(event: NormalisedSubscriptionEvent) {
   });
 
   const freePlan = await prisma.plan.findUnique({ where: { name: "FREE" } });
-  await prisma.workspace.update({
+  const workspace = await prisma.workspace.update({
     where: { id: workspaceId },
     data: {
       plan:       "FREE",
@@ -295,12 +405,17 @@ async function handleSubscriptionCanceled(event: NormalisedSubscriptionEvent) {
     select: { ownerId: true },
   });
   await BILLING_CACHE.invalidateWorkspace(workspaceId, ws?.ownerId);
+  await WorkspaceCache.invalidateWorkspace(workspaceId, workspace.slug);
   console.log(`[Webhook] Workspace ${workspaceId} downgraded to FREE`);
 }
 
 async function handleTrialEnding(event: NormalisedSubscriptionEvent) {
   const { workspaceId } = event.metadata;
-  if (!workspaceId) return;
+  if (!workspaceId) {
+    throw new Error(
+      `Trial ending event ${event.providerEventId} missing workspaceId metadata`,
+    );
+  }
   // TODO: send "trial ending soon" email
   console.log(`[Webhook] Trial ending soon for workspace ${workspaceId}`);
 }
@@ -368,6 +483,14 @@ async function handleInvoiceUpsert(event: NormalisedInvoiceEvent) {
 // ---------------------------------------------------------------------------
 
 async function upsertInvoice(event: NormalisedInvoiceEvent) {
+  console.log("[Webhook] Invoice upsert payload:", JSON.stringify({
+    providerInvoiceId: event.providerInvoiceId,
+    providerSubscriptionId: event.providerSubscriptionId,
+    providerCustomerId: event.providerCustomerId,
+    metadata: event.metadata,
+    status: event.status,
+  }, null, 2));
+
   // 1. Try metadata first (fastest — always set by Paddle via customData)
   let workspaceId: string | undefined = event.metadata?.workspaceId || undefined;
 
@@ -379,6 +502,15 @@ async function upsertInvoice(event: NormalisedInvoiceEvent) {
   // 3. Fall back to customer lookup
   if (!workspaceId && event.providerCustomerId) {
     workspaceId = await resolveWorkspaceFromCustomerId(event.providerCustomerId);
+  }
+
+  if (!workspaceId) {
+    console.error("[Webhook] Invoice event missing workspaceId — skipping invoice creation");
+    // Throw so the error is recorded in BillingEvent and Stripe retries.
+    // On retry the subscription DB row may already exist and fallback steps 2-3 succeed.
+    throw new Error(
+      `Invoice event ${event.providerInvoiceId} missing workspaceId — no subscription row yet`,
+    );
   }
 
   // Resolve the subscription row to link the invoice

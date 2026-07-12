@@ -47,6 +47,9 @@ vi.mock("../../../lib/redis/cache.client.js", () => ({
   UserCache: {
     invalidateUser: vi.fn(),
   },
+  WorkspaceCache: {
+    invalidateWorkspace: vi.fn(),
+  },
 }));
 
 describe("BillingService", () => {
@@ -206,6 +209,7 @@ describe("BillingService", () => {
       };
 
       vi.mocked(prisma.workspace.findUniqueOrThrow).mockResolvedValue({ ownerId: "user-123" } as unknown as Workspace);
+      vi.mocked(prisma.workspace.findUnique).mockResolvedValue({ slug: "test-workspace" } as unknown as Workspace);
       vi.mocked(prisma.subscription.findUnique).mockResolvedValue({
         workspaceId: "ws-123",
         status: "ACTIVE",
@@ -233,6 +237,7 @@ describe("BillingService", () => {
   describe("reactivateSubscription", () => {
     it("should reactivate subscription successfully", async () => {
       vi.mocked(prisma.workspace.findUniqueOrThrow).mockResolvedValue({ ownerId: "user-123" } as unknown as Workspace);
+      vi.mocked(prisma.workspace.findUnique).mockResolvedValue({ slug: "test-workspace" } as unknown as Workspace);
       vi.mocked(prisma.subscription.findUnique).mockResolvedValue({
         workspaceId: "ws-123",
         cancelAtPeriodEnd: true,

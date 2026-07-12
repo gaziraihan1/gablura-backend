@@ -1,6 +1,6 @@
 import { WorkspacePlan } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
-import { UserCache } from "../lib/redis/cache.client.js";
+import { WorkspaceCache, UserCache } from "../lib/redis/cache.client.js";
 
 // ─── Workspace mutations ───────────────────────────────────────────────────────
 
@@ -11,7 +11,7 @@ export async function mutateUpdateWorkspaceLimits(
   id: string; slug: string; name: string;
   plan: WorkspacePlan; maxMembers: number; maxStorage: number;
 }> {
-  return prisma.workspace.update({
+  const updated = await prisma.workspace.update({
     where: { id: workspaceId },
     data,
     select: {
@@ -19,6 +19,10 @@ export async function mutateUpdateWorkspaceLimits(
       plan: true, maxMembers: true, maxStorage: true,
     },
   });
+
+  await WorkspaceCache.invalidateWorkspace(updated.id, updated.slug);
+
+  return updated;
 }
 
 export async function mutateSoftDeleteWorkspace(

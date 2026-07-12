@@ -143,6 +143,15 @@ function buildSubFields(
 
   const customData = (sub.customData ?? {}) as Record<string, string>;
 
+  // Log if workspaceId is missing from customData
+  if (!customData.workspaceId) {
+    console.error('[PaddleProvider] Subscription event missing workspaceId in customData:', {
+      subscriptionId: sub.id,
+      customDataKeys: Object.keys(customData),
+      customData,
+    });
+  }
+
   const trialEnd =
     sub.status === 'trialing' && sub.nextBilledAt
       ? toDate(sub.nextBilledAt)

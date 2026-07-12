@@ -103,3 +103,66 @@ export interface DeadlineRiskAnalysis {
   }>;
   riskLevel: 'low' | 'medium' | 'high';
 }
+
+export interface ProjectAnalyticsKPIs {
+  totalTasks: number;
+  completedTasks: number;
+  inProgressTasks: number;
+  overdueTasks: number;
+  completionRate: number;
+  totalMembers: number;
+  totalHours: number;
+  storageUsed: number;
+}
+
+export interface ProjectTaskStatusDistribution {
+  status: string;
+  count: number;
+  percentage: number;
+}
+
+export interface ProjectTaskPriorityDistribution {
+  priority: string;
+  count: number;
+  percentage: number;
+}
+
+export interface ProjectMemberContribution {
+  userId: string;
+  userName: string | null;
+  userEmail: string;
+  userImage: string | null;
+  role: string;
+  completedTasks: number;
+  totalHours: number;
+  commentsCount: number;
+  contributionScore: number;
+}
+
+export interface ProjectTimeTrackingSummary {
+  totalHours: number;
+  avgHoursPerMember: number;
+  topContributors: Array<{
+    userId: string;
+    userName: string | null;
+    userEmail: string;
+    hours: number;
+  }>;
+}
+
+export interface ProjectCompletionTrend {
+  date: Date;
+  count: number;
+}
+
+export interface ProjectDeadlineRisk {
+  dueIn3DaysCount: number;
+  dueIn7DaysCount: number;
+  highPriorityNearDeadline: Array<{
+    id: string;
+    title: string;
+    dueDate: Date | null;
+    priority: string;
+  }>;
+  riskLevel: 'low' | 'medium' | 'high';
+}

@@ -138,6 +138,21 @@ export const CACHE_KEYS = {
   analyticsDeadlineRisk: (workspaceId: string) =>
     `analytics:deadline-risk:${workspaceId}`,
 
+  analyticsProjectKPIs: (workspaceId: string, projectId: string) =>
+    `analytics:project:kpis:${workspaceId}:${projectId}`,
+  analyticsProjectTaskStatusDistribution: (workspaceId: string, projectId: string) =>
+    `analytics:project:task-status-dist:${workspaceId}:${projectId}`,
+  analyticsProjectTaskPriorityDistribution: (workspaceId: string, projectId: string) =>
+    `analytics:project:task-priority-dist:${workspaceId}:${projectId}`,
+  analyticsProjectMemberContribution: (workspaceId: string, projectId: string) =>
+    `analytics:project:member-contribution:${workspaceId}:${projectId}`,
+  analyticsProjectTimeSummary: (workspaceId: string, projectId: string, days: number) =>
+    `analytics:project:time-summary:${workspaceId}:${projectId}:${days}`,
+  analyticsProjectCompletionTrend: (workspaceId: string, projectId: string, days: number) =>
+    `analytics:project:completion-trend:${workspaceId}:${projectId}:${days}`,
+  analyticsProjectDeadlineRisk: (workspaceId: string, projectId: string) =>
+    `analytics:project:deadline-risk:${workspaceId}:${projectId}`,
+
   // Storage caching
   storageWorkspacesSummary: (userId: string) =>
     `storage:summary:user:${userId}`,
@@ -284,6 +299,7 @@ export const WorkspaceCache = {
       CACHE_KEYS.workspaceById(workspaceId),
       CACHE_KEYS.workspaceStats(workspaceId),
       CACHE_KEYS.workspaceMembers(workspaceId),
+      CACHE_KEYS.workspaceOverview(workspaceId),
     ];
     if (slug) {
       keys.push(CACHE_KEYS.workspaceBySlug(slug));
