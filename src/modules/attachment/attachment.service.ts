@@ -10,10 +10,19 @@ import {
 } from "./attatchment.quota.service.js";
 import type { AddAttachmentInput } from "./attachment.types.js";
 import { WorkspacePlan } from "./attachment.quota.types.js";
+import { prisma } from "../../lib/prisma.js";
 
 async function ensureStorageSeeded(workspaceId: string) {
   const agg = await AttachmentRepository.aggregateWorkspaceSize(workspaceId);
   await seedWorkspaceStorageFromDb(workspaceId, agg._sum.size ?? 0);
+}
+
+async function resolveWorkspaceSlug(workspaceId: string): Promise<string> {
+  const ws = await prisma.workspace.findUniqueOrThrow({
+    where: { id: workspaceId },
+    select: { slug: true },
+  });
+  return ws.slug;
 }
 
 export const AttachmentService = {
@@ -71,12 +80,14 @@ export const AttachmentService = {
 
     incrementWorkspaceStorage(workspaceId, uploadResult.bytes).catch(() => {});
 
+    const workspaceSlug = await resolveWorkspaceSlug(workspaceId);
     AttachmentRepository.createActivity({
       action: "UPLOADED",
       entityType: "FILE",
       entityId: file.id,
       userId: input.userId,
       workspaceId,
+      workspaceSlug,
       taskId: input.taskId,
       metadata: {
         fileName: file.originalName,
@@ -104,12 +115,14 @@ export const AttachmentService = {
     if (workspaceId) {
       decrementWorkspaceStorage(workspaceId, file.size).catch(() => {});
 
+      const workspaceSlug = await resolveWorkspaceSlug(workspaceId);
       AttachmentRepository.createActivity({
         action: "DELETED",
         entityType: "FILE",
         entityId: fileId,
         userId,
         workspaceId,
+        workspaceSlug,
         taskId,
         metadata: {
           fileName: file.originalName,

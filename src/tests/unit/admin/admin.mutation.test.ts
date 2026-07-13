@@ -11,6 +11,9 @@ import { prisma } from '../../../lib/prisma.js';
 import { WorkspacePlan } from '@prisma/client';
 
 vi.mock('../../../lib/redis/cache.client.js', () => ({
+  WorkspaceCache: {
+    invalidateWorkspace: vi.fn().mockResolvedValue(undefined),
+  },
   UserCache: {
     invalidateProfile: vi.fn().mockResolvedValue(undefined),
   },

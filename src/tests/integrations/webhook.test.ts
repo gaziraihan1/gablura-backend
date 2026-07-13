@@ -48,6 +48,12 @@ vi.mock("../../redis/redis.client.js", () => ({
   },
 }));
 
+vi.mock("../../lib/redis/cache.client.js", () => ({
+  WorkspaceCache: {
+    invalidateWorkspace: vi.fn().mockResolvedValue(undefined),
+  },
+}));
+
 describe("Stripe Webhook Integration", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -57,6 +63,20 @@ describe("Stripe Webhook Integration", () => {
       id: "evt_test_123",
       providerEventId: "evt_test_123",
       processed: false,
+    } as any);
+
+    // Mock subscription upsert to return a valid subscription
+    vi.mocked(prisma.subscription.upsert).mockResolvedValue({
+      id: "sub_obj_123",
+      workspaceId: "ws_123",
+      stripeSubscriptionId: "sub_123",
+      status: "ACTIVE",
+    } as any);
+
+    // Mock workspace update to return a valid workspace with slug
+    vi.mocked(prisma.workspace.update).mockResolvedValue({
+      id: "ws_123",
+      slug: "test-workspace",
     } as any);
 
     // Mock a basic plan for all tests

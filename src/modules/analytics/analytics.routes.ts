@@ -7,6 +7,8 @@ router.get('/:workspaceId/overview', AnalyticsController.getOverview);
 
 router.get('/:workspaceId/projects/:projectId/overview', AnalyticsController.getProjectOverview);
 
+router.get('/:workspaceId/tasks/trends', AnalyticsController.getTaskTrends);
+
 router.get('/:workspaceId/projects/:projectId/tasks/trends', AnalyticsController.getProjectCompletionTrend);
 
 router.get('/:workspaceId/projects/health', AnalyticsController.getProjectHealth);
