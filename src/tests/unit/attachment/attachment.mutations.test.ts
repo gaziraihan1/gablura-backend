@@ -17,6 +17,9 @@ vi.mock('../../../lib/prisma.js', () => ({
     activity: {
       create: vi.fn().mockResolvedValue(true),
     },
+    workspace: {
+      findUniqueOrThrow: vi.fn().mockResolvedValue({ slug: 'test-workspace' }),
+    },
   },
 }));
 import { prisma } from '../../../lib/prisma.js';
