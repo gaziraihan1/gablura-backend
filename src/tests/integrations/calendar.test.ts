@@ -565,3 +565,520 @@ describe('POST /api/v1/calendar/initialize', () => {
     expect(res.status).toBe(401);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /capacity
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('GET /api/v1/calendar/capacity', () => {
+  it('200 — returns null capacity before initialization', async () => {
+    const { user } = await createWorkspaceWithOwner();
+
+    const res = await request(app)
+      .get(`${BASE}/capacity`)
+      .set(authHeaders(user));
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data).toBeNull();
+  });
+
+  it('200 — returns capacity after initialization', async () => {
+    const { user } = await createWorkspaceWithOwner();
+
+    await request(app).post(`${BASE}/initialize`).set(await authWithCsrfHeaders(user));
+
+    const res = await request(app)
+      .get(`${BASE}/capacity`)
+      .set(authHeaders(user));
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toMatchObject({
+      weeklyHours: 40,
+      dailyCapacityHours: 8,
+      deepWorkHours: 4,
+    });
+  });
+
+  it('401 — unauthenticated', async () => {
+    const res = await request(app).get(`${BASE}/capacity`);
+    expect(res.status).toBe(401);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PUT /capacity
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('PUT /api/v1/calendar/capacity', () => {
+  it('200 — updates capacity fields', async () => {
+    const { user } = await createWorkspaceWithOwner();
+
+    const res = await request(app)
+      .put(`${BASE}/capacity`)
+      .set(await authWithCsrfHeaders(user))
+      .send({ weeklyHours: 30, dailyCapacityHours: 6 });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.weeklyHours).toBe(30);
+    expect(res.body.data.dailyCapacityHours).toBe(6);
+  });
+
+  it('200 — partial update', async () => {
+    const { user } = await createWorkspaceWithOwner();
+    await request(app).post(`${BASE}/initialize`).set(await authWithCsrfHeaders(user));
+
+    const res = await request(app)
+      .put(`${BASE}/capacity`)
+      .set(await authWithCsrfHeaders(user))
+      .send({ deepWorkHours: 2 });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.deepWorkHours).toBe(2);
+    expect(res.body.data.weeklyHours).toBe(40);
+  });
+
+  it('400 — zero weeklyHours', async () => {
+    const { user } = await createWorkspaceWithOwner();
+
+    const res = await request(app)
+      .put(`${BASE}/capacity`)
+      .set(await authWithCsrfHeaders(user))
+      .send({ weeklyHours: 0 });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('401 — unauthenticated', async () => {
+    const res = await request(app).put(`${BASE}/capacity`).send({});
+    expect(res.status).toBe(401);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /schedule
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('GET /api/v1/calendar/schedule', () => {
+  it('200 — returns null schedule before initialization', async () => {
+    const { user } = await createWorkspaceWithOwner();
+
+    const res = await request(app)
+      .get(`${BASE}/schedule`)
+      .set(authHeaders(user));
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toBeNull();
+  });
+
+  it('200 — returns schedule after initialization', async () => {
+    const { user } = await createWorkspaceWithOwner();
+    await request(app).post(`${BASE}/initialize`).set(await authWithCsrfHeaders(user));
+
+    const res = await request(app)
+      .get(`${BASE}/schedule`)
+      .set(authHeaders(user));
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.workDays).toHaveLength(5);
+    expect(res.body.data.workStartHour).toBe(9);
+  });
+
+  it('401 — unauthenticated', async () => {
+    const res = await request(app).get(`${BASE}/schedule`);
+    expect(res.status).toBe(401);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PUT /schedule
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('PUT /api/v1/calendar/schedule', () => {
+  it('200 — updates schedule fields', async () => {
+    const { user } = await createWorkspaceWithOwner();
+
+    const res = await request(app)
+      .put(`${BASE}/schedule`)
+      .set(await authWithCsrfHeaders(user))
+      .send({ workDays: ['MON', 'WED', 'FRI'], workStartHour: 10, workEndHour: 18 });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.workDays).toEqual(['MON', 'WED', 'FRI']);
+    expect(res.body.data.workStartHour).toBe(10);
+    expect(res.body.data.workEndHour).toBe(18);
+  });
+
+  it('200 — partial update preserves existing fields', async () => {
+    const { user } = await createWorkspaceWithOwner();
+    await request(app).post(`${BASE}/initialize`).set(await authWithCsrfHeaders(user));
+
+    const res = await request(app)
+      .put(`${BASE}/schedule`)
+      .set(await authWithCsrfHeaders(user))
+      .send({ timezone: 'Europe/London' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.timezone).toBe('Europe/London');
+    expect(res.body.data.workDays).toHaveLength(5);
+  });
+
+  it('400 — invalid work day value', async () => {
+    const { user } = await createWorkspaceWithOwner();
+
+    const res = await request(app)
+      .put(`${BASE}/schedule`)
+      .set(await authWithCsrfHeaders(user))
+      .send({ workDays: ['INVALID'] });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('401 — unauthenticated', async () => {
+    const res = await request(app).put(`${BASE}/schedule`).send({});
+    expect(res.status).toBe(401);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /energy?date=
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('GET /api/v1/calendar/energy', () => {
+  it('200 — returns null for date with no entry', async () => {
+    const { user } = await createWorkspaceWithOwner();
+
+    const res = await request(app)
+      .get(`${BASE}/energy`)
+      .set(authHeaders(user))
+      .query({ date: new Date().toISOString() });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toBeNull();
+  });
+
+  it('200 — returns energy level for logged date', async () => {
+    const { user } = await createWorkspaceWithOwner();
+    const today = new Date().toISOString();
+
+    await request(app)
+      .post(`${BASE}/energy`)
+      .set(await authWithCsrfHeaders(user))
+      .send({ date: today, energyLevel: 7 });
+
+    const res = await request(app)
+      .get(`${BASE}/energy`)
+      .set(authHeaders(user))
+      .query({ date: today });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.energyLevel).toBe(7);
+  });
+
+  it('400 — missing date', async () => {
+    const { user } = await createWorkspaceWithOwner();
+
+    const res = await request(app)
+      .get(`${BASE}/energy`)
+      .set(authHeaders(user))
+      .query({});
+
+    expect(res.status).toBe(400);
+  });
+
+  it('401 — unauthenticated', async () => {
+    const res = await request(app).get(`${BASE}/energy`).query({ date: new Date().toISOString() });
+    expect(res.status).toBe(401);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /energy
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('POST /api/v1/calendar/energy', () => {
+  it('201 — logs energy level', async () => {
+    const { user } = await createWorkspaceWithOwner();
+
+    const res = await request(app)
+      .post(`${BASE}/energy`)
+      .set(await authWithCsrfHeaders(user))
+      .send({ date: new Date().toISOString(), energyLevel: 8, note: 'Focused' });
+
+    expect(res.status).toBe(201);
+    expect(res.body.data.energyLevel).toBe(8);
+    expect(res.body.data.note).toBe('Focused');
+  });
+
+  it('201 — upserts energy on same date', async () => {
+    const { user } = await createWorkspaceWithOwner();
+    const date = new Date().toISOString();
+
+    await request(app)
+      .post(`${BASE}/energy`)
+      .set(await authWithCsrfHeaders(user))
+      .send({ date, energyLevel: 3 });
+
+    const res = await request(app)
+      .post(`${BASE}/energy`)
+      .set(await authWithCsrfHeaders(user))
+      .send({ date, energyLevel: 9, note: 'Updated' });
+
+    expect(res.status).toBe(201);
+    expect(res.body.data.energyLevel).toBe(9);
+  });
+
+  it('400 — energyLevel out of range', async () => {
+    const { user } = await createWorkspaceWithOwner();
+
+    const res = await request(app)
+      .post(`${BASE}/energy`)
+      .set(await authWithCsrfHeaders(user))
+      .send({ date: new Date().toISOString(), energyLevel: 15 });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('400 — missing required fields', async () => {
+    const { user } = await createWorkspaceWithOwner();
+
+    const res = await request(app)
+      .post(`${BASE}/energy`)
+      .set(await authWithCsrfHeaders(user))
+      .send({});
+
+    expect(res.status).toBe(400);
+  });
+
+  it('401 — unauthenticated', async () => {
+    const res = await request(app).post(`${BASE}/energy`).send({});
+    expect(res.status).toBe(401);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /energy/history
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('GET /api/v1/calendar/energy/history', () => {
+  it('200 — returns paginated energy history', async () => {
+    const { user } = await createWorkspaceWithOwner();
+    const today = new Date();
+
+    for (let i = 0; i < 5; i++) {
+      const d = new Date(today);
+      d.setDate(d.getDate() - i);
+      await prisma.energyLevel.create({
+        data: { userId: user.id, date: d, energyLevel: 5 + i },
+      });
+    }
+
+    const res = await request(app)
+      .get(`${BASE}/energy/history`)
+      .set(authHeaders(user))
+      .query({
+        startDate: new Date(Date.now() - 30 * 86_400_000).toISOString(),
+        endDate: today.toISOString(),
+        page: 1,
+        limit: 3,
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toHaveLength(3);
+    expect(res.body.pagination).toMatchObject({
+      page: 1,
+      limit: 3,
+      total: 5,
+      totalPages: 2,
+      hasNext: true,
+      hasPrev: false,
+    });
+  });
+
+  it('200 — returns empty history with pagination metadata', async () => {
+    const { user } = await createWorkspaceWithOwner();
+
+    const res = await request(app)
+      .get(`${BASE}/energy/history`)
+      .set(authHeaders(user))
+      .query({
+        startDate: new Date('2020-01-01').toISOString(),
+        endDate: new Date('2020-01-31').toISOString(),
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toHaveLength(0);
+    expect(res.body.pagination.total).toBe(0);
+    expect(res.body.pagination.totalPages).toBe(0);
+  });
+
+  it('400 — missing startDate or endDate', async () => {
+    const { user } = await createWorkspaceWithOwner();
+
+    const res = await request(app)
+      .get(`${BASE}/energy/history`)
+      .set(authHeaders(user))
+      .query({});
+
+    expect(res.status).toBe(400);
+  });
+
+  it('401 — unauthenticated', async () => {
+    const res = await request(app).get(`${BASE}/energy/history`);
+    expect(res.status).toBe(401);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /burnout-trends
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('GET /api/v1/calendar/burnout-trends', () => {
+  it('200 — returns empty array when no signals exist', async () => {
+    const { user } = await createWorkspaceWithOwner();
+
+    const res = await request(app)
+      .get(`${BASE}/burnout-trends`)
+      .set(authHeaders(user));
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toEqual([]);
+  });
+
+  it('200 — returns burnout signals when data exists', async () => {
+    const { user } = await createWorkspaceWithOwner();
+
+    await prisma.burnoutSignal.create({
+      data: {
+        userId: user.id,
+        weekStart: new Date(),
+        riskLevel: 'MODERATE',
+        consecutiveHeavyDays: 2,
+        avgDailyLoad: 0.8,
+      },
+    });
+
+    const res = await request(app)
+      .get(`${BASE}/burnout-trends`)
+      .set(authHeaders(user))
+      .query({ weeks: 4 });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.length).toBeGreaterThanOrEqual(1);
+    expect(res.body.data[0]).toHaveProperty('riskLevel');
+    expect(res.body.data[0]).toHaveProperty('weekStart');
+  });
+
+  it('200 — defaults weeks to 4', async () => {
+    const { user } = await createWorkspaceWithOwner();
+
+    const res = await request(app)
+      .get(`${BASE}/burnout-trends`)
+      .set(authHeaders(user));
+
+    expect(res.status).toBe(200);
+  });
+
+  it('401 — unauthenticated', async () => {
+    const res = await request(app).get(`${BASE}/burnout-trends`);
+    expect(res.status).toBe(401);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /recommendations
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('GET /api/v1/calendar/recommendations', () => {
+  it('200 — returns focus suggestion for new users', async () => {
+    const { user } = await createWorkspaceWithOwner();
+
+    const res = await request(app)
+      .get(`${BASE}/recommendations`)
+      .set(authHeaders(user));
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.length).toBeGreaterThanOrEqual(1);
+    expect(res.body.data[0]).toHaveProperty('type');
+    expect(res.body.data[0]).toHaveProperty('message');
+    expect(res.body.data[0]).toHaveProperty('priority');
+  });
+
+  it('200 — returns non-dismissed recommendations', async () => {
+    const { user } = await createWorkspaceWithOwner();
+
+    await prisma.wellnessRecommendation.create({
+      data: {
+        userId: user.id,
+        type: 'FOCUS_SUGGESTION',
+        message: 'Do a pomodoro',
+        priority: 50,
+      },
+    });
+
+    const res = await request(app)
+      .get(`${BASE}/recommendations`)
+      .set(authHeaders(user));
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.some((r: any) => r.message === 'Do a pomodoro')).toBe(true);
+  });
+
+  it('401 — unauthenticated', async () => {
+    const res = await request(app).get(`${BASE}/recommendations`);
+    expect(res.status).toBe(401);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PATCH /recommendations/:id/dismiss
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('PATCH /api/v1/calendar/recommendations/:id/dismiss', () => {
+  it('200 — dismisses own recommendation', async () => {
+    const { user } = await createWorkspaceWithOwner();
+
+    const rec = await prisma.wellnessRecommendation.create({
+      data: { userId: user.id, type: 'BREAK_REMINDER', message: 'Rest', priority: 50 },
+    });
+
+    const res = await request(app)
+      .patch(`${BASE}/recommendations/${rec.id}/dismiss`)
+      .set(await authWithCsrfHeaders(user));
+
+    expect(res.status).toBe(200);
+
+    const db = await prisma.wellnessRecommendation.findUnique({ where: { id: rec.id } });
+    expect(db?.dismissed).toBe(true);
+  });
+
+  it('200 — silently ignores non-existent id', async () => {
+    const { user } = await createWorkspaceWithOwner();
+
+    const res = await request(app)
+      .patch(`${BASE}/recommendations/non-existent-id/dismiss`)
+      .set(await authWithCsrfHeaders(user));
+
+    expect(res.status).toBe(200);
+  });
+
+  it('403 — cannot dismiss another user recommendation', async () => {
+    const { user } = await createWorkspaceWithOwner();
+    const { user: other } = await createWorkspaceWithOwner();
+
+    const rec = await prisma.wellnessRecommendation.create({
+      data: { userId: other.id, type: 'FOCUS_SUGGESTION', message: 'Focus', priority: 50 },
+    });
+
+    const res = await request(app)
+      .patch(`${BASE}/recommendations/${rec.id}/dismiss`)
+      .set(await authWithCsrfHeaders(user));
+
+    expect(res.status).toBe(403);
+  });
+
+  it('401 — unauthenticated', async () => {
+    const res = await request(app).patch(`${BASE}/recommendations/some-id/dismiss`);
+    expect(res.status).toBe(401);
+  });
+});

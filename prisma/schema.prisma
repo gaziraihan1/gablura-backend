@@ -158,6 +158,53 @@ model BillingEvent {
   @@index([createdAt])
 }
 
+enum TimeEntryCategory {
+  DEEP_WORK
+  MEETINGS
+  ADMIN
+  LEARNING
+  BREAK
+  OTHER
+}
+
+model EnergyLevel {
+  id          String   @id @default(cuid())
+  userId      String
+  date        DateTime
+  energyLevel Int
+  note        String?
+  createdAt   DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+  @@index([userId, date])
+}
+
+enum RecommendationType {
+  WORKLOAD_ALERT
+  BURNOUT_PREVENTION
+  ENERGY_INSIGHT
+  FOCUS_SUGGESTION
+  CAPACITY_TIP
+  SCHEDULE_ADVICE
+  BREAK_REMINDER
+}
+
+model WellnessRecommendation {
+  id        String             @id @default(cuid())
+  userId    String
+  type      RecommendationType
+  message   String
+  priority  Int                @default(0)
+  dismissed Boolean            @default(false)
+  createdAt DateTime           @default(now())
+  expiresAt DateTime?
+  user      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, dismissed])
+  @@index([userId, createdAt])
+}
+
 model User {
   id                     String                 @id @default(cuid())
   name                   String?
@@ -210,6 +257,8 @@ model User {
   UploadRateLimit        UploadRateLimit[]
   userCapacity           UserCapacity?
   userWorkSchedule       UserWorkSchedule?
+  energyLevels           EnergyLevel[]
+  wellnessRecommendations WellnessRecommendation[]
   ownedWorkspaces        Workspace[]            @relation("WorkspaceOwner")
   workspaceMembers       WorkspaceMember[]
   popularResourcesCreated PopularResource[] @relation("PopularResourceCreatedBy")
@@ -889,20 +938,22 @@ model FocusSession {
 }
 
 model TimeEntry {
-  id          String    @id @default(cuid())
+  id          String             @id @default(cuid())
   description String?
   duration    Int
-  billable    Boolean   @default(false)
+  billable    Boolean            @default(false)
+  category    TimeEntryCategory  @default(OTHER)
   startedAt   DateTime
   endedAt     DateTime?
   userId      String
   taskId      String
-  task        Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  task        Task               @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([taskId])
   @@index([startedAt])
+  @@index([category])
 }
 
 model Activity {

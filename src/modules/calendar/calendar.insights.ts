@@ -25,7 +25,7 @@ export const CalendarInsightsService = {
     const cached = await CacheClient.get<CalendarInsights>(cacheKey);
     if (cached) return cached;
 
-    const [aggregates, capacity, schedule] = await Promise.all([
+    const [aggregates, capacity, schedule, timeEntries] = await Promise.all([
       CalendarAggregation.getOrComputeAggregates({
         userId,
         workspaceId,
@@ -34,6 +34,13 @@ export const CalendarInsightsService = {
       }),
       prisma.userCapacity.findUnique({ where: { userId } }),
       prisma.userWorkSchedule.findUnique({ where: { userId } }),
+      prisma.timeEntry.findMany({
+        where: {
+          userId,
+          startedAt: { gte: startDate, lte: endDate },
+        },
+        select: { category: true, duration: true },
+      }),
     ]);
 
     const workDays = (schedule?.workDays as string[]) ?? [
@@ -57,6 +64,27 @@ export const CalendarInsightsService = {
 
     const burnoutSignal = await this.calculateBurnoutRisk(userId, startDate);
 
+    // Compute time allocation from time entries
+    const categoryTotals: Record<string, number> = { DEEP_WORK: 0, MEETINGS: 0, ADMIN: 0, LEARNING: 0, OTHER: 0 };
+    let totalTrackedMinutes = 0;
+    for (const entry of timeEntries) {
+      const cat = entry.category as string;
+      if (categoryTotals[cat] !== undefined) {
+        categoryTotals[cat] += entry.duration;
+      } else {
+        categoryTotals.OTHER += entry.duration;
+      }
+      totalTrackedMinutes += entry.duration;
+    }
+
+    const timeAllocation = totalTrackedMinutes > 0 ? {
+      deepWork: Math.round((categoryTotals.DEEP_WORK / totalTrackedMinutes) * 100),
+      meetings: Math.round((categoryTotals.MEETINGS / totalTrackedMinutes) * 100),
+      admin:    Math.round((categoryTotals.ADMIN / totalTrackedMinutes) * 100),
+      learning: Math.round((categoryTotals.LEARNING / totalTrackedMinutes) * 100),
+      other:    Math.round((categoryTotals.OTHER / totalTrackedMinutes) * 100),
+    } : null;
+
     const result = {
       totalPlannedHours,
       totalCapacityHours,
@@ -64,7 +92,7 @@ export const CalendarInsightsService = {
       overloadedDays,
       focusDays,
       burnoutRisk: burnoutSignal.riskLevel,
-      timeAllocation: null, // null until real category tracking is implemented
+      timeAllocation,
     };
 
     await CacheClient.set(cacheKey, result, CACHE_TTL.CALENDAR_INSIGHTS);

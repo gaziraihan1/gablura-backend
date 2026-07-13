@@ -49,6 +49,11 @@ export const CACHE_TTL = {
   CALENDAR_INSIGHTS: parseInt(process.env.CACHE_TTL_CALENDAR_INSIGHTS ?? "300"), // 5 min
   CALENDAR_SYSTEM_EVENTS: parseInt(process.env.CACHE_TTL_CALENDAR_SYSTEM_EVENTS ?? "600"), // 10 min
   CALENDAR_GOAL_CHECKPOINTS: parseInt(process.env.CACHE_TTL_CALENDAR_GOAL_CHECKPOINTS ?? "300"), // 5 min
+  CALENDAR_CAPACITY: parseInt(process.env.CACHE_TTL_CALENDAR_CAPACITY ?? "3600"), // 1 hour
+  CALENDAR_SCHEDULE: parseInt(process.env.CACHE_TTL_CALENDAR_SCHEDULE ?? "3600"), // 1 hour
+  CALENDAR_ENERGY_LEVEL: parseInt(process.env.CACHE_TTL_CALENDAR_ENERGY_LEVEL ?? "300"), // 5 min
+  CALENDAR_ENERGY_HISTORY: parseInt(process.env.CACHE_TTL_CALENDAR_ENERGY_HISTORY ?? "300"), // 5 min
+  CALENDAR_BURNOUT_TRENDS: parseInt(process.env.CACHE_TTL_CALENDAR_BURNOUT_TRENDS ?? "1800"), // 30 min
 
   // Focus Session — TTLs based on data freshness needs
   FOCUS_ACTIVE_SESSION: parseInt(process.env.CACHE_TTL_FOCUS_ACTIVE_SESSION ?? "30"), // 30 sec (real-time)
@@ -197,6 +202,12 @@ export const CACHE_KEYS = {
     `calendar:system-events:${userId}:${workspaceId ?? "all"}:${startDate}:${endDate}`,
   calendarGoalCheckpoints: (userId: string, workspaceId: string | undefined, startDate: string, endDate: string) =>
     `calendar:goal-checkpoints:${userId}:${workspaceId ?? "all"}:${startDate}:${endDate}`,
+
+  calendarCapacity: (userId: string) => `calendar:capacity:${userId}`,
+  calendarSchedule: (userId: string) => `calendar:schedule:${userId}`,
+  calendarEnergyLevel: (userId: string, date: string) => `calendar:energy:${userId}:${date}`,
+  calendarEnergyHistory: (userId: string, startDate: string, endDate: string) => `calendar:energy:history:${userId}:${startDate}:${endDate}`,
+  calendarBurnoutTrends: (userId: string, weeks: number) => `calendar:burnout-trends:${userId}:${weeks}`,
 
   // Focus Session caching
   focusActiveSession: (userId: string) => `focus:active-session:${userId}`,
@@ -573,6 +584,34 @@ export const CalendarCache = {
   async invalidateGoalCheckpoints(userId: string, workspaceId?: string): Promise<void> {
     console.log(`Invalidating calendar goal checkpoints for user ${userId} in workspace ${workspaceId ?? 'all'}`);
     await CacheClient.deletePattern(`calendar:goal-checkpoints:${userId}:*`);
+  },
+
+  /**
+   * Invalidate capacity cache for a user
+   */
+  async invalidateCapacity(userId: string): Promise<void> {
+    await CacheClient.delete(CACHE_KEYS.calendarCapacity(userId));
+  },
+
+  /**
+   * Invalidate schedule cache for a user
+   */
+  async invalidateSchedule(userId: string): Promise<void> {
+    await CacheClient.delete(CACHE_KEYS.calendarSchedule(userId));
+  },
+
+  /**
+   * Invalidate energy level caches for a user
+   */
+  async invalidateEnergy(userId: string): Promise<void> {
+    await CacheClient.deletePattern(`calendar:energy:${userId}:*`);
+  },
+
+  /**
+   * Invalidate burnout trends cache for a user
+   */
+  async invalidateBurnoutTrends(userId: string): Promise<void> {
+    await CacheClient.deletePattern(`calendar:burnout-trends:${userId}:*`);
   },
 
   /**

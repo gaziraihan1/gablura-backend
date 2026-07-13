@@ -20,7 +20,7 @@ import {
   notificationRouter,
 } from "./modules/notification/index.js";
 import { workspaceRouter } from "./modules/workspace/index.js";
-import { calendarRouter } from "./modules/calendar/index.js";
+import { calendarRouter, initWellnessCrons } from "./modules/calendar/index.js";
 import { focusSessionRouter } from "./modules/focusSession/index.js";
 import { storageRouter } from "./modules/storage/index.js";
 import { analyticsRouter } from "./modules/analytics/index.js";
@@ -135,6 +135,7 @@ if (process.env.NODE_ENV === "production") {
 
 initNotificationCrons();
 initDailyTaskCrons();
+initWellnessCrons();
 
 app.get("/health", async (req: Request, res: Response) => {
   try {
