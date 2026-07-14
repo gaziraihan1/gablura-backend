@@ -38,14 +38,15 @@ import {
 } from "./modules/announcement/index.js";
 import { errorHandler, notFoundHandler } from "./errors/errorHandler.js";
 import { adminResourceRouter, publicResourceRouter } from "./modules/resource/index.js";
+import { securityHeaders } from "./middleware/securityHeaders.js";
+import { requireFocuraAdmin } from "./middleware/focuraAdmin.js";
 
 const isProd = process.env.NODE_ENV === "production";
 
 const allowedOrigins = [
   process.env.CLIENT_URL,
   process.env.FRONTEND_URL,
-  "http://localhost:3000",
-  "http://localhost:3001",
+  ...(!isProd ? ["http://localhost:3000", "http://localhost:3001"] : []),
 ].filter(Boolean) as string[];
 
 const app: Application = express();
@@ -80,7 +81,12 @@ app.use((err: any, req: Request, res: Response, next: NextFunction) => {
 app.use(
   cors({
     origin: (origin, callback) => {
-      if (!origin) return callback(null, true);
+      // Allow requests with no origin (same-origin, server-to-server, curl)
+      // ONLY in development. In production, require a valid origin header.
+      if (!origin) {
+        if (!isProd) return callback(null, true);
+        return callback(new Error("Not allowed by CORS"));
+      }
       if (allowedOrigins.includes(origin)) return callback(null, true);
       return callback(new Error("Not allowed by CORS"));
     },
@@ -103,12 +109,17 @@ app.use(
       ? {
           directives: {
             defaultSrc: ["'self'"],
-            styleSrc: ["'self'", "'unsafe-inline'"],
             scriptSrc: ["'self'"],
+            styleSrc: ["'self'", "'unsafe-inline'"],
             imgSrc: ["'self'", "data:", "https:"],
+            fontSrc: ["'self'", "data:"],
             connectSrc: ["'self'", ...allowedOrigins],
             frameSrc: ["'none'"],
             frameAncestors: ["'none'"],
+            objectSrc: ["'none'"],
+            baseUri: ["'self'"],
+            formAction: ["'self'"],
+            mediaSrc: ["'self'"],
           },
         }
       : false,
@@ -116,6 +127,9 @@ app.use(
     frameguard: { action: "deny" },
   }),
 );
+
+// ── Additional security headers ───────────────────────────
+app.use(securityHeaders);
 
 // ── Dev debug logger (enhanced) ────────────────────────────
 app.use((req: Request, _res: Response, next) => {
@@ -138,16 +152,12 @@ app.get("/health", async (_req: Request, res: Response) => {
     res.json({
       status: "OK",
       timestamp: new Date().toISOString(),
-      uptime: process.uptime(),
-      environment: process.env.NODE_ENV,
       database: "connected",
-      csrfEnabled: !!process.env.UPSTASH_REDIS_REST_URL,
     });
   } catch (error) {
     res.status(503).json({
       status: "ERROR",
       database: "disconnected",
-      error: (error as Error).message,
     });
   }
 });
@@ -220,7 +230,7 @@ app.use(
 );
 app.use("/api/v1/meetings", authenticate, requireCsrfToken(), meetingRoutes);
 app.use("/api/v1/features", authenticate, requireCsrfToken(), featureRouter);
-app.use("/api/v1/admin", authenticate, requireCsrfToken(), adminRouter);
+app.use("/api/v1/admin", authenticate, requireCsrfToken(), requireFocuraAdmin, adminRouter);
 
 // ── 404 ───────────────────────────────────────────────────
 app.use(notFoundHandler);  // catches unmatched routes → forwards to errorHandler

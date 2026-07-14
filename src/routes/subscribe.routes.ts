@@ -26,6 +26,15 @@ router.post("/", async (req, res) => {
     });
   }
 
+  // Validate email format
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email) || email.length > 254) {
+    return res.status(400).json({
+      success: false,
+      message: "Invalid email format",
+    });
+  }
+
   const alreadyExists = await prisma.subscribeList.findUnique({
     where: { email },
   });

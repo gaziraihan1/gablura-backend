@@ -66,9 +66,15 @@ export async function contactRateLimit(
     prefix: "focura:contact:email",
   });
 
-  // If limiter unavailable → behave like CSRF fallback
+  // If limiter unavailable → fail closed (reject to prevent abuse)
   if (!ipLimiter) {
-    return next();
+    console.warn("[contactRateLimit] Rate limiter unavailable — rejecting request");
+    res.status(429).json({
+      success: false,
+      error: "RATE_LIMIT_UNAVAILABLE",
+      message: "Rate limiting service is temporarily unavailable. Please try again later.",
+    });
+    return;
   }
 
   const ip = getRealIp(req);

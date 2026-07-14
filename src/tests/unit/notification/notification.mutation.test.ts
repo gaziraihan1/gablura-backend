@@ -37,10 +37,10 @@ describe("NotificationMutation", () => {
     it("should update read status", async () => {
       (prisma.notification.update as any).mockResolvedValue({ id: "n1", read: true });
 
-      await NotificationMutation.markAsRead("n1");
+      await NotificationMutation.markAsRead("n1", "u1");
       expect(prisma.notification.update).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { id: "n1" },
+          where: { id: "n1", userId: "u1" },
           data: expect.objectContaining({ read: true }),
         })
       );
@@ -62,8 +62,8 @@ describe("NotificationMutation", () => {
 
   describe("deleteNotification", () => {
     it("should delete a notification", async () => {
-      await NotificationMutation.deleteNotification("n1");
-      expect(prisma.notification.delete).toHaveBeenCalledWith({ where: { id: "n1" } });
+      await NotificationMutation.deleteNotification("n1", "u1");
+      expect(prisma.notification.delete).toHaveBeenCalledWith({ where: { id: "n1", userId: "u1" } });
     });
   });
 

@@ -11,9 +11,9 @@ export const NotificationMutation = {
     });
   },
 
-  async markAsRead(notificationId: string) {
+  async markAsRead(notificationId: string, userId: string) {
     return prisma.notification.update({
-      where: { id: notificationId },
+      where: { id: notificationId, userId },
       data: { read: true, readAt: new Date() },
     });
   },
@@ -29,8 +29,8 @@ export const NotificationMutation = {
     return { count: result.count };
   },
 
-  async deleteNotification(notificationId: string): Promise<void> {
-    await prisma.notification.delete({ where: { id: notificationId } });
+  async deleteNotification(notificationId: string, userId: string): Promise<void> {
+    await prisma.notification.delete({ where: { id: notificationId, userId } });
   },
 
   async deleteAllReadNotifications(userId: string) {

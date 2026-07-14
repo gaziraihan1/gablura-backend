@@ -67,12 +67,7 @@ export async function validateCsrfToken(
       }
     }
 
-    // Dev: skip on Redis error
-    if (process.env.NODE_ENV === "development") {
-      console.warn("⚠️  CSRF validation skipped (Redis unavailable in development)");
-      return true;
-    }
-
+    // Fail closed: reject if Redis is unavailable
     return false;
   }
 }

@@ -14,7 +14,11 @@ import { getPublishMetrics } from "./notification.helpers.js";
 
 const router = Router();
 
+// ─── SSE stream: uses its own query-string token auth ────────
 router.get("/stream", notificationStreamHandler);
+
+// ─── All other endpoints require Bearer auth ─────────────────
+router.use(authenticate);
 
 // ─── Debug metrics endpoint (dev only) ──────────────────────────────────────
 if (process.env.NODE_ENV === "development") {
@@ -35,8 +39,6 @@ if (process.env.NODE_ENV === "development") {
     });
   });
 }
-
-router.use(authenticate);
 
 router.get("/", getNotifications);
 router.get("/unread-count", getUnreadCount);

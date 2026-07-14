@@ -1,6 +1,16 @@
 import nodemailer from "nodemailer";
 import type { CreateContactMessageInput } from "./contact.validator.js";
 
+// ─── HTML escaping to prevent XSS ──────────────────────────────────────────────
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 // ─── Custom error class ───────────────────────────────────────────────────────
 export class ContactEmailError extends Error {
   constructor(message: string, public readonly cause?: unknown) {
@@ -202,12 +212,12 @@ function buildAdminEmailHtml(
   const label = categoryLabel[data.category] ?? data.category;
 
   const rows = [
-    ["Name", data.name],
-    ["Email", `<a href="mailto:${data.email}" style="color:#0a0a0a;">${data.email}</a>`],
-    ["Category", label],
-    ["Subject", data.subject],
-    ["IP Address", ip],
-    ["Message ID", messageId],
+    ["Name", escapeHtml(data.name)],
+    ["Email", `<a href="mailto:${escapeHtml(data.email)}" style="color:#0a0a0a;">${escapeHtml(data.email)}</a>`],
+    ["Category", escapeHtml(label)],
+    ["Subject", escapeHtml(data.subject)],
+    ["IP Address", escapeHtml(ip)],
+    ["Message ID", escapeHtml(messageId)],
   ]
     .map(
       ([l, v], i) => `
@@ -232,12 +242,12 @@ function buildAdminEmailHtml(
 
     <div style="background:#fafafa;border:1px solid #e5e5e5;border-left:3px solid ${color};border-radius:8px;padding:16px;margin-bottom:24px;">
       <p style="margin:0 0 8px;font-size:12px;font-weight:600;color:#737373;text-transform:uppercase;letter-spacing:0.5px;">Message</p>
-      <p style="margin:0;font-size:14px;color:#0a0a0a;line-height:1.7;white-space:pre-wrap;">${data.message}</p>
+      <p style="margin:0;font-size:14px;color:#0a0a0a;line-height:1.7;white-space:pre-wrap;">${escapeHtml(data.message)}</p>
     </div>
 
-    <a href="mailto:${data.email}?subject=Re: ${encodeURIComponent(data.subject)}"
+    <a href="mailto:${escapeHtml(data.email)}?subject=Re: ${encodeURIComponent(data.subject)}"
        style="display:inline-block;background:#0a0a0a;color:#ffffff;text-decoration:none;font-size:13px;font-weight:600;padding:12px 20px;border-radius:8px;">
-      Reply to ${data.name}
+      Reply to ${escapeHtml(data.name)}
     </a>
   `;
 
@@ -252,7 +262,7 @@ function buildUserAutoReplyHtml(data: CreateContactMessageInput): string {
 
   const content = `
     <h2 style="margin:0 0 8px;font-size:18px;font-weight:700;color:#0a0a0a;">
-      Thanks for reaching out, ${firstName}!
+      Thanks for reaching out, ${escapeHtml(firstName)}!
     </h2>
     <p style="margin:0 0 24px;font-size:14px;color:#525252;line-height:1.7;">
       We received your message and our team will get back to you within
@@ -262,13 +272,13 @@ function buildUserAutoReplyHtml(data: CreateContactMessageInput): string {
 
     <div style="background:#fafafa;border:1px solid #e5e5e5;border-radius:8px;padding:16px;margin-bottom:16px;">
       <p style="margin:0 0 6px;font-size:12px;font-weight:600;color:#737373;text-transform:uppercase;letter-spacing:0.5px;">Your message</p>
-      <p style="margin:0 0 4px;font-size:13px;font-weight:600;color:#0a0a0a;">${data.subject}</p>
-      <p style="margin:0;font-size:13px;color:#525252;line-height:1.6;white-space:pre-wrap;">${preview}</p>
+      <p style="margin:0 0 4px;font-size:13px;font-weight:600;color:#0a0a0a;">${escapeHtml(data.subject)}</p>
+      <p style="margin:0;font-size:13px;color:#525252;line-height:1.6;white-space:pre-wrap;">${escapeHtml(preview)}</p>
     </div>
 
     <div style="background:#fafafa;border:1px solid #e5e5e5;border-radius:8px;padding:14px 16px;margin-bottom:24px;">
       <p style="margin:0 0 4px;font-size:12px;font-weight:600;color:#737373;">Category</p>
-      <p style="margin:0;font-size:13px;color:#0a0a0a;">${label}</p>
+      <p style="margin:0;font-size:13px;color:#0a0a0a;">${escapeHtml(label)}</p>
     </div>
 
     <p style="margin:0 0 8px;font-size:13px;color:#737373;line-height:1.6;">

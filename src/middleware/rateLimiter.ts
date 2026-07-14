@@ -34,7 +34,8 @@ export const rateLimitMiddleware = (max = 100, windowSeconds = 60) => {
       next();
     } catch (error) {
       console.error("Rate limit error:", error);
-      next();
+      // Fail closed: reject when rate limiting can't be verified
+      return res.status(429).json({ error: "Rate limit service unavailable", retryAfter: windowSeconds });
     }
   };
 };

@@ -217,6 +217,7 @@ if (invitation.workspaceId) {
       },
     });
     if (!member) throw new NotFoundError("Member");
+    if (member.workspaceId !== workspaceId) throw new NotFoundError("Member");
 
     await prisma.workspaceMember.delete({ where: { id: memberId } });
     addInvalidateCacheJob({ type: 'access-control', workspaceId }).catch(() => {});
@@ -230,11 +231,25 @@ if (invitation.workspaceId) {
     role: WorkspaceRole,
     onUpdated?: OnRoleUpdated,
   ) {
+    const validRoles: WorkspaceRole[] = ["OWNER", "ADMIN", "MEMBER", "GUEST"];
+    if (!validRoles.includes(role)) {
+      throw new BadRequestError(`Invalid role. Must be one of: ${validRoles.join(", ")}`);
+    }
+
     const updater = await prisma.workspaceMember.findFirst({
       where: { workspaceId, userId: updaterId, role: "OWNER" },
       include: { workspace: { select: { name: true } } },
     });
     if (!updater) throw new ForbiddenError("Only the workspace owner can change roles");
+
+    // Verify the member record belongs to this workspace
+    const targetMember = await prisma.workspaceMember.findUnique({
+      where: { id: memberId },
+      select: { workspaceId: true },
+    });
+    if (!targetMember || targetMember.workspaceId !== workspaceId) {
+      throw new NotFoundError("Member");
+    }
 
     const member = await prisma.workspaceMember.update({
       where: { id: memberId },

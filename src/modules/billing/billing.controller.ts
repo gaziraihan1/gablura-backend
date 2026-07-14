@@ -3,7 +3,7 @@ import type { AuthRequest } from "../../middleware/auth.js";
 import { BillingService } from "./billing.service.js";
 import { BillingCycle } from "@prisma/client";
 import { prisma } from "../../lib/prisma.js";
-import { asyncHandler, BadRequestError } from "../../errors/index.js";
+import { asyncHandler, BadRequestError, ForbiddenError } from "../../errors/index.js";
 
 export class BillingController {
   static createCheckoutSession = asyncHandler(
@@ -56,13 +56,22 @@ export class BillingController {
 
   static getSubscription = asyncHandler(
     async (req: AuthRequest, res: Response) => {
-      const sub = await BillingService.getWorkspaceSubscription(
-        req.params.workspaceId,
-      );
+      const { workspaceId } = req.params;
+
+      // Ownership check: verify user is workspace owner
+      const workspace = await prisma.workspace.findUnique({
+        where: { id: workspaceId },
+        select: { ownerId: true },
+      });
+      if (!workspace || workspace.ownerId !== req.user!.id) {
+        throw new ForbiddenError("Only the workspace owner can view subscription details");
+      }
+
+      const sub = await BillingService.getWorkspaceSubscription(workspaceId);
       res.json({
         success: true,
         data: sub ?? {
-          workspaceId: req.params.workspaceId,
+          workspaceId,
           planName: "FREE",
           status: "ACTIVE",
         },

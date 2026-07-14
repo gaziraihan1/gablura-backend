@@ -74,9 +74,12 @@ export async function getContactMessages(options: {
   const { page, limit, status, category } = options;
   const skip = (page - 1) * limit;
 
-  const where = {
-    ...(status ? { status: status as any } : {}),
-    ...(category ? { category: category as any } : {}),
+  const validStatuses = ["UNREAD", "READ", "IN_PROGRESS", "REPLIED", "CLOSED"] as const;
+  const validCategories = ["GENERAL", "BILLING", "TECHNICAL", "FEATURE_REQUEST", "PARTNERSHIP", "SECURITY", "OTHER"] as const;
+
+  const where: Record<string, unknown> = {
+    ...(status && validStatuses.includes(status as any) ? { status } : {}),
+    ...(category && validCategories.includes(category as any) ? { category } : {}),
   };
 
   const [messages, total] = await Promise.all([

@@ -49,6 +49,8 @@ import { errorHandler, notFoundHandler } from "./errors/errorHandler.js";
 import { adminResourceRouter, publicResourceRouter } from "./modules/resource/index.js";
 import { captureException } from "./lib/sentry.js";
 import { initQueueWorkers, closeQueueWorkers } from "./queue/index.js";
+import { securityHeaders } from "./middleware/securityHeaders.js";
+import { requireFocuraAdmin } from "./middleware/focuraAdmin.js";
 
 dotenv.config();
 
@@ -61,15 +63,19 @@ const isProd = process.env.NODE_ENV === "production";
 
 const allowedOrigins = [
   process.env.CLIENT_URL,
-  "http://localhost:3000",
-  "http://localhost:3001",
   process.env.FRONTEND_URL,
+  ...(!isProd ? ["http://localhost:3000", "http://localhost:3001"] : []),
 ].filter(Boolean);
 
 app.use(
   cors({
     origin: (origin, callback) => {
-      if (!origin) return callback(null, true);
+      // Allow requests with no origin (same-origin, server-to-server, curl)
+      // ONLY in development. In production, require a valid origin header.
+      if (!origin) {
+        if (!isProd) return callback(null, true);
+        return callback(new Error("Not allowed by CORS"));
+      }
       if (allowedOrigins.includes(origin)) callback(null, true);
       else callback(new Error("Not allowed by CORS"));
     },
@@ -78,7 +84,7 @@ app.use(
     allowedHeaders: [
       "Content-Type",
       "Authorization",
-      "x-csrf-token", // CRITICAL: Allow CSRF token header
+      "x-csrf-token",
       "x-show-error-toast",
       "x-show-success-toast",
     ],
@@ -96,19 +102,27 @@ app.use(
       ? {
           directives: {
             defaultSrc: ["'self'"],
-            styleSrc: ["'self'", "'unsafe-inline'"],
             scriptSrc: ["'self'"],
+            styleSrc: ["'self'", "'unsafe-inline'"],
             imgSrc: ["'self'", "data:", "https:"],
+            fontSrc: ["'self'", "data:"],
             connectSrc: ["'self'", ...(allowedOrigins as string[])],
-            frameSrc: ["'none'"], // Prevent framing
-            frameAncestors: ["'none'"], // Critical: Prevent being framed
+            frameSrc: ["'none'"],
+            frameAncestors: ["'none'"],
+            objectSrc: ["'none'"],
+            baseUri: ["'self'"],
+            formAction: ["'self'"],
+            mediaSrc: ["'self'"],
           },
         }
       : false,
     crossOriginResourcePolicy: { policy: "cross-origin" },
-    frameguard: { action: "deny" }, // X-Frame-Options: DENY
+    frameguard: { action: "deny" },
   }),
 );
+
+// ── Additional security headers ───────────────────────────
+app.use(securityHeaders);
 
 app.use((req: Request, res: Response, next) => {
   if (process.env.NODE_ENV === "development") {
@@ -150,26 +164,16 @@ app.get("/health", async (req: Request, res: Response) => {
     res.json({
       status: "OK",
       timestamp: new Date().toISOString(),
-      uptime: process.uptime(),
-      environment: process.env.NODE_ENV,
-      
       database: {
         primary: dbHealth.primary ? "connected" : "disconnected",
         replica: dbHealth.replica ? "connected" : "disconnected",
-        latency: dbHealth.latency,
       },
-      authMethod: "Authorization Header",
-      csrfEnabled: true,
-      instanceCount: parseInt(process.env.INSTANCE_COUNT ?? "1"),
     });
   } catch (error) {
     res.status(503).json({
       status: "ERROR",
       timestamp: new Date().toISOString(),
-      uptime: process.uptime(),
-      environment: process.env.NODE_ENV,
       database: "disconnected",
-      error: (error as Error).message,
     });
   }
 });
@@ -290,7 +294,7 @@ app.use(
 );
 app.use("/api/v1/meetings", authenticate, requireCsrfToken(), meetingRoutes);
 app.use("/api/v1/features", authenticate, requireCsrfToken(), featureRouter);
-app.use("/api/v1/admin", authenticate, requireCsrfToken(), adminRouter);
+app.use("/api/v1/admin", authenticate, requireCsrfToken(), requireFocuraAdmin, adminRouter);
 
 app.use(notFoundHandler);  // catches unmatched routes → forwards to errorHandler
 app.use(errorHandler); 

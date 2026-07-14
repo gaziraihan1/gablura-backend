@@ -83,6 +83,15 @@ async function handleWorkspaceFileUpload(req: AuthRequest, res: Response): Promi
     return;
   }
 
+  // Validate workspaceId format (CUID: starts with 'c', 25+ chars alphanumeric)
+  if (typeof workspaceId !== 'string' || !/^c[a-z0-9]{24,}$/i.test(workspaceId)) {
+    res.status(400).json({
+      success: false,
+      message: 'Invalid workspace ID format',
+    });
+    return;
+  }
+
   const uploadCheck = await StorageMutation.canUploadFile(workspaceId, userId, file.size);
 
   if (!uploadCheck.allowed) {

@@ -62,7 +62,7 @@ export const markAsRead = async (req: AuthRequest, res: Response) => {
     const userId = requireUserId(req, res);
     if (!userId) return;
 
-    const notification = await NotificationMutation.markAsRead(req.params.id);
+    const notification = await NotificationMutation.markAsRead(req.params.id, userId);
     res.json({ success: true, data: notification });
   } catch (error) {
     console.error("Mark as read error:", error);
@@ -88,7 +88,7 @@ export const deleteNotification = async (req: AuthRequest, res: Response) => {
     const userId = requireUserId(req, res);
     if (!userId) return;
 
-    await NotificationMutation.deleteNotification(req.params.id);
+    await NotificationMutation.deleteNotification(req.params.id, userId);
     res.json({ success: true, message: "Notification deleted successfully" });
   } catch (error) {
     console.error("Delete notification error:", error);

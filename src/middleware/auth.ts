@@ -81,7 +81,9 @@ export const authenticate = async (
         audience: "focura-backend",
       }) as FocuraJwtPayload;
  
-      console.log("✅ Token verified:", { userId: decoded.sub, jti: decoded.jti?.slice(0, 8) });
+      if (process.env.NODE_ENV !== "production") {
+        console.log("✅ Token verified:", { userId: decoded.sub, jti: decoded.jti?.slice(0, 8) });
+      }
     } catch (err: any) {
       if (err.name === "TokenExpiredError") {
         return next(new TokenExpiredError());
@@ -95,7 +97,9 @@ export const authenticate = async (
       const cachedResult = await CacheClient.get<{ userId: string; valid: boolean }>(cacheKey);
       
       if (cachedResult) {
-        console.log("✅ Auth result cache hit for token:", decoded.jti?.slice(0, 8));
+    if (process.env.NODE_ENV !== "production") {
+      console.log("✅ Auth result cache hit for token:", decoded.jti?.slice(0, 8));
+    }
         // If cached result indicates invalid, return error immediately
         if (!cachedResult.valid) {
           return next(new InvalidTokenError("INVALID_TOKEN_CACHED"));
@@ -166,10 +170,14 @@ export const authenticate = async (
     let user;
     
     if (cachedUser) {
-      console.log("✅ User profile cache hit for:", decoded.sub);
+      if (process.env.NODE_ENV !== "production") {
+        console.log("✅ User profile cache hit for:", decoded.sub);
+      }
       user = cachedUser;
     } else {
-      console.log("❌ User profile cache miss for:", decoded.sub);
+      if (process.env.NODE_ENV !== "production") {
+        console.log("❌ User profile cache miss for:", decoded.sub);
+      }
       user = await prisma.user.findUnique({
         where: { id: decoded.sub },
         select: {
@@ -289,7 +297,9 @@ export const rateLimitByUser = (tier?: "free" | "pro" | "enterprise") => {
       next();
     } catch (err) {
       console.error("Rate limit error:", err);
-      next();
+      // Fail closed: reject when rate limiting can't be verified
+      const retryAfter = 60;
+      return res.status(429).json({ success: false, message: "Rate limit service unavailable. Please try again later.", code: "RATE_LIMIT_SERVICE_UNAVAILABLE", retryAfter });
     }
   };
 };

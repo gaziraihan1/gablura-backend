@@ -83,11 +83,21 @@ export const updateUserProfile = async (req: AuthRequest, res: Response): Promis
       return;
     }
 
+    if (name !== undefined && name.length > 100) {
+      res.status(400).json({ success: false, message: 'Name too long (max 100 characters)' });
+      return;
+    }
+
     if (bio !== undefined && typeof bio !== 'string') {
       res.status(400).json({
         success: false,
         message: 'Invalid bio format',
       });
+      return;
+    }
+
+    if (bio !== undefined && bio.length > 500) {
+      res.status(400).json({ success: false, message: 'Bio too long (max 500 characters)' });
       return;
     }
 
@@ -97,6 +107,31 @@ export const updateUserProfile = async (req: AuthRequest, res: Response): Promis
         message: 'Invalid timezone format',
       });
       return;
+    }
+
+    if (image !== undefined && image !== null && typeof image !== 'string') {
+      res.status(400).json({
+        success: false,
+        message: 'Invalid image format',
+      });
+      return;
+    }
+
+    if (image !== undefined && image !== null) {
+      try {
+        const url = new URL(image);
+        if (!['http:', 'https:'].includes(url.protocol)) {
+          res.status(400).json({ success: false, message: 'Image URL must use http or https protocol' });
+          return;
+        }
+        if (image.length > 2048) {
+          res.status(400).json({ success: false, message: 'Image URL too long (max 2048 characters)' });
+          return;
+        }
+      } catch {
+        res.status(400).json({ success: false, message: 'Invalid image URL format' });
+        return;
+      }
     }
 
     const updateData: Record<string, string | null> = {};
