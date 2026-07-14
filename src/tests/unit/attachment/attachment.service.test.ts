@@ -80,6 +80,16 @@ vi.mock('../../../modules/attachment/storage.provider.js', () => ({
 }));
 import { StorageProvider } from '../../../modules/attachment/storage.provider.js';
 
+// ── Queue ─────────────────────────────────────────────────────────────────────
+vi.mock('../../../queue/index.js', () => ({
+  addLogActivityJob:         vi.fn().mockResolvedValue(undefined),
+  addInvalidateCacheJob:     vi.fn().mockResolvedValue(undefined),
+  addUpdateStorageQuotaJob:  vi.fn().mockResolvedValue(undefined),
+}));
+import { addLogActivityJob, addUpdateStorageQuotaJob } from '../../../queue/index.js';
+const mockAddLogActivityJob = addLogActivityJob as any;
+const mockAddUpdateStorageQuotaJob = addUpdateStorageQuotaJob as any;
+
 import { AttachmentService } from '../../../modules/attachment/attachment.service.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -165,7 +175,11 @@ describe('AttachmentService.addAttachment', () => {
     // Give the fire-and-forget microtask a tick to run
     await Promise.resolve();
 
-    expect(incrementWorkspaceStorage).toHaveBeenCalledWith('ws1', CLOUDINARY_RESULT.bytes);
+    expect(mockAddUpdateStorageQuotaJob).toHaveBeenCalledWith({
+      workspaceId: 'ws1',
+      bytes: CLOUDINARY_RESULT.bytes,
+      operation: 'increment',
+    });
   });
 
   it('creates activity log after successful upload (fire-and-forget)', async () => {
@@ -176,7 +190,7 @@ describe('AttachmentService.addAttachment', () => {
     // Give the fire-and-forget microtask a tick to run
     await Promise.resolve();
 
-    expect(mockAttachmentRepository.createActivity).toHaveBeenCalledWith(
+    expect(mockAddLogActivityJob).toHaveBeenCalledWith(
       expect.objectContaining({
         action:     'UPLOADED',
         entityType: 'FILE',
@@ -299,7 +313,11 @@ describe('AttachmentService.deleteAttachment', () => {
     await AttachmentService.deleteAttachment('file1', 'user1');
     await Promise.resolve(); // Allow fire-and-forget to execute
 
-    expect(decrementWorkspaceStorage).toHaveBeenCalledWith('ws1', FILE_RECORD.size);
+    expect(mockAddUpdateStorageQuotaJob).toHaveBeenCalledWith({
+      workspaceId: 'ws1',
+      bytes: FILE_RECORD.size,
+      operation: 'decrement',
+    });
   });
 
   it('creates activity log after deletion (fire-and-forget)', async () => {
@@ -309,7 +327,7 @@ describe('AttachmentService.deleteAttachment', () => {
     await AttachmentService.deleteAttachment('file1', 'user1');
     await Promise.resolve(); // Allow fire-and-forget to execute
 
-    expect(mockAttachmentRepository.createActivity).toHaveBeenCalledWith(
+    expect(mockAddLogActivityJob).toHaveBeenCalledWith(
       expect.objectContaining({
         action:     'DELETED',
         entityType: 'FILE',
@@ -329,7 +347,7 @@ describe('AttachmentService.deleteAttachment', () => {
 
     // Storage and Cloudinary should NOT be touched
     await Promise.resolve(); // Allow fire-and-forget to execute
-    expect(decrementWorkspaceStorage).not.toHaveBeenCalled();
+    expect(mockAddUpdateStorageQuotaJob).not.toHaveBeenCalled();
     expect(StorageProvider.destroy).not.toHaveBeenCalled();
   });
 
@@ -343,7 +361,7 @@ describe('AttachmentService.deleteAttachment', () => {
     await AttachmentService.deleteAttachment('file1', 'user1');
 
     await Promise.resolve(); // Allow fire-and-forget to execute
-    expect(decrementWorkspaceStorage).not.toHaveBeenCalled();
+    expect(mockAddUpdateStorageQuotaJob).not.toHaveBeenCalled();
   });
 
   it('skips activity creation when workspaceId is missing', async () => {
@@ -356,7 +374,7 @@ describe('AttachmentService.deleteAttachment', () => {
     await AttachmentService.deleteAttachment('file1', 'user1');
 
     await Promise.resolve(); // Allow fire-and-forget to execute
-    expect(mockAttachmentRepository.createActivity).not.toHaveBeenCalled();
+    expect(mockAddLogActivityJob).not.toHaveBeenCalled();
   });
 
   it('throws when the user has no permission to delete', async () => {
@@ -379,7 +397,7 @@ describe('AttachmentService.deleteAttachment', () => {
     await AttachmentService.deleteAttachment('file1', 'user1');
     await Promise.resolve(); // Allow fire-and-forget to execute
 
-    expect(mockAttachmentRepository.createActivity).toHaveBeenCalledWith(
+    expect(mockAddLogActivityJob).toHaveBeenCalledWith(
       expect.objectContaining({
         taskId: undefined,
       }),
@@ -402,7 +420,7 @@ describe('AttachmentService.deleteAttachment', () => {
   it('handles storage decrement errors gracefully (fire-and-forget)', async () => {
     (AttachmentAccess.assertCanDelete as any).mockResolvedValue(FILE_RECORD);
     mockAttachmentRepository.deleteFile.mockResolvedValue({ count: 1 });
-    (decrementWorkspaceStorage as any).mockRejectedValue(new Error('Redis error'));
+    mockAddUpdateStorageQuotaJob.mockRejectedValue(new Error('Redis error'));
 
     // Should not throw despite Redis error (fire-and-forget)
     await AttachmentService.deleteAttachment('file1', 'user1');
@@ -415,7 +433,7 @@ describe('AttachmentService.deleteAttachment', () => {
   it('handles activity creation errors gracefully (fire-and-forget)', async () => {
     (AttachmentAccess.assertCanDelete as any).mockResolvedValue(FILE_RECORD);
     mockAttachmentRepository.deleteFile.mockResolvedValue({ count: 1 });
-    mockAttachmentRepository.createActivity.mockRejectedValue(new Error('Activity error'));
+    mockAddLogActivityJob.mockRejectedValue(new Error('Activity error'));
 
     // Should not throw despite activity error (fire-and-forget)
     await AttachmentService.deleteAttachment('file1', 'user1');

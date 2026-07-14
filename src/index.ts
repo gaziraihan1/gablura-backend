@@ -48,6 +48,7 @@ import { templatesRouter } from "./modules/templates/index.js";
 import { errorHandler, notFoundHandler } from "./errors/errorHandler.js";
 import { adminResourceRouter, publicResourceRouter } from "./modules/resource/index.js";
 import { captureException } from "./lib/sentry.js";
+import { initQueueWorkers, closeQueueWorkers } from "./queue/index.js";
 
 dotenv.config();
 
@@ -136,6 +137,11 @@ if (process.env.NODE_ENV === "production") {
 initNotificationCrons();
 initDailyTaskCrons();
 initWellnessCrons();
+
+// Initialize queue workers
+initQueueWorkers().catch((err) => {
+  console.error("❌ Failed to initialize queue workers:", err);
+});
 
 app.get("/health", async (req: Request, res: Response) => {
   try {
@@ -323,6 +329,8 @@ const gracefulShutdown = async (signal: string) => {
     console.log("✅ HTTP server closed");
 
     try {
+      await closeQueueWorkers();
+      console.log("✅ Queue workers closed");
       await disconnectAll();
       console.log("✅ Graceful shutdown complete");
       process.exit(0);

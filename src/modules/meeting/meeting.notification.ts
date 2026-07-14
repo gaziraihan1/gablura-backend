@@ -4,6 +4,7 @@ import {
   notifyWorkspaceMembers,
 } from "../notification/notification.helpers.js";
 import type { MeetingPayload } from "./meeting.select.js";
+import { addSendNotificationJob, addNotifyWorkspaceMembersJob } from "../../queue/index.js";
 
 function formatMeetingTime(date: Date): string {
   return date.toLocaleString("en-US", {
@@ -44,7 +45,7 @@ export async function notifyMeetingCreatedPrivate(params: {
     users
       .filter((u) => u.notifications)
       .map((u) =>
-        notifyUser({
+        addSendNotificationJob({
           userId: u.id,
           senderId,
           type: "MEETING_CREATED",
@@ -65,7 +66,7 @@ export async function notifyMeetingCreatedPublic(params: {
   const { meeting, workspaceId, senderId, senderName } = params;
   const slug = await getWorkspaceSlug(workspaceId);
 
-  await notifyWorkspaceMembers({
+  await addNotifyWorkspaceMembersJob({
     workspaceId,
     senderId,
     type: "MEETING_CREATED",
@@ -87,7 +88,7 @@ export async function notifyMeetingUpdated(params: {
   const slug = await getWorkspaceSlug(workspaceId);
 
   if (meeting.visibility === "PUBLIC" && isAdmin) {
-    await notifyWorkspaceMembers({
+    await addNotifyWorkspaceMembersJob({
       workspaceId,
       senderId,
       type: "MEETING_UPDATED",
@@ -112,7 +113,7 @@ export async function notifyMeetingUpdated(params: {
       users
         .filter((u) => u.notifications)
         .map((u) =>
-          notifyUser({
+          addSendNotificationJob({
             userId: u.id,
             senderId,
             type: "MEETING_UPDATED",
@@ -135,7 +136,7 @@ export async function notifyMeetingCancelled(params: {
   const slug = await getWorkspaceSlug(workspaceId);
 
   if (meeting.visibility === "PUBLIC") {
-    await notifyWorkspaceMembers({
+    await addNotifyWorkspaceMembersJob({
       workspaceId,
       senderId,
       type: "MEETING_CANCELLED",
@@ -160,7 +161,7 @@ export async function notifyMeetingCancelled(params: {
       users
         .filter((u) => u.notifications)
         .map((u) =>
-          notifyUser({
+          addSendNotificationJob({
             userId: u.id,
             senderId,
             type: "MEETING_CANCELLED",

@@ -5,6 +5,7 @@ import { activityFullInclude } from './activity.selects.js';
 import { ActivityAccess } from './activity.access.js';
 import { ActivityCache } from '../../lib/redis/cache.client.js';
 import { NotFoundError } from '../../errors/index.js';
+import { addInvalidateCacheJob } from '../../queue/index.js';
 
 export const ActivityMutation = {
   async createActivity(params: CreateActivityParams) {
@@ -22,14 +23,13 @@ export const ActivityMutation = {
       include: activityFullInclude,
     });
 
-    // Invalidate relevant caches (non-blocking)
-    if (params.workspaceId) {
-      ActivityCache.invalidateWorkspaceActivities(params.workspaceId).catch(() => {});
-    }
-    ActivityCache.invalidateUserActivities(params.userId, params.workspaceId).catch(() => {});
-    if (params.taskId) {
-      ActivityCache.invalidateTaskActivities(params.taskId).catch(() => {});
-    }
+    // Invalidate relevant caches (non-blocking via queue)
+    addInvalidateCacheJob({
+      type: 'activity',
+      workspaceId: params.workspaceId,
+      userId: params.userId,
+      taskId: params.taskId,
+    }).catch(() => {});
 
     return activity;
   },
@@ -44,14 +44,13 @@ export const ActivityMutation = {
     await ActivityAccess.assertCanDelete(callerId, activityId);
     await prisma.activity.delete({ where: { id: activityId } });
 
-    // Invalidate relevant caches (non-blocking)
-    if (activity.workspaceId) {
-      ActivityCache.invalidateWorkspaceActivities(activity.workspaceId).catch(() => {});
-    }
-    ActivityCache.invalidateUserActivities(activity.userId, activity.workspaceId).catch(() => {});
-    if (activity.taskId) {
-      ActivityCache.invalidateTaskActivities(activity.taskId).catch(() => {});
-    }
+    // Invalidate relevant caches (non-blocking via queue)
+    addInvalidateCacheJob({
+      type: 'activity',
+      workspaceId: activity.workspaceId ?? undefined,
+      userId: activity.userId,
+      taskId: activity.taskId ?? undefined,
+    }).catch(() => {});
   },
 
   async clearUserActivities(
@@ -66,8 +65,11 @@ export const ActivityMutation = {
 
     const result = await prisma.activity.deleteMany({ where });
 
-    // Invalidate user activity caches (non-blocking)
-    ActivityCache.invalidateUserActivities(userId).catch(() => {});
+    // Invalidate user activity caches (non-blocking via queue)
+    addInvalidateCacheJob({
+      type: 'activity',
+      userId,
+    }).catch(() => {});
 
     return result.count;
   },

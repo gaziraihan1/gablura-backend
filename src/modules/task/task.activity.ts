@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '../../lib/prisma.js';
+import { addLogActivityJob } from '../../queue/index.js';
 
 async function resolveWorkspaceSlug(workspaceId: string): Promise<string> {
   const ws = await prisma.workspace.findUniqueOrThrow({
@@ -21,21 +22,19 @@ export const TaskActivity = {
   }): Promise<void> {
     try {
       const workspaceSlug = await resolveWorkspaceSlug(params.workspaceId);
-      await prisma.activity.create({
-        data: {
-          action:        'CREATED',
-          entityType:    'TASK',
-          entityId:      params.taskId,
-          userId:        params.userId,
-          workspaceId:   params.workspaceId,
-          workspaceSlug,
-          taskId:        params.taskId,
-          metadata: {
-            taskTitle:     params.taskTitle,
-            focusRequired: params.focusRequired,
-            energyType:    params.energyType,
-            intent:        params.intent,
-          },
+      await addLogActivityJob({
+        action:        'CREATED',
+        entityType:    'TASK',
+        entityId:      params.taskId,
+        userId:        params.userId,
+        workspaceId:   params.workspaceId,
+        workspaceSlug,
+        taskId:        params.taskId,
+        metadata: {
+          taskTitle:     params.taskTitle,
+          focusRequired: params.focusRequired,
+          energyType:    params.energyType,
+          intent:        params.intent,
         },
       });
     } catch (error) {
@@ -53,20 +52,18 @@ export const TaskActivity = {
   }): Promise<void> {
     try {
       const workspaceSlug = await resolveWorkspaceSlug(params.workspaceId);
-      await prisma.activity.create({
-        data: {
-          action:        'STATUS_CHANGED',
-          entityType:    'TASK',
-          entityId:      params.taskId,
-          userId:        params.userId,
-          workspaceId:   params.workspaceId,
-          workspaceSlug,
-          taskId:        params.taskId,
-          metadata: {
-            taskTitle: params.taskTitle,
-            oldStatus: params.oldStatus,
-            newStatus: params.newStatus,
-          },
+      await addLogActivityJob({
+        action:        'STATUS_CHANGED',
+        entityType:    'TASK',
+        entityId:      params.taskId,
+        userId:        params.userId,
+        workspaceId:   params.workspaceId,
+        workspaceSlug,
+        taskId:        params.taskId,
+        metadata: {
+          taskTitle: params.taskTitle,
+          oldStatus: params.oldStatus,
+          newStatus: params.newStatus,
         },
       });
     } catch (error) {
@@ -83,19 +80,17 @@ export const TaskActivity = {
   }): Promise<void> {
     try {
       const workspaceSlug = await resolveWorkspaceSlug(params.workspaceId);
-      await prisma.activity.create({
-        data: {
-          action:        'UPDATED',
-          entityType:    'TASK',
-          entityId:      params.taskId,
-          userId:        params.userId,
-          workspaceId:   params.workspaceId,
-          workspaceSlug,
-          taskId:        params.taskId,
-          metadata: {
-  taskTitle: params.taskTitle,
-  changes:   params.changes as Prisma.InputJsonValue,
-},
+      await addLogActivityJob({
+        action:        'UPDATED',
+        entityType:    'TASK',
+        entityId:      params.taskId,
+        userId:        params.userId,
+        workspaceId:   params.workspaceId,
+        workspaceSlug,
+        taskId:        params.taskId,
+        metadata: {
+          taskTitle: params.taskTitle,
+          changes:   params.changes as any,
         },
       });
     } catch (error) {
@@ -113,20 +108,18 @@ export const TaskActivity = {
   }): Promise<void> {
     try {
       const workspaceSlug = await resolveWorkspaceSlug(params.workspaceId);
-      await prisma.activity.create({
-        data: {
-          action:        'DELETED',
-          entityType:    'TASK',
-          entityId:      params.taskId,
-          userId:        params.userId,
-          workspaceId:   params.workspaceId,
-          workspaceSlug,
-          metadata: {
-            taskTitle: params.taskTitle,
-            status:    params.status,
-            priority:  params.priority,
-            deletedAt: new Date().toISOString(),
-          },
+      await addLogActivityJob({
+        action:        'DELETED',
+        entityType:    'TASK',
+        entityId:      params.taskId,
+        userId:        params.userId,
+        workspaceId:   params.workspaceId,
+        workspaceSlug,
+        metadata: {
+          taskTitle: params.taskTitle,
+          status:    params.status,
+          priority:  params.priority,
+          deletedAt: new Date().toISOString(),
         },
       });
     } catch (error) {

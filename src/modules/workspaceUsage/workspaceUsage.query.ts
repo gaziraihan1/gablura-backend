@@ -19,6 +19,7 @@ import type {
   WorkspaceLoadMetrics,
   WorkspaceGrowthMetrics,
 } from "./workspaceUsage.types.js";
+import { CacheClient, CACHE_KEYS, CACHE_TTL } from "../../lib/redis/cache.client.js";
 
 // ─── Shared local types for pre-fetched data ────────────────────────────────
 
@@ -70,6 +71,13 @@ export const WorkspaceUsageQuery = {
       workspaceId,
     );
     const isAdmin = WorkspaceUsageAccess.isAdmin(member.role);
+
+    // Check cache first
+    const cacheKey = `workspace-usage:${workspaceId}`;
+    const cached = await CacheClient.get<WorkspaceUsageData>(cacheKey);
+    if (cached) {
+      return { ...cached, isAdmin };
+    }
 
     // ── Tier-1: base data ──
     const [workspace, members, files] = await Promise.all([
@@ -127,7 +135,7 @@ export const WorkspaceUsageQuery = {
       projectActivity.mostActive.length + projectActivity.lowActivity.length,
     );
 
-    return {
+    const result = {
       snapshot,
       projectActivity,
       userEngagement,
@@ -138,6 +146,11 @@ export const WorkspaceUsageQuery = {
       planLimits,
       isAdmin,
     };
+
+    // Cache for 5 minutes
+    await CacheClient.set(cacheKey, result, 300);
+
+    return result;
   },
 
   // ── DAU ──────────────────────────────────────────────────────────────────

@@ -1,9 +1,6 @@
 import type { CreateContactMessageInput } from "./contact.validator.js";
-import {
-  sendAdminContactNotification,
-  sendUserAutoReply,
-} from "./contact.email.js";
 import { prisma } from "../../lib/prisma.js";
+import { addSendEmailJob } from "../../queue/index.js";
 
 export interface ContactMessageResult {
   id: string;
@@ -44,13 +41,21 @@ export async function createContactMessage(
   });
 
   // ── 2. Admin email ────────────────────────────────────────────────────────
-  sendAdminContactNotification(data, message.id, ip).catch((err) => {
-    console.error("[contact.service] Failed to send admin email:", err);
+  addSendEmailJob({
+    type: "admin-contact-notification",
+    to: "",
+    data: { contactData: data, messageId: message.id, ip },
+  }).catch((err) => {
+    console.error("[contact.service] Failed to queue admin email:", err);
   });
 
   // ── 3. User auto-reply ────────────────────────────────────────────────────
-  sendUserAutoReply(data).catch((err) => {
-    console.error("[contact.service] Failed to send user auto-reply:", err);
+  addSendEmailJob({
+    type: "user-auto-reply",
+    to: data.email,
+    data: { contactData: data },
+  }).catch((err) => {
+    console.error("[contact.service] Failed to queue user auto-reply:", err);
   });
 
   return message;

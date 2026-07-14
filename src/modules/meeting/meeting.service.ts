@@ -8,6 +8,7 @@ import {
 } from './meeting.notification.js';
 import type { CreateMeetingInput, UpdateMeetingInput, MeetingContext } from './meeting.types.js';
 import { ForbiddenError, NotFoundError, BadRequestError } from '../../errors/index.js';
+import { addSendNotificationJob } from '../../queue/index.js';
 
 const ADMIN_ROLES = new Set(['OWNER', 'ADMIN']);
 

@@ -11,6 +11,7 @@ import type {
 } from "./workspace.types.js";
 import { WorkspaceCache, AccessControlCache } from "../../lib/redis/cache.client.js";
 import { ConflictError, BadRequestError, ForbiddenError, NotFoundError, PlanLimitError } from "../../errors/AppError.js";
+import { addInvalidateCacheJob, addSendEmailJob } from "../../queue/index.js";
 
 type OnWorkspaceCreated = (data: { workspace: any }) => Promise<void>;
 type OnWorkspaceUpdated = (data: { workspace: any }) => Promise<void>;
@@ -218,10 +219,7 @@ if (invitation.workspaceId) {
     if (!member) throw new NotFoundError("Member");
 
     await prisma.workspaceMember.delete({ where: { id: memberId } });
-    Promise.all([
-      AccessControlCache.invalidateWorkspaceAccess(workspaceId, member.userId),
-      AccessControlCache.invalidateWorkspaceUsers(workspaceId),
-    ]).catch(() => {});
+    addInvalidateCacheJob({ type: 'access-control', workspaceId }).catch(() => {});
     if (onRemoved) onRemoved({ member }).catch(console.error);
   },
 
@@ -257,10 +255,7 @@ if (invitation.workspaceId) {
       onUpdated({ member, workspaceName: updater.workspace?.name ?? "" }).catch(
         console.error,
       );
-    Promise.all([
-      AccessControlCache.invalidateWorkspaceAccess(workspaceId, member.userId),
-      AccessControlCache.invalidateWorkspaceUsers(workspaceId),
-    ]).catch(() => {});
+    addInvalidateCacheJob({ type: 'access-control', workspaceId }).catch(() => {});
     return member;
   },
 
@@ -273,9 +268,6 @@ if (invitation.workspaceId) {
       throw new BadRequestError("Transfer ownership before leaving", "OWNER_CANNOT_LEAVE");
 
     await prisma.workspaceMember.delete({ where: { id: member.id } });
-    Promise.all([
-      AccessControlCache.invalidateWorkspaceAccess(workspaceId, userId),
-      AccessControlCache.invalidateWorkspaceUsers(workspaceId),
-    ]).catch(() => {});
+    addInvalidateCacheJob({ type: 'access-control', workspaceId }).catch(() => {});
   },
 };

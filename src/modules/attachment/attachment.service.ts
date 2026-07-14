@@ -11,6 +11,7 @@ import {
 import type { AddAttachmentInput } from "./attachment.types.js";
 import { WorkspacePlan } from "./attachment.quota.types.js";
 import { prisma } from "../../lib/prisma.js";
+import { addLogActivityJob, addUpdateStorageQuotaJob } from "../../queue/index.js";
 
 async function ensureStorageSeeded(workspaceId: string) {
   const agg = await AttachmentRepository.aggregateWorkspaceSize(workspaceId);
@@ -78,10 +79,14 @@ export const AttachmentService = {
       throw new Error("Failed to save file record");
     }
 
-    incrementWorkspaceStorage(workspaceId, uploadResult.bytes).catch(() => {});
+    addUpdateStorageQuotaJob({
+      workspaceId,
+      bytes: uploadResult.bytes,
+      operation: "increment",
+    }).catch(() => {});
 
     const workspaceSlug = await resolveWorkspaceSlug(workspaceId);
-    AttachmentRepository.createActivity({
+    addLogActivityJob({
       action: "UPLOADED",
       entityType: "FILE",
       entityId: file.id,
@@ -113,10 +118,14 @@ export const AttachmentService = {
     StorageProvider.destroy(file.name).catch(() => {});
 
     if (workspaceId) {
-      decrementWorkspaceStorage(workspaceId, file.size).catch(() => {});
+      addUpdateStorageQuotaJob({
+        workspaceId,
+        bytes: file.size,
+        operation: "decrement",
+      }).catch(() => {});
 
       const workspaceSlug = await resolveWorkspaceSlug(workspaceId);
-      AttachmentRepository.createActivity({
+      addLogActivityJob({
         action: "DELETED",
         entityType: "FILE",
         entityId: fileId,

@@ -13,6 +13,7 @@ import { AnalyticsCache, WorkspaceCache, TaskCache, CalendarCache, AccessControl
 import { getRedisClient }  from '../../redis/redis.client.js';
 import { ProjectAccess }   from '../project/project.access.js';
 import { BadRequestError, ForbiddenError, NotFoundError } from '../../errors/index.js';
+import { addInvalidateCacheJob } from '../../queue/index.js';
 
 // ─── Plan resolution ──────────────────────────────────────────────────────────
 
@@ -187,21 +188,13 @@ export const TaskMutation = {
     console.log(`✨ Task created: "${task.title}" (ID: ${task.id})`);
 
     if (finalWorkspaceId) {
-      Promise.all([
-        AnalyticsCache.invalidateWorkspace(finalWorkspaceId),
-        WorkspaceCache.invalidateWorkspace(finalWorkspaceId),
-        TaskCache.invalidateTaskStats(data.createdById, finalWorkspaceId),
-        CalendarCache.invalidateAggregates(data.createdById, finalWorkspaceId),
-        CalendarCache.invalidateInsights(data.createdById, finalWorkspaceId),
-      ]).catch((err) => console.error('[Cache] Failed to invalidate after task creation:', err));
+      addInvalidateCacheJob({ type: 'analytics', workspaceId: finalWorkspaceId }).catch(() => {});
+      addInvalidateCacheJob({ type: 'workspace', workspaceId: finalWorkspaceId }).catch(() => {});
+      addInvalidateCacheJob({ type: 'task', userId: data.createdById, workspaceId: finalWorkspaceId }).catch(() => {});
+      addInvalidateCacheJob({ type: 'calendar', userId: data.createdById, workspaceId: finalWorkspaceId }).catch(() => {});
     } else {
-      Promise.all([
-        TaskCache.invalidateTaskStats(data.createdById),
-        CalendarCache.invalidateAggregates(data.createdById),
-        CalendarCache.invalidateInsights(data.createdById),
-      ]).catch((err) =>
-        console.error('[Cache] Failed to invalidate personal task stats:', err),
-      );
+      addInvalidateCacheJob({ type: 'task', userId: data.createdById }).catch(() => {});
+      addInvalidateCacheJob({ type: 'calendar', userId: data.createdById }).catch(() => {});
     }
 
     if (onCreated) {
@@ -274,23 +267,15 @@ export const TaskMutation = {
     console.log(`✏️  Task updated: "${task.title}" (ID: ${task.id})`);
 
     if (existingTask.workspaceId) {
-      Promise.all([
-        AnalyticsCache.invalidateWorkspace(existingTask.workspaceId),
-        WorkspaceCache.invalidateWorkspace(existingTask.workspaceId),
-        TaskCache.invalidateTask(taskId),
-        TaskCache.invalidateTaskStats(userId, existingTask.workspaceId),
-        CalendarCache.invalidateAggregates(userId, existingTask.workspaceId),
-        CalendarCache.invalidateInsights(userId, existingTask.workspaceId),
-        AccessControlCache.invalidateTaskUsers(taskId),
-      ]).catch((err) => console.error('[Cache] Failed to invalidate after task update:', err));
+      addInvalidateCacheJob({ type: 'analytics', workspaceId: existingTask.workspaceId }).catch(() => {});
+      addInvalidateCacheJob({ type: 'workspace', workspaceId: existingTask.workspaceId }).catch(() => {});
+      addInvalidateCacheJob({ type: 'task', taskId, userId, workspaceId: existingTask.workspaceId }).catch(() => {});
+      addInvalidateCacheJob({ type: 'calendar', userId, workspaceId: existingTask.workspaceId }).catch(() => {});
+      addInvalidateCacheJob({ type: 'access-control', taskId, workspaceId: existingTask.workspaceId }).catch(() => {});
     } else {
-      Promise.all([
-        TaskCache.invalidateTask(taskId),
-        TaskCache.invalidateTaskStats(userId),
-        CalendarCache.invalidateAggregates(userId),
-        CalendarCache.invalidateInsights(userId),
-        AccessControlCache.invalidateTaskUsers(taskId),
-      ]).catch((err) => console.error('[Cache] Failed to invalidate after personal task update:', err));
+      addInvalidateCacheJob({ type: 'task', taskId, userId }).catch(() => {});
+      addInvalidateCacheJob({ type: 'calendar', userId }).catch(() => {});
+      addInvalidateCacheJob({ type: 'access-control', taskId }).catch(() => {});
     }
 
     let addedAssigneeIds: string[] = [];
@@ -354,17 +339,11 @@ export const TaskMutation = {
     console.log(`🔄 Task status updated: "${existingTask.title}" → ${status}`);
 
     if (existingTask.workspaceId) {
-      Promise.all([
-        AnalyticsCache.invalidateWorkspace(existingTask.workspaceId),
-        WorkspaceCache.invalidateWorkspace(existingTask.workspaceId),
-        TaskCache.invalidateTask(taskId),
-        TaskCache.invalidateTaskStats(userId, existingTask.workspaceId),
-      ]).catch((err) => console.error('[Cache] Failed to invalidate after status update:', err));
+      addInvalidateCacheJob({ type: 'analytics', workspaceId: existingTask.workspaceId }).catch(() => {});
+      addInvalidateCacheJob({ type: 'workspace', workspaceId: existingTask.workspaceId }).catch(() => {});
+      addInvalidateCacheJob({ type: 'task', taskId, userId, workspaceId: existingTask.workspaceId }).catch(() => {});
     } else {
-      Promise.all([
-        TaskCache.invalidateTask(taskId),
-        TaskCache.invalidateTaskStats(userId),
-      ]).catch((err) => console.error('[Cache] Failed to invalidate after personal status update:', err));
+      addInvalidateCacheJob({ type: 'task', taskId, userId }).catch(() => {});
     }
 
     if (onUpdated) {
@@ -389,23 +368,15 @@ export const TaskMutation = {
     console.log(`🗑️  Task deleted: "${task.title}" (ID: ${task.id})`);
 
     if (workspaceId) {
-      Promise.all([
-        AnalyticsCache.invalidateWorkspace(workspaceId),
-        WorkspaceCache.invalidateWorkspace(workspaceId),
-        TaskCache.invalidateTask(taskId),
-        TaskCache.invalidateTaskStats(userId, workspaceId),
-        CalendarCache.invalidateAggregates(userId, workspaceId),
-        CalendarCache.invalidateInsights(userId, workspaceId),
-        AccessControlCache.invalidateTaskUsers(taskId),
-      ]).catch((err) => console.error('[Cache] Failed to invalidate after task deletion:', err));
+      addInvalidateCacheJob({ type: 'analytics', workspaceId }).catch(() => {});
+      addInvalidateCacheJob({ type: 'workspace', workspaceId }).catch(() => {});
+      addInvalidateCacheJob({ type: 'task', taskId, userId, workspaceId }).catch(() => {});
+      addInvalidateCacheJob({ type: 'calendar', userId, workspaceId }).catch(() => {});
+      addInvalidateCacheJob({ type: 'access-control', taskId, workspaceId }).catch(() => {});
     } else {
-      Promise.all([
-        TaskCache.invalidateTask(taskId),
-        TaskCache.invalidateTaskStats(userId),
-        CalendarCache.invalidateAggregates(userId),
-        CalendarCache.invalidateInsights(userId),
-        AccessControlCache.invalidateTaskUsers(taskId),
-      ]).catch((err) => console.error('[Cache] Failed to invalidate after personal task deletion:', err));
+      addInvalidateCacheJob({ type: 'task', taskId, userId }).catch(() => {});
+      addInvalidateCacheJob({ type: 'calendar', userId }).catch(() => {});
+      addInvalidateCacheJob({ type: 'access-control', taskId }).catch(() => {});
     }
 
     if (onDeleted) {

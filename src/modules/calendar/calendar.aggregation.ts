@@ -8,6 +8,7 @@ import {
   isReviewDay,
 } from "./calendar.utils.js";
 import { CacheClient, CACHE_KEYS, CACHE_TTL, CalendarCache } from "../../lib/redis/cache.client.js";
+import { addPreComputeUserCalendarJob } from "../../queue/index.js";
 
 export const CalendarAggregation = {
   async getOrComputeAggregates(
@@ -17,7 +18,7 @@ export const CalendarAggregation = {
     const startDateStr = startDate.toISOString().split('T')[0];
     const endDateStr = endDate.toISOString().split('T')[0];
     const cacheKey = CACHE_KEYS.calendarAggregates(userId, workspaceId, startDateStr, endDateStr);
-    
+
     const cached = await CacheClient.get<CalendarDayAggregate[]>(cacheKey);
     if (cached) return cached;
 
@@ -36,6 +37,20 @@ export const CalendarAggregation = {
 
     if (missingDates.length === 0) {
       await CacheClient.set(cacheKey, existing, CACHE_TTL.CALENDAR_AGGREGATES);
+      return existing;
+    }
+
+    // If there are many missing dates, return stale data and pre-compute in background
+    if (existing.length > 0 && missingDates.length > 7) {
+      // Return stale data immediately
+      await CacheClient.set(cacheKey, existing, 60); // Short TTL for stale data
+
+      // Trigger background pre-computation
+      addPreComputeUserCalendarJob({
+        userId,
+        workspaceId,
+      }).catch((err) => console.error("[CalendarAggregation] Failed to queue pre-computation:", err));
+
       return existing;
     }
 

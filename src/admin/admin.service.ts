@@ -20,6 +20,7 @@ import {
   mutateRestoreWorkspace,
   mutateUpdateWorkspaceLimits,
 } from "./admin.mutation.js";
+import { addSendEmailJob, addSendNotificationJob } from "../queue/index.js";
 
 // ─── Guards ────────────────────────────────────────────────────────────────────
 
@@ -66,8 +67,8 @@ export async function serviceUpdateWorkspaceLimits(
     maxStorage,
   });
 
-  // Fire-and-forget notification
-  void notifyUser({
+  // Queue notification
+  addSendNotificationJob({
     userId:    workspace.owner.id,
     senderId:  adminId,
     type:      "PROJECT_UPDATE",
@@ -96,10 +97,10 @@ export async function serviceBanUser(
 
   await mutateBanUser(targetId, adminId, reason);
 
-  void sendBanEmail({
-    toEmail: user.email,
-    toName:  user.name ?? "User",
-    reason,
+  addSendEmailJob({
+    type: "ban-email",
+    to: user.email,
+    data: { toEmail: user.email, toName: user.name ?? "User", reason },
   }).catch((e) => console.error("Ban email failed:", e));
 }
 
@@ -139,7 +140,7 @@ export async function serviceDeleteWorkspace(
     : await mutateSoftDeleteWorkspace(workspace.id, adminId, reason);
 
   if (!hardDelete) {
-    void notifyUser({
+    addSendNotificationJob({
       userId:    workspace.owner.id,
       senderId:  adminId,
       type:      "PROJECT_UPDATE",
@@ -151,12 +152,16 @@ export async function serviceDeleteWorkspace(
     );
   }
 
-  void sendWorkspaceDeletedEmail({
-    toEmail:       ownerInfo.ownerEmail,
-    toName:        ownerInfo.ownerName,
-    workspaceName: ownerInfo.workspaceName,
-    reason,
-    hardDelete,
+  addSendEmailJob({
+    type: "workspace-deleted-email",
+    to: ownerInfo.ownerEmail,
+    data: {
+      toEmail: ownerInfo.ownerEmail,
+      toName: ownerInfo.ownerName,
+      workspaceName: ownerInfo.workspaceName,
+      reason,
+      hardDelete,
+    },
   }).catch((e) => console.error("Workspace delete email failed:", e));
 }
 
@@ -179,7 +184,7 @@ export async function serviceRestoreWorkspace(
 
   await mutateRestoreWorkspace(workspace.id);
 
-  void notifyUser({
+  addSendNotificationJob({
     userId:    workspace.owner.id,
     senderId:  adminId,
     type:      "PROJECT_UPDATE",
