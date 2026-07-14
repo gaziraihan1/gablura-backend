@@ -9,11 +9,32 @@ import {
   deleteNotification,
   deleteAllRead,
 } from "./notification.controller.js";
-import { notificationStreamHandler } from "../../sockets/notification.stream.js";
+import { notificationStreamHandler, getDeliveryStats, getLocalConnectionCount } from "../../sockets/notification.stream.js";
+import { getPublishMetrics } from "./notification.helpers.js";
 
 const router = Router();
 
 router.get("/stream", notificationStreamHandler);
+
+// ─── Debug metrics endpoint (dev only) ──────────────────────────────────────
+if (process.env.NODE_ENV === "development") {
+  router.get("/metrics", (req, res) => {
+    const sseStats = getDeliveryStats();
+    const publishMetrics = getPublishMetrics();
+    const connectionCount = getLocalConnectionCount();
+
+    res.json({
+      success: true,
+      data: {
+        sse: {
+          connections: connectionCount,
+          delivery: sseStats,
+        },
+        publish: publishMetrics,
+      },
+    });
+  });
+}
 
 router.use(authenticate);
 

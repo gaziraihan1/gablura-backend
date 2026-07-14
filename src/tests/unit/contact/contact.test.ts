@@ -23,10 +23,15 @@ vi.mock('../../../lib/prisma.js', () => ({
 }));
 import { prisma } from '../../../lib/prisma.js';
 
+vi.mock('../../../queue/index.js', () => ({
+  addSendEmailJob: vi.fn().mockResolvedValue(undefined),
+}));
+
 vi.mock('../../../modules/contact/contact.email.js', () => ({
   sendAdminContactNotification: vi.fn().mockResolvedValue(undefined),
   sendUserAutoReply:            vi.fn().mockResolvedValue(undefined),
 }));
+import { addSendEmailJob } from '../../../queue/index.js';
 import {
   sendAdminContactNotification,
   sendUserAutoReply,
@@ -88,45 +93,47 @@ describe('createContactMessage', () => {
     );
   });
 
-  it('calls sendAdminContactNotification with messageId and ip (fire-and-forget)', async () => {
+  it('queues admin contact notification email job', async () => {
     (prisma.contactMessage.create as any).mockResolvedValue(DB_RESULT);
 
     await createContactMessage(VALID_INPUT, '1.2.3.4', '');
 
-    // fire-and-forget: give microtasks a tick
-    await Promise.resolve();
-
-    expect(sendAdminContactNotification).toHaveBeenCalledWith(
-      VALID_INPUT,
-      'msg-1',
-      '1.2.3.4',
-    );
+    expect(addSendEmailJob).toHaveBeenCalledWith({
+      type: 'admin-contact-notification',
+      to: '',
+      data: { contactData: VALID_INPUT, messageId: 'msg-1', ip: '1.2.3.4' },
+    });
   });
 
-  it('calls sendUserAutoReply (fire-and-forget)', async () => {
+  it('queues user auto-reply email job', async () => {
     (prisma.contactMessage.create as any).mockResolvedValue(DB_RESULT);
 
     await createContactMessage(VALID_INPUT, '1.2.3.4', '');
-    await Promise.resolve();
 
-    expect(sendUserAutoReply).toHaveBeenCalledWith(VALID_INPUT);
+    expect(addSendEmailJob).toHaveBeenCalledWith({
+      type: 'user-auto-reply',
+      to: VALID_INPUT.email,
+      data: { contactData: VALID_INPUT },
+    });
   });
 
-  it('still returns successfully even if admin email throws (swallowed)', async () => {
+  it('still returns successfully even if admin email job fails (swallowed)', async () => {
     (prisma.contactMessage.create as any).mockResolvedValue(DB_RESULT);
-    (sendAdminContactNotification as any).mockRejectedValue(new Error('SMTP down'));
+    (addSendEmailJob as any).mockRejectedValue(new Error('Queue down'));
 
     const result = await createContactMessage(VALID_INPUT, '1.2.3.4', '');
     expect(result.id).toBe('msg-1');
   });
 
-  it('still returns successfully even if user auto-reply throws (swallowed)', async () => {
+  it('still returns successfully even if user auto-reply job fails (swallowed)', async () => {
     (prisma.contactMessage.create as any).mockResolvedValue(DB_RESULT);
-    (sendUserAutoReply as any).mockRejectedValue(new Error('SMTP down'));
+    (addSendEmailJob as any).mockRejectedValue(new Error('Queue down'));
 
     const result = await createContactMessage(VALID_INPUT, '1.2.3.4', '');
     expect(result.id).toBe('msg-1');
   });
+
+
 
   it('throws when prisma.contactMessage.create fails', async () => {
     (prisma.contactMessage.create as any).mockRejectedValue(new Error('db error'));

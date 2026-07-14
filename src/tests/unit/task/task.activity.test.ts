@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { TaskActivity } from '../../../modules/task/task.activity.js';
 import { prisma } from '../../../lib/prisma.js';
+import { addLogActivityJob } from '../../../queue/index.js';
 
 vi.mock('../../../lib/prisma.js', () => ({
   prisma: {
@@ -11,6 +12,10 @@ vi.mock('../../../lib/prisma.js', () => ({
       create: vi.fn(),
     },
   },
+}));
+
+vi.mock('../../../queue/index.js', () => ({
+  addLogActivityJob: vi.fn().mockResolvedValue(undefined),
 }));
 
 describe('Task Activity', () => {
@@ -44,21 +49,19 @@ describe('Task Activity', () => {
       where: { id: mockWorkspaceId },
       select: { slug: true },
     });
-    expect(prisma.activity.create).toHaveBeenCalledWith({
-      data: {
-        action: 'CREATED',
-        entityType: 'TASK',
-        entityId: mockTaskId,
-        userId: mockUserId,
-        workspaceId: mockWorkspaceId,
-        workspaceSlug: mockWorkspaceSlug,
-        taskId: mockTaskId,
-        metadata: {
-          taskTitle: mockTaskTitle,
-          focusRequired: true,
-          energyType: 'HIGH',
-          intent: 'EXECUTION',
-        },
+    expect(addLogActivityJob).toHaveBeenCalledWith({
+      action: 'CREATED',
+      entityType: 'TASK',
+      entityId: mockTaskId,
+      userId: mockUserId,
+      workspaceId: mockWorkspaceId,
+      workspaceSlug: mockWorkspaceSlug,
+      taskId: mockTaskId,
+      metadata: {
+        taskTitle: mockTaskTitle,
+        focusRequired: true,
+        energyType: 'HIGH',
+        intent: 'EXECUTION',
       },
     });
   });
@@ -75,20 +78,18 @@ describe('Task Activity', () => {
 
     await TaskActivity.logStatusChanged(params);
 
-    expect(prisma.activity.create).toHaveBeenCalledWith({
-      data: {
-        action: 'STATUS_CHANGED',
-        entityType: 'TASK',
-        entityId: mockTaskId,
-        userId: mockUserId,
-        workspaceId: mockWorkspaceId,
-        workspaceSlug: mockWorkspaceSlug,
-        taskId: mockTaskId,
-        metadata: {
-          taskTitle: mockTaskTitle,
-          oldStatus: 'TODO',
-          newStatus: 'IN_PROGRESS',
-        },
+    expect(addLogActivityJob).toHaveBeenCalledWith({
+      action: 'STATUS_CHANGED',
+      entityType: 'TASK',
+      entityId: mockTaskId,
+      userId: mockUserId,
+      workspaceId: mockWorkspaceId,
+      workspaceSlug: mockWorkspaceSlug,
+      taskId: mockTaskId,
+      metadata: {
+        taskTitle: mockTaskTitle,
+        oldStatus: 'TODO',
+        newStatus: 'IN_PROGRESS',
       },
     });
   });
@@ -104,19 +105,17 @@ describe('Task Activity', () => {
 
     await TaskActivity.logUpdated(params);
 
-    expect(prisma.activity.create).toHaveBeenCalledWith({
-      data: {
-        action: 'UPDATED',
-        entityType: 'TASK',
-        entityId: mockTaskId,
-        userId: mockUserId,
-        workspaceId: mockWorkspaceId,
-        workspaceSlug: mockWorkspaceSlug,
-        taskId: mockTaskId,
-        metadata: {
-          taskTitle: mockTaskTitle,
-          changes: { priority: 'HIGH' },
-        },
+    expect(addLogActivityJob).toHaveBeenCalledWith({
+      action: 'UPDATED',
+      entityType: 'TASK',
+      entityId: mockTaskId,
+      userId: mockUserId,
+      workspaceId: mockWorkspaceId,
+      workspaceSlug: mockWorkspaceSlug,
+      taskId: mockTaskId,
+      metadata: {
+        taskTitle: mockTaskTitle,
+        changes: { priority: 'HIGH' },
       },
     });
   });
@@ -133,20 +132,18 @@ describe('Task Activity', () => {
 
     await TaskActivity.logDeleted(params);
 
-    expect(prisma.activity.create).toHaveBeenCalledWith({
-      data: {
-        action: 'DELETED',
-        entityType: 'TASK',
-        entityId: mockTaskId,
-        userId: mockUserId,
-        workspaceId: mockWorkspaceId,
-        workspaceSlug: mockWorkspaceSlug,
-        metadata: {
-          taskTitle: mockTaskTitle,
-          status: 'COMPLETED',
-          priority: 'LOW',
-          deletedAt: expect.any(String),
-        },
+    expect(addLogActivityJob).toHaveBeenCalledWith({
+      action: 'DELETED',
+      entityType: 'TASK',
+      entityId: mockTaskId,
+      userId: mockUserId,
+      workspaceId: mockWorkspaceId,
+      workspaceSlug: mockWorkspaceSlug,
+      metadata: {
+        taskTitle: mockTaskTitle,
+        status: 'COMPLETED',
+        priority: 'LOW',
+        deletedAt: expect.any(String),
       },
     });
   });

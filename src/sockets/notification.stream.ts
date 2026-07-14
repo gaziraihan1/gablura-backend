@@ -3,6 +3,14 @@ import { getSubscriber } from "../lib/redis/redis.pubsub.js";
 import type { SSEPayload } from "../lib/sse/sse.channels.js";
 import { userChannel } from "../lib/sse/sse.channels.js";
 import { verifyToken } from "../lib/auth/backendToken.js";
+import { getRedisClient } from "../redis/redis.client.js";
+
+// ─── Configuration ───────────────────────────────────────────────────────────
+
+const MAX_RETRY_ATTEMPTS = 3;
+const RETRY_DELAY_MS = 100;
+const HEARTBEAT_INTERVAL_MS = 25_000;
+const DELIVERY_TRACKING_TTL = 3600; // 1 hour
 
 // ─── Per-process connection registry ─────────────────────────────────────────
 
@@ -14,6 +22,45 @@ const localClients = new Map<string, Set<Response>>();
 //   "pending-unsub" = UNSUBSCRIBE sent, ack not yet received
 const channelState = new Map<string, "pending" | "active" | "pending-unsub">();
 
+// ─── Delivery tracking ───────────────────────────────────────────────────────
+
+interface DeliveryAttempt {
+  notificationId: string;
+  userId: string;
+  timestamp: number;
+  success: boolean;
+  attempts: number;
+  error?: string;
+}
+
+const deliveryLog: DeliveryAttempt[] = [];
+const MAX_DELIVERY_LOG_SIZE = 1000;
+
+function logDelivery(attempt: DeliveryAttempt): void {
+  deliveryLog.push(attempt);
+  if (deliveryLog.length > MAX_DELIVERY_LOG_SIZE) {
+    deliveryLog.shift();
+  }
+
+  // Also persist to Redis for cross-process visibility
+  try {
+    const redis = getRedisClient();
+    const key = `sse:delivery:${attempt.userId}:${attempt.notificationId}`;
+    redis.setex(
+      key,
+      DELIVERY_TRACKING_TTL,
+      JSON.stringify({
+        success: attempt.success,
+        attempts: attempt.attempts,
+        timestamp: attempt.timestamp,
+        error: attempt.error,
+      }),
+    ).catch(() => {}); // Best effort
+  } catch {
+    // Redis unavailable - log only locally
+  }
+}
+
 // ─── Redis subscriber ─────────────────────────────────────────────────────────
 
 const redisSub = getSubscriber();
@@ -21,7 +68,6 @@ const redisSub = getSubscriber();
 redisSub.on("message", (channel: string, raw: string) => {
   const userId = channel.replace(/^sse:user:/, "");
   const clients = localClients.get(userId);
-    console.log("[SSE] Redis message received on", channel, raw); // add this
 
   if (!clients || clients.size === 0) return;
 
@@ -33,17 +79,60 @@ redisSub.on("message", (channel: string, raw: string) => {
     return;
   }
 
-  // Unnamed data line — matches es.onmessage on the frontend
+  // Extract notification ID for tracking
+  const notificationId = (payload.data as any)?.id ?? "unknown";
+
+  // Write with retry logic
   const line = `data: ${JSON.stringify(payload)}\n\n`;
+  let successCount = 0;
+  let failCount = 0;
 
   for (const res of clients) {
-    try {
-      res.write(line);
-    } catch {
+    const writeSuccess = writeWithRetry(res, line, MAX_RETRY_ATTEMPTS);
+    if (writeSuccess) {
+      successCount++;
+    } else {
+      failCount++;
+      // Remove failed client
       clients.delete(res);
     }
   }
+
+  // Log delivery attempt
+  logDelivery({
+    notificationId,
+    userId,
+    timestamp: Date.now(),
+    success: successCount > 0,
+    attempts: 1,
+    error: failCount > 0 ? `${failCount} clients failed` : undefined,
+  });
 });
+
+// ─── Write with retry ────────────────────────────────────────────────────────
+
+function writeWithRetry(res: Response, data: string, maxAttempts: number): boolean {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      res.write(data);
+      return true;
+    } catch (err) {
+      if (attempt === maxAttempts) {
+        console.error(
+          `[SSE] Write failed after ${maxAttempts} attempts:`,
+          (err as Error).message,
+        );
+        return false;
+      }
+      // Brief delay before retry (synchronous for simplicity)
+      const start = Date.now();
+      while (Date.now() - start < RETRY_DELAY_MS * attempt) {
+        // Busy wait - acceptable for short delays
+      }
+    }
+  }
+  return false;
+}
 
 // ─── Subscribe helper ─────────────────────────────────────────────────────────
 
@@ -121,7 +210,7 @@ setInterval(() => {
       }
     }
   }
-}, 25_000);
+}, HEARTBEAT_INTERVAL_MS);
 
 // ─── SSE stream handler ───────────────────────────────────────────────────────
 
@@ -149,6 +238,7 @@ export async function notificationStreamHandler(
   res.setHeader("Cache-Control", "no-cache, no-transform");
   res.setHeader("Connection", "keep-alive");
   res.setHeader("X-Accel-Buffering", "no");
+  res.setHeader("X-SSE-Retry-After", "30"); // Hint for frontend reconnect interval
   res.flushHeaders();
 
   // Await subscribe BEFORE writing "connected" — channel is guaranteed active
@@ -160,12 +250,19 @@ export async function notificationStreamHandler(
     // Continue anyway — DB is durable, client sees notifications on reconnect
   }
 
-  res.write(`data: ${JSON.stringify({ type: "connected", userId })}\n\n`);
+  // Send connection confirmation with user info
+  res.write(
+    `data: ${JSON.stringify({
+      type: "connected",
+      userId,
+      timestamp: new Date().toISOString(),
+    })}\n\n`,
+  );
 
   req.on("close", () => removeClient(userId, res));
 }
 
-// ─── Metrics ──────────────────────────────────────────────────────────────────
+// ─── Metrics & Monitoring ─────────────────────────────────────────────────────
 
 export function resetLocalClients(): void {
   localClients.clear();
@@ -176,4 +273,33 @@ export function getLocalConnectionCount(): number {
   let total = 0;
   for (const [, s] of localClients) total += s.size;
   return total;
+}
+
+export function getDeliveryStats(): {
+  totalAttempts: number;
+  successfulDeliveries: number;
+  failedDeliveries: number;
+  recentFailures: DeliveryAttempt[];
+} {
+  const totalAttempts = deliveryLog.length;
+  const successfulDeliveries = deliveryLog.filter((d) => d.success).length;
+  const failedDeliveries = deliveryLog.filter((d) => !d.success).length;
+  const recentFailures = deliveryLog
+    .filter((d) => !d.success)
+    .slice(-10); // Last 10 failures
+
+  return {
+    totalAttempts,
+    successfulDeliveries,
+    failedDeliveries,
+    recentFailures,
+  };
+}
+
+export function getChannelStates(): Map<string, string> {
+  const states = new Map<string, string>();
+  for (const [channel, state] of channelState) {
+    states.set(channel, state);
+  }
+  return states;
 }

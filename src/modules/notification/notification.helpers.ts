@@ -3,21 +3,85 @@ import { NotificationPayload, SSEPayload, userChannel } from "../../lib/sse/sse.
 import { getPublisher } from "../../lib/redis/redis.pubsub.js";
 import { prisma } from "../../lib/prisma.js";
 
-// ─── Internal publish helper ─────────────────────────────────────────────────
+// ─── Configuration ───────────────────────────────────────────────────────────
+
+const SSE_RETRY_ATTEMPTS = 3;
+const SSE_RETRY_DELAY_MS = 100;
+
+// ─── Delivery metrics ────────────────────────────────────────────────────────
+
+interface PublishMetrics {
+  totalAttempts: number;
+  successfulPublishes: number;
+  failedPublishes: number;
+  lastFailure?: { timestamp: number; error: string; userId: string };
+}
+
+const metrics: PublishMetrics = {
+  totalAttempts: 0,
+  successfulPublishes: 0,
+  failedPublishes: 0,
+};
+
+// ─── Internal publish helper with retry ──────────────────────────────────────
 
 async function publishToSSE(
   userId: string,
   notification: NotificationPayload,
-): Promise<void> {
+  retryCount: number = 0,
+): Promise<boolean> {
   const payload: SSEPayload = {
     type: "notification",
     data: notification,
   };
 
+  metrics.totalAttempts++;
+
   try {
     await getPublisher().publish(userChannel(userId), JSON.stringify(payload));
+    metrics.successfulPublishes++;
+    return true;
   } catch (err) {
-    console.error("[notifyUser] Redis PUBLISH failed for user", userId, err);
+    const error = err instanceof Error ? err.message : String(err);
+
+    // Retry logic
+    if (retryCount < SSE_RETRY_ATTEMPTS) {
+      await new Promise((resolve) => setTimeout(resolve, SSE_RETRY_DELAY_MS * (retryCount + 1)));
+      return publishToSSE(userId, notification, retryCount + 1);
+    }
+
+    // All retries failed
+    metrics.failedPublishes++;
+    metrics.lastFailure = {
+      timestamp: Date.now(),
+      error,
+      userId,
+    };
+
+    console.error(
+      `[notifyUser] Redis PUBLISH failed for user ${userId} after ${SSE_RETRY_ATTEMPTS} attempts:`,
+      error,
+    );
+
+    // Log to Redis for monitoring (best effort)
+    try {
+      const redis = getPublisher();
+      const logKey = `sse:publish:failed:${userId}:${Date.now()}`;
+      await redis.setex(
+        logKey,
+        3600, // 1 hour TTL
+        JSON.stringify({
+          userId,
+          notificationId: notification.id,
+          error,
+          timestamp: Date.now(),
+        }),
+      );
+    } catch {
+      // Redis unavailable - skip logging
+    }
+
+    return false;
   }
 }
 
@@ -60,6 +124,7 @@ export async function notifyUser(opts: NotifyUserOptions): Promise<void> {
     },
   });
 
+  // Try to push via SSE - failure is non-critical (notification is persisted)
   await publishToSSE(userId, {
     ...notification,
     type: notification.type as string,
@@ -220,4 +285,17 @@ export async function notifyMentions(
       actionUrl,
     })),
   );
+}
+
+// ─── Metrics export ──────────────────────────────────────────────────────────
+
+export function getPublishMetrics(): PublishMetrics {
+  return { ...metrics };
+}
+
+export function resetPublishMetrics(): void {
+  metrics.totalAttempts = 0;
+  metrics.successfulPublishes = 0;
+  metrics.failedPublishes = 0;
+  metrics.lastFailure = undefined;
 }

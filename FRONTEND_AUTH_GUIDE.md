@@ -719,10 +719,23 @@ Frontend (useNotifications)          Backend
 
 ### Reconnection Handling
 
-- **Heartbeat:** Server sends `: heartbeat <timestamp>` every 30 seconds
+- **Heartbeat:** Server sends `: heartbeat` every 25 seconds
 - **Auto-reconnect:** If connection drops, reconnect after 5 seconds
 - **Token rotation:** If the access token rotates during a refresh, the SSE connection should be re-established with the new token
 - **One connection per user:** New connections replace previous ones
+- **Retry hint:** Server sends `X-SSE-Retry-After: 30` header suggesting reconnect interval
+
+### Backend Delivery Guarantees
+
+The backend provides these delivery guarantees:
+
+| Guarantee | Description |
+|-----------|-------------|
+| **DB Persistence** | Notifications are always saved to DB before SSE push |
+| **Retry Logic** | SSE delivery retries up to 3 times on write failure |
+| **Redis Publish Retry** | Redis publish retries up to 3 times with exponential backoff |
+| **Delivery Tracking** | Failed deliveries are logged for monitoring |
+| **Graceful Degradation** | If SSE fails, notifications are still accessible via API |
 
 ### Implementation Pattern
 
@@ -734,7 +747,18 @@ function connectSSE(accessToken: string, onNotification: (data: any) => void) {
 
   eventSource.onmessage = (event) => {
     const data = JSON.parse(event.data);
-    onNotification(data);
+    
+    // Handle different event types
+    switch (data.type) {
+      case 'connected':
+        console.log('SSE connected:', data.userId);
+        break;
+      case 'notification':
+        onNotification(data.data);
+        break;
+      default:
+        console.warn('Unknown SSE event type:', data.type);
+    }
   };
 
   eventSource.onerror = () => {
@@ -760,6 +784,142 @@ useEffect(() => {
   };
 }, [accessToken]);
 ```
+
+### Complete Notification Hook Example
+
+```typescript
+import { useEffect, useState, useCallback } from 'react';
+
+interface Notification {
+  id: string;
+  type: string;
+  title: string;
+  message: string;
+  actionUrl?: string;
+  createdAt: string;
+  read: boolean;
+  sender?: {
+    id: string;
+    name: string | null;
+    image: string | null;
+  } | null;
+}
+
+export function useNotifications(accessToken: string | null) {
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [isConnected, setIsConnected] = useState(false);
+
+  const handleNotification = useCallback((notification: Notification) => {
+    setNotifications(prev => [notification, ...prev]);
+    setUnreadCount(prev => prev + 1);
+  }, []);
+
+  useEffect(() => {
+    if (!accessToken) return;
+
+    const eventSource = connectSSE(accessToken, handleNotification);
+
+    eventSource.onopen = () => {
+      setIsConnected(true);
+    };
+
+    eventSource.onerror = () => {
+      setIsConnected(false);
+    };
+
+    return () => {
+      eventSource.close();
+      setIsConnected(false);
+    };
+  }, [accessToken, handleNotification]);
+
+  const markAsRead = async (notificationId: string) => {
+    await fetch(`${API_URL}/api/v1/notifications/${notificationId}/read`, {
+      method: 'PATCH',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'x-csrf-token': getCsrfToken(),
+      },
+    });
+    setNotifications(prev =>
+      prev.map(n => n.id === notificationId ? { ...n, read: true } : n)
+    );
+    setUnreadCount(prev => Math.max(0, prev - 1));
+  };
+
+  const markAllAsRead = async () => {
+    await fetch(`${API_URL}/api/v1/notifications/read-all`, {
+      method: 'PATCH',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'x-csrf-token': getCsrfToken(),
+      },
+    });
+    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+    setUnreadCount(0);
+  };
+
+  return {
+    notifications,
+    unreadCount,
+    isConnected,
+    markAsRead,
+    markAllAsRead,
+  };
+}
+```
+
+### Development Metrics Endpoint
+
+In development mode, you can monitor notification delivery health:
+
+```
+GET /api/v1/notifications/metrics
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "sse": {
+      "connections": 5,
+      "delivery": {
+        "totalAttempts": 150,
+        "successfulDeliveries": 148,
+        "failedDeliveries": 2,
+        "recentFailures": [
+          {
+            "notificationId": "n123",
+            "userId": "u456",
+            "timestamp": 1719876543123,
+            "success": false,
+            "attempts": 3,
+            "error": "1 clients failed"
+          }
+        ]
+      }
+    },
+    "publish": {
+      "totalAttempts": 150,
+      "successfulPublishes": 148,
+      "failedPublishes": 2,
+      "lastFailure": {
+        "timestamp": 1719876543123,
+        "error": "Redis connection lost",
+        "userId": "u456"
+      }
+    }
+  }
+}
+```
+
+**Monitoring Use Cases:**
+- Debug why notifications aren't arriving
+- Monitor Redis connection health
+- Track delivery success rates
+- Identify users with connection issues
 
 ---
 
