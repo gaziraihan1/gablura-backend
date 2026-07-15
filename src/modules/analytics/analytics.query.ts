@@ -475,11 +475,18 @@ export const AnalyticsQuery = {
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - days);
 
-    const activities = await prisma.activity.findMany({
-      where:   { workspaceId, createdAt: { gte: startDate } },
-      select:  { action: true, createdAt: true },
-      orderBy: { createdAt: "asc" },
-    });
+    // Single GROUP BY query — pushes day/action bucketing into Postgres
+    const rows = await prisma.$queryRaw<{ day: Date; action: string; count: bigint }[]>`
+      SELECT
+        DATE_TRUNC('day', "createdAt") AS day,
+        "action",
+        COUNT(*)::int                   AS count
+      FROM   "Activity"
+      WHERE  "workspaceId" = ${workspaceId}
+        AND  "createdAt"  >= ${startDate}
+      GROUP  BY DATE_TRUNC('day', "createdAt"), "action"
+      ORDER  BY day ASC
+    `;
 
     // Pre-seed every day in the window so gaps appear as zeros
     const trendMap = new Map<string, Map<string, number>>();
@@ -489,10 +496,10 @@ export const AnalyticsQuery = {
       trendMap.set(getDayKey(date), new Map());
     }
 
-    for (const activity of activities) {
-      const dateKey = getDayKey(activity.createdAt);
+    for (const row of rows) {
+      const dateKey = getDayKey(row.day);
       const dayMap  = trendMap.get(dateKey) ?? new Map<string, number>();
-      dayMap.set(activity.action, (dayMap.get(activity.action) ?? 0) + 1);
+      dayMap.set(row.action, Number(row.count));
       trendMap.set(dateKey, dayMap);
     }
 
@@ -523,24 +530,32 @@ export const AnalyticsQuery = {
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-    const activities = await prisma.activity.findMany({
-      where:  { workspaceId, createdAt: { gte: thirtyDaysAgo } },
-      select: { action: true, createdAt: true },
-    });
+    // Single GROUP BY with EXTRACT(DOW) — pushes day-of-week bucketing into Postgres
+    const rows = await prisma.$queryRaw<{ dow: number; action: string; count: bigint }[]>`
+      SELECT
+        EXTRACT(DOW FROM "createdAt")::int AS dow,
+        "action",
+        COUNT(*)::int                       AS count
+      FROM   "Activity"
+      WHERE  "workspaceId" = ${workspaceId}
+        AND  "createdAt"  >= ${thirtyDaysAgo}
+      GROUP  BY EXTRACT(DOW FROM "createdAt"), "action"
+    `;
 
-    const dayMap = new Map<string, { count: number; actions: Map<string, number> }>();
-
-    for (const activity of activities) {
-      const dayOfWeek = getWeekOfDay(activity.createdAt);
-      const dayData   = dayMap.get(dayOfWeek) ?? { count: 0, actions: new Map() };
-      dayData.count  += 1;
-      dayData.actions.set(activity.action, (dayData.actions.get(activity.action) ?? 0) + 1);
-      dayMap.set(dayOfWeek, dayData);
+    // Aggregate by day of week
+    const dayMap = new Map<number, { count: number; actions: Map<string, number> }>();
+    for (const row of rows) {
+      const dayData = dayMap.get(row.dow) ?? { count: 0, actions: new Map() };
+      dayData.count += Number(row.count);
+      dayData.actions.set(row.action, (dayData.actions.get(row.action) ?? 0) + Number(row.count));
+      dayMap.set(row.dow, dayData);
     }
 
+    const DOW_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
     const sorted = Array.from(dayMap.entries())
-      .map(([day, data]) => ({
-        day,
+      .map(([dow, data]) => ({
+        day:              DOW_NAMES[dow] ?? "Unknown",
         count:            data.count,
         mostCommonAction: Array.from(data.actions.entries())
           .sort((a, b) => b[1] - a[1])[0]?.[0] ?? "NONE",

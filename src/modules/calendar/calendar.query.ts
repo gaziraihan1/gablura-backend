@@ -195,23 +195,17 @@ export const CalendarQuery = {
     startDate: Date,
     endDate: Date,
   ): Promise<{ category: string; totalMinutes: number }[]> {
-    const entries = await prisma.timeEntry.findMany({
-      where: {
-        userId,
-        startedAt: { gte: startDate, lte: endDate },
-      },
-      select: { category: true, duration: true },
+    // Use DB-level groupBy instead of fetching all rows into JS memory
+    const groups = await prisma.timeEntry.groupBy({
+      by:      ["category"],
+      where:   { userId, startedAt: { gte: startDate, lte: endDate } },
+      _sum:    { duration: true },
+      orderBy: { _sum: { duration: "desc" } },
     });
 
-    const allocation: Record<string, number> = {};
-    for (const entry of entries) {
-      const cat = entry.category.toLowerCase();
-      allocation[cat] = (allocation[cat] || 0) + entry.duration;
-    }
-
-    return Object.entries(allocation).map(([category, totalMinutes]) => ({
-      category,
-      totalMinutes,
+    return groups.map((g) => ({
+      category:    g.category.toLowerCase(),
+      totalMinutes: g._sum.duration ?? 0,
     }));
   },
 };

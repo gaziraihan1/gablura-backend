@@ -13,6 +13,8 @@ export const TaskAccess = {
   return CacheClient.getOrSet(
     cacheKey,
     async () => {
+      // Single query: fetch task + workspace member role + workspace owner + project member
+      // in one round-trip instead of 4 sequential queries
       const task = await prisma.task.findFirst({
         where: { id: taskId },
         select: {
@@ -22,6 +24,25 @@ export const TaskAccess = {
           workspaceId: true,
           status:      true,
           assignees:   { select: { userId: true } },
+          workspace:   {
+            select: {
+              ownerId: true,
+              members: {
+                where: { userId },
+                select: { role: true },
+                take:   1,
+              },
+            },
+          },
+          project: {
+            select: {
+              members: {
+                where: { userId, role: 'MANAGER' },
+                select: { id: true },
+                take:   1,
+              },
+            },
+          },
         },
       });
 
@@ -35,34 +56,18 @@ export const TaskAccess = {
         return { canEdit: false, reason: 'Only the task owner can edit personal tasks' };
       }
 
-      // Check workspace membership directly — same pattern as buildWorkspaceTasksFilter
-      const workspaceMember = await prisma.workspaceMember.findFirst({
-        where: { workspaceId: task.workspaceId, userId },
-        select: { role: true },
-      });
-
+      // Workspace admin check (from pre-fetched data)
+      const workspaceMemberRole = task.workspace?.members?.[0]?.role;
       const isWorkspaceAdmin =
-        workspaceMember?.role === 'OWNER' || workspaceMember?.role === 'ADMIN';
+        workspaceMemberRole === 'OWNER' || workspaceMemberRole === 'ADMIN';
 
       if (isWorkspaceAdmin) return { canEdit: true, task };
 
-      // Check workspace owner directly (ownerId field on Workspace)
-      const workspace = await prisma.workspace.findFirst({
-        where: { id: task.workspaceId, ownerId: userId },
-        select: { id: true },
-      });
+      // Workspace owner check (from pre-fetched data)
+      if (task.workspace?.ownerId === userId) return { canEdit: true, task };
 
-      if (workspace) return { canEdit: true, task };
-
-      // Check project manager role
-      if (task.projectId) {
-        const projectMember = await prisma.projectMember.findFirst({
-          where: { projectId: task.projectId, userId, role: 'MANAGER' },
-          select: { id: true },
-        }).catch(() => null); // in case ProjectMember model doesn't exist
-
-        if (projectMember) return { canEdit: true, task };
-      }
+      // Project manager check (from pre-fetched data)
+      if (task.project?.members?.length) return { canEdit: true, task };
 
       return {
         canEdit: false,
@@ -106,6 +111,7 @@ export const TaskAccess = {
   },
 
   async assertDeletePermission(taskId: string, userId: string) {
+  // Single query: fetch task + workspace member role + workspace owner in one round-trip
   const task = await prisma.task.findUnique({
     where:  { id: taskId },
     select: {
@@ -117,6 +123,16 @@ export const TaskAccess = {
       status:      true,
       priority:    true,
       dueDate:     true,
+      workspace:   {
+        select: {
+          ownerId: true,
+          members: {
+            where: { userId },
+            select: { role: true },
+            take:   1,
+          },
+        },
+      },
     },
   });
 
@@ -130,23 +146,10 @@ export const TaskAccess = {
     throw new ForbiddenError('You do not have permission to delete this task');
   }
 
-  // Direct workspace membership check
-  const workspaceMember = await prisma.workspaceMember.findFirst({
-    where: { workspaceId: task.workspaceId, userId },
-    select: { role: true },
-  });
-
-  if (workspaceMember?.role === 'OWNER' || workspaceMember?.role === 'ADMIN') {
-    return task;
-  }
-
-  // Check workspace ownerId directly
-  const workspace = await prisma.workspace.findFirst({
-    where: { id: task.workspaceId, ownerId: userId },
-    select: { id: true },
-  });
-
-  if (workspace) return task;
+  // Workspace admin/owner check (from pre-fetched data — no extra query)
+  const workspaceMemberRole = task.workspace?.members?.[0]?.role;
+  if (workspaceMemberRole === 'OWNER' || workspaceMemberRole === 'ADMIN') return task;
+  if (task.workspace?.ownerId === userId) return task;
 
   throw new ForbiddenError('You do not have permission to delete this task');
 },

@@ -8,6 +8,7 @@ import { NotFoundError } from '../../errors/index.js';
 import { Prisma, TaskStatus } from '@prisma/client';
 
 async function countOverdueTasks(baseWhere: Record<string, unknown>, now: Date): Promise<number> {
+  // Step 1: Get scoped task IDs via Prisma (respects complex baseWhere filter)
   const scopedIds = await prisma.task.findMany({
     where:  { ...baseWhere, status: { notIn: ['COMPLETED', 'CANCELLED'] } },
     select: { id: true },
@@ -15,7 +16,9 @@ async function countOverdueTasks(baseWhere: Record<string, unknown>, now: Date):
 
   if (scopedIds.length === 0) return 0;
 
-  const ids    = scopedIds.map((t) => t.id);
+  const ids = scopedIds.map((t) => t.id);
+
+  // Step 2: Count overdue tasks among the scoped IDs
   const result = await prisma.$queryRaw<[{ count: bigint }]>`
     SELECT COUNT(*)::int AS count
     FROM   "Task"

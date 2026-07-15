@@ -1,5 +1,6 @@
 import { prisma } from "../../lib/prisma.js";
 import type { TaskFilterParams } from "./task.types.js";
+import { CacheClient, CACHE_KEYS, CACHE_TTL } from "../../lib/redis/cache.client.js";
 
 export const TaskFilters = {
   buildProjectFilter(filters: TaskFilterParams): Record<string, unknown> {
@@ -39,13 +40,19 @@ export const TaskFilters = {
       throw new Error("workspaceId is required for workspace filter");
     }
 
-    const workspaceMember = await prisma.workspaceMember.findFirst({
-      where: { workspaceId: filters.workspaceId, userId: filters.userId },
-      select: { role: true },
-    });
-
-    const isWorkspaceAdmin =
-      workspaceMember?.role === "OWNER" || workspaceMember?.role === "ADMIN";
+    // Cache the workspace member role lookup to avoid a DB query on every task list/stats call
+    const roleCacheKey = `task:workspace-role:${filters.workspaceId}:${filters.userId}`;
+    const isWorkspaceAdmin = await CacheClient.getOrSet(
+      roleCacheKey,
+      async () => {
+        const workspaceMember = await prisma.workspaceMember.findFirst({
+          where: { workspaceId: filters.workspaceId, userId: filters.userId },
+          select: { role: true },
+        });
+        return workspaceMember?.role === "OWNER" || workspaceMember?.role === "ADMIN";
+      },
+      CACHE_TTL.ACCESS_CONTROL_WORKSPACE_MEMBER,
+    );
 
     const baseWorkspaceCondition = {
       project: { workspaceId: filters.workspaceId },

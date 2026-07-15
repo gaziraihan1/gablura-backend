@@ -68,14 +68,14 @@ describe("TaskAccess", () => {
     });
 
     it("should allow workspace ADMIN to edit", async () => {
+      // Single query with nested includes — workspace.members has ADMIN role
       vi.mocked(prisma.task.findFirst).mockResolvedValue({
         id: "t1",
         createdById: "u1",
         workspaceId: "ws1",
         projectId: null,
-      } as any);
-      vi.mocked(prisma.workspaceMember.findFirst).mockResolvedValue({
-        role: "ADMIN",
+        workspace: { ownerId: "u3", members: [{ role: "ADMIN" }] },
+        project: { members: [] },
       } as any);
 
       const result = await TaskAccess.checkEditPermission("t1", "u2");
@@ -83,15 +83,14 @@ describe("TaskAccess", () => {
     });
 
     it("should allow workspace OWNER to edit", async () => {
+      // Single query with nested includes — workspace.ownerId matches userId
       vi.mocked(prisma.task.findFirst).mockResolvedValue({
         id: "t1",
         createdById: "u1",
         workspaceId: "ws1",
         projectId: null,
-      } as any);
-      vi.mocked(prisma.workspaceMember.findFirst).mockResolvedValue(null);
-      vi.mocked(prisma.workspace.findFirst).mockResolvedValue({
-        id: "ws1",
+        workspace: { ownerId: "u2", members: [] },
+        project: { members: [] },
       } as any);
 
       const result = await TaskAccess.checkEditPermission("t1", "u2");
@@ -99,18 +98,14 @@ describe("TaskAccess", () => {
     });
 
     it("should allow project MANAGER to edit", async () => {
+      // Single query with nested includes — project.members has a MANAGER entry
       vi.mocked(prisma.task.findFirst).mockResolvedValue({
         id: "t1",
         createdById: "u1",
         workspaceId: "ws1",
         projectId: "p1",
-      } as any);
-      vi.mocked(prisma.workspaceMember.findFirst).mockResolvedValue({
-        role: "MEMBER",
-      } as any);
-      vi.mocked(prisma.workspace.findFirst).mockResolvedValue(null);
-      vi.mocked(prisma.projectMember.findFirst).mockResolvedValue({
-        id: "pm1",
+        workspace: { ownerId: "u3", members: [] },
+        project: { members: [{ id: "pm1" }] },
       } as any);
 
       const result = await TaskAccess.checkEditPermission("t1", "u2");
@@ -118,17 +113,15 @@ describe("TaskAccess", () => {
     });
 
     it("should deny if no permission", async () => {
+      // Single query with nested includes — no admin/owner/manager match
       vi.mocked(prisma.task.findFirst).mockResolvedValue({
         id: "t1",
         createdById: "u1",
         workspaceId: "ws1",
         projectId: "p1",
+        workspace: { ownerId: "u3", members: [] },
+        project: { members: [] },
       } as any);
-      vi.mocked(prisma.workspaceMember.findFirst).mockResolvedValue({
-        role: "MEMBER",
-      } as any);
-      vi.mocked(prisma.workspace.findFirst).mockResolvedValue(null);
-      vi.mocked(prisma.projectMember.findFirst).mockResolvedValue(null);
 
       const result = await TaskAccess.checkEditPermission("t1", "u2");
       expect(result.canEdit).toBe(false);
@@ -155,13 +148,12 @@ describe("TaskAccess", () => {
     });
 
     it("should allow workspace ADMIN to delete", async () => {
+      // Single query with nested includes — workspace.members has ADMIN role
       vi.mocked(prisma.task.findUnique).mockResolvedValue({
         id: "t1",
         createdById: "u1",
         workspaceId: "ws1",
-      } as any);
-      vi.mocked(prisma.workspaceMember.findFirst).mockResolvedValue({
-        role: "ADMIN",
+        workspace: { ownerId: "u3", members: [{ role: "ADMIN" }] },
       } as any);
 
       const result = await TaskAccess.assertDeletePermission("t1", "u2");

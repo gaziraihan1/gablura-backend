@@ -11,11 +11,12 @@ import { NotFoundError, ForbiddenError } from "../../errors/AppError.js";
 
 
 export const WorkspaceQuery = {
-  async getUserWorkspaces(userId: string) {
+  async getUserWorkspaces(userId: string, limit: number = 50) {
     return prisma.workspace.findMany({
       where: { members: { some: { userId } } },
       include: workspaceListInclude,
       orderBy: { updatedAt: "desc" },
+      take: limit,
     });
   },
 

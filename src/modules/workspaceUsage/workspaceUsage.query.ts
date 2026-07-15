@@ -109,6 +109,12 @@ export const WorkspaceUsageQuery = {
     const dauLastWeek = await this.getDailyActiveUsers(workspaceId, 7);
 
     // ── Tier-2: derived metrics (all parallel) ──
+    // Fetch projects once and share across getProjectActivity and getResourceUsage
+    const sharedProjects = await prisma.project.findMany({
+      where: { workspaceId },
+      select: { id: true, name: true },
+    });
+
     const [
       snapshot,
       projectActivity,
@@ -121,7 +127,7 @@ export const WorkspaceUsageQuery = {
       this.getUsageSnapshot(workspaceId, members, files, dauLastWeek),
       this.getProjectActivity(workspaceId),
       this.getUserEngagement(workspaceId, members, isAdmin, dauLastWeek),
-      this.getResourceUsage(workspaceId, files, workspace?.maxStorage ?? 1024),
+      this.getResourceUsage(workspaceId, files, workspace?.maxStorage ?? 1024, sharedProjects),
       this.getWorkspaceLoad(workspaceId, members, isAdmin),
       this.getWorkspaceGrowth(workspaceId),
       this.getFeatureUsage(workspaceId),
@@ -538,8 +544,10 @@ export const WorkspaceUsageQuery = {
     workspaceId: string,
     files: FetchedFile[],
     maxStorageMB: number,
+    projects?: Array<{ id: string; name: string }>,
   ): Promise<ResourceUsageMetrics> {
-    const projects = await prisma.project.findMany({
+    // Use pre-fetched projects if available (from getProjectActivity), otherwise fetch
+    const projectList = projects ?? await prisma.project.findMany({
       where: { workspaceId },
       select: { id: true, name: true },
     });
@@ -556,7 +564,7 @@ export const WorkspaceUsageQuery = {
 
     const usedMB = totalStorageMB(files);
 
-    const storageByProject = projects
+    const storageByProject = projectList
       .flatMap((p) => {
         const projectFiles = filesByProject.get(p.id);
         if (!projectFiles?.length) return [];

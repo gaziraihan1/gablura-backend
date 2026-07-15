@@ -106,16 +106,18 @@ export const WorkspaceMutation = {
   ) {
     const inviter = await WorkspaceAccess.assertAdmin(workspaceId, inviterId); // already throws ForbiddenError
 
-    const existing = await prisma.workspaceInvitation.findFirst({
-      where: { workspaceId, email, status: "PENDING" },
-    });
+    // Parallelize independent duplicate-check queries
+    const [existing, member] = await Promise.all([
+      prisma.workspaceInvitation.findFirst({
+        where: { workspaceId, email, status: "PENDING" },
+      }),
+      prisma.workspaceMember.findFirst({
+        where: { workspaceId, user: { email } },
+      }),
+    ]);
+
     if (existing) throw new ConflictError("User has already been invited");
-
-    const member = await prisma.workspaceMember.findFirst({
-      where: { workspaceId, user: { email } },
-    });
     if (member) throw new ConflictError("User is already a member");
-
 
     const token = crypto.randomBytes(32).toString("hex");
     const expiresAt = new Date();
@@ -181,14 +183,14 @@ export const WorkspaceMutation = {
       where: { id: invitation.id },
       data: { status: "ACCEPTED" },
     });
-// Invalidate member-related caches
+// Invalidate member-related caches (fire-and-forget — don't block the response)
 if (invitation.workspaceId) {
-  await WorkspaceCache.invalidateMembers(invitation.workspaceId);
-  await WorkspaceCache.invalidateUserWorkspaces(userId);
   const workspaceSlug = invitation.workspace?.slug ?? undefined;
-  await WorkspaceCache.invalidateWorkspace(invitation.workspaceId, workspaceSlug);
-  await AccessControlCache.invalidateWorkspaceAccess(invitation.workspaceId, userId).catch(() => {});
-  await AccessControlCache.invalidateWorkspaceUsers(invitation.workspaceId).catch(() => {});
+  WorkspaceCache.invalidateMembers(invitation.workspaceId).catch(() => {});
+  WorkspaceCache.invalidateUserWorkspaces(userId).catch(() => {});
+  WorkspaceCache.invalidateWorkspace(invitation.workspaceId, workspaceSlug).catch(() => {});
+  AccessControlCache.invalidateWorkspaceAccess(invitation.workspaceId, userId).catch(() => {});
+  AccessControlCache.invalidateWorkspaceUsers(invitation.workspaceId).catch(() => {});
 }
 
     if (onAccepted && invitation.invitedById) {
