@@ -3,6 +3,7 @@ import request from 'supertest';
 import { z } from 'zod';
 import { validateContract, APIResponseSchema } from './contract.util.js';
 import { prisma } from '../../lib/prisma.js';
+import { cleanAllTestData } from '../factories/index.js';
 
 // Dynamic user state for mocks
 let mockUser = {
@@ -34,10 +35,7 @@ describe('File Management API Contract Tests', () => {
     app = appModule.default;
 
     // Cleanup and setup for each test to ensure isolation
-    await prisma.file.deleteMany();
-    await prisma.workspaceMember.deleteMany();
-    await prisma.workspace.deleteMany();
-    await prisma.user.deleteMany();
+    await cleanAllTestData();
 
     const user = await prisma.user.create({
       data: {

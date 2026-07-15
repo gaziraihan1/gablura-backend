@@ -7,7 +7,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import request from 'supertest';
 import app from '../../app.js';
 import { prisma } from '../../lib/prisma.js';
-import { createWorkspaceWithOwner, createUser, addMemberToWorkspace } from '../factories/index.js';
+import { createWorkspaceWithOwner, createUser, addMemberToWorkspace, cleanAllTestData } from '../factories/index.js';
 import { authHeaders, authWithCsrfHeaders } from '../helpers/auth.js';
 import { WorkspaceRole } from '@prisma/client';
 
@@ -19,10 +19,7 @@ describe('File Management API', () => {
 
   beforeEach(async () => {
     // Clean up and setup
-    await prisma.file.deleteMany();
-    await prisma.workspaceMember.deleteMany();
-    await prisma.workspace.deleteMany();
-    await prisma.user.deleteMany();
+    await cleanAllTestData();
 
     const ownerData = await createWorkspaceWithOwner();
     admin = ownerData.user;

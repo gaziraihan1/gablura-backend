@@ -65,6 +65,8 @@ vi.mock("../../../modules/task/task.quota.service.js", () => ({
   checkAndConsumeWorkspaceQuota: vi.fn(),
   rollbackPersonalQuota: vi.fn(),
   rollbackWorkspaceQuota: vi.fn(),
+  resolveWorkspacePlan: vi.fn().mockResolvedValue("FREE"),
+  resolveUserPlan: vi.fn().mockResolvedValue("FREE"),
 }));
 
 vi.mock("../../../lib/redis/cache.client.js", async (importOriginal) => {
@@ -224,12 +226,10 @@ describe("TaskMutation", () => {
 
   describe("updateTask", () => {
     it("should update task if user has permission", async () => {
-      vi.mocked(TaskAccess.checkEditPermission).mockResolvedValue({ canEdit: true });
-      vi.mocked(prisma.task.findUnique).mockResolvedValue({
-        id: "t1",
-        projectId: null,
-        assignees: [],
-      } as any);
+      vi.mocked(TaskAccess.checkEditPermission).mockResolvedValue({
+        canEdit: true,
+        task: { id: "t1", projectId: null, workspaceId: null, status: "TODO", assignees: [] },
+      });
       vi.mocked(prisma.task.update).mockResolvedValue({ id: "t1", title: "Updated" } as any);
 
       const result = await TaskMutation.updateTask("t1", "u1", { title: "Updated" });
@@ -239,12 +239,10 @@ describe("TaskMutation", () => {
     });
 
     it("should sync assignees correctly when provided", async () => {
-      vi.mocked(TaskAccess.checkEditPermission).mockResolvedValue({ canEdit: true });
-      vi.mocked(prisma.task.findUnique).mockResolvedValue({
-        id: "t1",
-        projectId: null,
-        assignees: [],
-      } as any);
+      vi.mocked(TaskAccess.checkEditPermission).mockResolvedValue({
+        canEdit: true,
+        task: { id: "t1", projectId: null, workspaceId: null, status: "TODO", assignees: [] },
+      });
       vi.mocked(prisma.task.update).mockResolvedValue({ id: "t1" } as any);
 
       const newAssignees = ["u2", "u3"];
@@ -259,12 +257,10 @@ describe("TaskMutation", () => {
     });
 
     it("should sync labels correctly when provided", async () => {
-      vi.mocked(TaskAccess.checkEditPermission).mockResolvedValue({ canEdit: true });
-      vi.mocked(prisma.task.findUnique).mockResolvedValue({
-        id: "t1",
-        projectId: null,
-        assignees: [],
-      } as any);
+      vi.mocked(TaskAccess.checkEditPermission).mockResolvedValue({
+        canEdit: true,
+        task: { id: "t1", projectId: null, workspaceId: null, status: "TODO", assignees: [] },
+      });
       vi.mocked(prisma.task.update).mockResolvedValue({ id: "t1" } as any);
 
       const newLabels = ["l1", "l2"];
@@ -279,12 +275,10 @@ describe("TaskMutation", () => {
     });
 
     it("should handle project transition (Project A -> Project B)", async () => {
-      vi.mocked(TaskAccess.checkEditPermission).mockResolvedValue({ canEdit: true });
-      vi.mocked(prisma.task.findUnique).mockResolvedValue({
-        id: "t1",
-        projectId: "p1",
-        assignees: [],
-      } as any);
+      vi.mocked(TaskAccess.checkEditPermission).mockResolvedValue({
+        canEdit: true,
+        task: { id: "t1", projectId: "p1", workspaceId: "ws1", status: "TODO", assignees: [] },
+      });
       vi.mocked(prisma.project.findUnique).mockResolvedValue({ workspaceId: "ws2" } as any);
       vi.mocked(prisma.workspace.findUnique).mockResolvedValue({ plan: "PRO" } as any);
       vi.mocked(prisma.workspaceMember.count).mockResolvedValue(5);
@@ -308,12 +302,10 @@ describe("TaskMutation", () => {
 
   describe("updateTaskStatus", () => {
     it("should update status and set completedAt if status is COMPLETED", async () => {
-      vi.mocked(TaskAccess.checkEditPermission).mockResolvedValue({ canEdit: true });
-      vi.mocked(prisma.task.findUnique).mockResolvedValue({
-        id: "t1",
-        status: "TODO",
-        projectId: null,
-      } as any);
+      vi.mocked(TaskAccess.checkEditPermission).mockResolvedValue({
+        canEdit: true,
+        task: { id: "t1", projectId: null, workspaceId: null, status: "TODO", assignees: [] },
+      });
       vi.mocked(prisma.task.update).mockResolvedValue({ id: "t1", status: "COMPLETED" } as any);
 
       const result = await TaskMutation.updateTaskStatus("t1", "u1", "COMPLETED");

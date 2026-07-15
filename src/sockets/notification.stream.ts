@@ -200,17 +200,24 @@ function removeClient(userId: string, res: Response): void {
 
 // ─── Heartbeat ────────────────────────────────────────────────────────────────
 
-setInterval(() => {
-  for (const [, clients] of localClients) {
-    for (const res of clients) {
-      try {
-        res.write(": heartbeat\n\n");
-      } catch {
-        // cleaned up on next removeClient
+// Skip heartbeat interval during tests to prevent process hanging.
+// In test mode the handler is tested via fake timers; no real interval needed.
+const isTest =
+  process.env.NODE_ENV === 'test' || typeof (globalThis as any).__vitest !== 'undefined';
+
+if (!isTest) {
+  setInterval(() => {
+    for (const [, clients] of localClients) {
+      for (const res of clients) {
+        try {
+          res.write(": heartbeat\n\n");
+        } catch {
+          // cleaned up on next removeClient
+        }
       }
     }
-  }
-}, HEARTBEAT_INTERVAL_MS);
+  }, HEARTBEAT_INTERVAL_MS);
+}
 
 // ─── SSE stream handler ───────────────────────────────────────────────────────
 

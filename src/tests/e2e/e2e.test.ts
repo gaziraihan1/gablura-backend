@@ -1,6 +1,24 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import request from "supertest";
 import app from "../../app.js";
+
+vi.mock("cloudinary", () => {
+  const v2: any = {
+    config: vi.fn(),
+    uploader: {
+      upload: vi.fn().mockResolvedValue({
+        secure_url: "https://cloudinary.com/test.png",
+        public_id: "test_id",
+        format: "png",
+        bytes: 1024,
+        thumbnail_url: "https://cloudinary.com/thumb.png",
+      }),
+      destroy: vi.fn().mockResolvedValue({ result: "ok" }),
+    },
+  };
+  v2.v2 = v2;
+  return { v2 };
+});
 import {
   createWorkspaceWithOwner,
   createUser,

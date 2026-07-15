@@ -8,6 +8,7 @@ vi.mock("../../../lib/prisma.js", () => ({
   prisma: {
     workspace: {
       findUniqueOrThrow: vi.fn(),
+      findUnique: vi.fn(),
     },
   },
 }));
@@ -92,6 +93,7 @@ describe("BillingController", () => {
   describe("getSubscription", () => {
     it("should return subscription if it exists", async () => {
       const sub = { planName: "PRO", status: "ACTIVE" };
+      (prisma.workspace.findUnique as any).mockResolvedValue({ ownerId: "user-123" });
       (BillingService.getWorkspaceSubscription as any).mockResolvedValue(sub);
 
       await BillingController.getSubscription(mockRequest, mockResponse, () => {});
@@ -103,6 +105,7 @@ describe("BillingController", () => {
     });
 
     it("should return default FREE subscription if none exists", async () => {
+      (prisma.workspace.findUnique as any).mockResolvedValue({ ownerId: "user-123" });
       (BillingService.getWorkspaceSubscription as any).mockResolvedValue(null);
 
       await BillingController.getSubscription(mockRequest, mockResponse, () => {});

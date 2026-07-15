@@ -1,3 +1,4 @@
+import { prisma } from "../../lib/prisma.js";
 import { getRedisClient } from "../../redis/redis.client.js";
 
 function todaySegment(): string {
@@ -16,6 +17,55 @@ const KEYS = {
   userPlan: (userId: string) => `plan:user:${userId}`,
   workspacePlan: (workspaceId: string) => `plan:workspace:${workspaceId}`,
 };
+
+export async function resolveUserPlan(userId: string): Promise<UserPlan> {
+  const cacheKey = KEYS.userPlan(userId);
+  const redis = getRedisClient();
+
+  const cached = await redis.get(cacheKey);
+  if (cached) return (cached === 'PRO' ? 'PRO' : 'FREE') as UserPlan;
+
+  const bestSub = await prisma.subscription.findFirst({
+    where: {
+      workspace: { ownerId: userId },
+      status: { in: ['ACTIVE', 'TRIALING'] },
+    },
+    orderBy: { createdAt: 'desc' },
+    select: { plan: { select: { name: true } } },
+  });
+
+  const planName = bestSub?.plan.name ?? 'FREE';
+  await redis.setex(cacheKey, 600, planName);
+  return (planName === 'PRO' ? 'PRO' : 'FREE') as UserPlan;
+}
+
+export async function resolveWorkspacePlan(
+  workspaceId: string,
+): Promise<WorkspacePlan> {
+  const cacheKey = KEYS.workspacePlan(workspaceId);
+  const redis = getRedisClient();
+
+  const cached = await redis.get(cacheKey);
+  if (cached) {
+    if (cached === 'ENTERPRISE') return 'ENTERPRISE';
+    if (cached === 'BUSINESS')   return 'BUSINESS';
+    if (cached === 'PRO')        return 'PRO';
+    return 'FREE';
+  }
+
+  const ws = await prisma.workspace.findUnique({
+    where:  { id: workspaceId },
+    select: { plan: true },
+  });
+
+  const planName = (ws?.plan ?? 'FREE') as string;
+  await redis.setex(cacheKey, 600, planName);
+
+  if (planName === 'ENTERPRISE') return 'ENTERPRISE';
+  if (planName === 'BUSINESS')   return 'BUSINESS';
+  if (planName === 'PRO')        return 'PRO';
+  return 'FREE';
+}
 
 export interface QuotaCheckResult {
   allowed: boolean;

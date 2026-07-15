@@ -82,6 +82,9 @@ export async function runScenario(
 
   if (scenario.body) {
     options.body = JSON.stringify(scenario.body);
+    if (!options.headers['Content-Type']) {
+      options.headers['Content-Type'] = 'application/json';
+    }
   }
 
   console.log(`\n🚀 Running scenario: ${scenario.name}`);
@@ -99,27 +102,32 @@ export async function runScenario(
         (result.latency as any).percentiles?.[95] ??
         (result.latency as any)["95"] ??
         0;
+
+  const total = result.requests.total;
+  const errors = result.errors;
+  const successful = Math.max(0, total - errors);
+  const errorRate = total > 0 ? (errors / total) * 100 : (errors > 0 ? 100 : 0);
   
   return {
     scenario: scenario.name,
-    success: result.errors === 0,
+    success: errors === 0,
     duration: result.duration,
     requests: {
-      total: result.requests.total,
-      successful: result.requests.total - result.errors,
-      failed: result.errors,
+      total,
+      successful,
+      failed: errors,
       average: result.latency.mean,
       p50: result.latency.p50,
       p95: p95,
       p99: result.latency.p99,
     },
     throughput: {
-      average: result.requests.total / result.duration,
+      average: total > 0 ? total / result.duration : 0,
       min: result.throughput.min || 0,
       max: result.throughput.max || 0,
     },
     errors: {
-      rate: (result.errors / result.requests.total) * 100,
+      rate: errorRate,
       codes: result.non2xx,
     },
     latency: {
@@ -294,7 +302,13 @@ export async function warmUpServer(serverUrl: string): Promise<void> {
   };
   
   try {
-    await autocannon(warmUpOptions);
+    const result = await autocannon(warmUpOptions);
+    if (result.requests.total === 0 && result.errors > 0) {
+      console.error('❌ Server is not running or not accessible');
+      console.error(`   Make sure the server is running at ${serverUrl}`);
+      console.error('   Start the server with: npm run dev');
+      throw new Error('Server not accessible. Please start the server first.');
+    }
     console.log('✅ Server warm-up complete');
   } catch (error: any) {
     if (error.code === 'ECONNREFUSED' || error.code === 'ECONNRESET') {
@@ -302,6 +316,9 @@ export async function warmUpServer(serverUrl: string): Promise<void> {
       console.error(`   Make sure the server is running at ${serverUrl}`);
       console.error('   Start the server with: npm run dev');
       throw new Error('Server not accessible. Please start the server first.', { cause: error });
+    }
+    if (error.message?.includes('Server not accessible')) {
+      throw error;
     }
     console.warn('⚠️  Server warm-up failed, continuing with tests:', error.message);
   }

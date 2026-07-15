@@ -24,6 +24,8 @@ vi.mock('../../../modules/task/task.quota.service.js', () => ({
   getWorkspaceQuotaUsage: vi.fn(),
   personalLimits: vi.fn(),
   workspaceLimits: vi.fn(),
+  resolveWorkspacePlan: vi.fn().mockResolvedValue('FREE'),
+  resolveUserPlan: vi.fn().mockResolvedValue('FREE'),
 }));
 
 describe('Task Limits', () => {
@@ -36,7 +38,7 @@ describe('Task Limits', () => {
 
   describe('getPersonalQuotaInfo', () => {
     it('should resolve plan and return quota info', async () => {
-      (prisma.workspace.findMany as any).mockResolvedValue([{ plan: 'PRO' }]);
+      (QuotaService.resolveUserPlan as any).mockResolvedValue('PRO');
       (QuotaService.personalLimits as any).mockReturnValue({ dailyLimit: 500 });
       (QuotaService.getPersonalQuotaUsage as any).mockResolvedValue({
         limit: 500,
@@ -52,7 +54,7 @@ describe('Task Limits', () => {
     });
 
     it('should resolve to FREE plan if no workspaces owned', async () => {
-      (prisma.workspace.findMany as any).mockResolvedValue([]);
+      (QuotaService.resolveUserPlan as any).mockResolvedValue('FREE');
       (QuotaService.personalLimits as any).mockReturnValue({ dailyLimit: 100 });
       (QuotaService.getPersonalQuotaUsage as any).mockResolvedValue({
         limit: 100,
@@ -68,7 +70,7 @@ describe('Task Limits', () => {
 
   describe('getWorkspaceQuotaInfo', () => {
     it('should return workspace quota info for admin', async () => {
-      (prisma.workspace.findUnique as any).mockResolvedValue({ plan: 'PRO' });
+      (QuotaService.resolveWorkspacePlan as any).mockResolvedValue('PRO');
       (prisma.workspaceMember.findMany as any).mockResolvedValue([
         { userId: 'u1', user: { name: 'U1', email: 'e1', image: 'i1' } },
         { userId: 'u2', user: { name: 'U2', email: 'e2', image: 'i2' } },
@@ -101,7 +103,7 @@ describe('Task Limits', () => {
     });
 
     it('should return limited member info for non-admin', async () => {
-      (prisma.workspace.findUnique as any).mockResolvedValue({ plan: 'PRO' });
+      (QuotaService.resolveWorkspacePlan as any).mockResolvedValue('PRO');
       (prisma.workspaceMember.findMany as any).mockResolvedValue([
         { userId: 'u1', user: { name: 'U1', email: 'e1', image: 'i1' } },
         { userId: 'u2', user: { name: 'U2', email: 'e2', image: 'i2' } },

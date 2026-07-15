@@ -1,6 +1,6 @@
+import "dotenv/config";
 import express, { Application, Request, Response } from "express";
 import cors from "cors";
-import dotenv from "dotenv";
 import helmet from "helmet";
 import { requireCsrfToken, getCsrfTokenHandler } from "./middleware/csrf.js";
 import { initSentry } from "./lib/sentry.js";
@@ -51,8 +51,6 @@ import { captureException } from "./lib/sentry.js";
 import { initQueueWorkers, closeQueueWorkers } from "./queue/index.js";
 import { securityHeaders } from "./middleware/securityHeaders.js";
 import { requireFocuraAdmin } from "./middleware/focuraAdmin.js";
-
-dotenv.config();
 
 // Initialize Sentry for error tracking
 initSentry();

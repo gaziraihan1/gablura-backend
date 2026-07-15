@@ -6,7 +6,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { prisma } from '../../../lib/prisma.js';
 import { buildFileWhereClause, buildFileOrderBy } from '../../../modules/file/fileManagement.filters.js';
-import { createUser, createWorkspaceWithOwner, addMemberToWorkspace } from '../../../tests/factories/index.js';
+import { createUser, createWorkspaceWithOwner, addMemberToWorkspace, cleanAllTestData } from '../../../tests/factories/index.js';
 import { WorkspaceRole } from '@prisma/client';
 
 describe('fileManagement.filters', () => {
@@ -16,10 +16,7 @@ describe('fileManagement.filters', () => {
 
   beforeEach(async () => {
     // Clean up and setup
-    await prisma.file.deleteMany();
-    await prisma.workspaceMember.deleteMany();
-    await prisma.workspace.deleteMany();
-    await prisma.user.deleteMany();
+    await cleanAllTestData();
 
     const ownerData = await createWorkspaceWithOwner();
     user = ownerData.user;

@@ -188,15 +188,31 @@ export interface CreateProjectOptions {
   status?: ProjectStatus;
   priority?: Priority;
   slug?: string;
+  workspaceSlug?: string;
 }
+
+/** Cache workspace slug lookups to avoid repeated DB queries */
+const workspaceSlugCache = new Map<string, string>();
 
 export async function createProject(
   workspaceId: string,
-  // workspaceSlug: string,
   createdById: string,
   opts: CreateProjectOptions = {}
 ): Promise<Project> {
   const projectSlug = opts.slug ?? slug('proj');
+
+  // Use provided slug, or look up (with cache) to satisfy the FK constraint
+  let workspaceSlug = opts.workspaceSlug;
+  if (!workspaceSlug) {
+    if (workspaceSlugCache.has(workspaceId)) {
+      workspaceSlug = workspaceSlugCache.get(workspaceId)!;
+    } else {
+      const ws = await prisma.workspace.findUnique({ where: { id: workspaceId }, select: { slug: true } });
+      workspaceSlug = ws?.slug ?? 'unknown';
+      workspaceSlugCache.set(workspaceId, workspaceSlug);
+    }
+  }
+
   return prisma.project.create({
     data: {
       name: opts.name ?? faker.commerce.productName(),
@@ -206,7 +222,7 @@ export async function createProject(
       priority: opts.priority ?? Priority.MEDIUM,
       workspaceId,
       createdById,
-      workspaceSlug: (await prisma.workspace.findUnique({ where: { id: workspaceId } }))?.slug ?? 'unknown',
+      workspaceSlug,
     },
   });
 }
@@ -251,8 +267,51 @@ export async function createTask(
   });
 }
 
+/** Clear workspace slug cache (call in test teardown) */
+export function clearFactoryCaches(): void {
+  workspaceSlugCache.clear();
+}
+
 /**
- * Creates N tasks using createMany (faster, no individual record returns).
+ * Clean all test data in proper FK order.
+ * Use this in beforeEach instead of individual deleteMany calls.
+ * Tables with RESTRICT FKs (popular_resources, product_updates) must be
+ * deleted before User.
+ */
+export async function cleanAllTestData(): Promise<void> {
+  const tables = [
+    'focusSession', 'timeEntry', 'dailyTask', 'taskLabel', 'taskAssignee',
+    'taskDependency', 'taskRecurrence', 'commentMention', 'comment',
+    'announcementTarget', 'meetingAttendee', 'featureVote',
+    'projectFavorite', 'projectMember', 'projectMilestone',
+    'projectSection', 'projectView', 'sprint',
+    'calendarDayAggregate', 'goalCheckpoint', 'systemCalendarEvent',
+    'userCapacity', 'userWorkSchedule', 'uploadRateLimit',
+    'energyLevel', 'wellnessRecommendation',
+    'file', 'activity', 'notification',
+    'task', 'label', 'featureRequest', 'announcement', 'meeting', 'project',
+    'burnoutSignal',
+    'invoice', 'subscription', 'payment', 'usageRecord', 'billingEvent',
+    'jobPosting',
+    'workspaceInvitation', 'workspaceMember', 'workspace',
+    'refreshToken', 'session', 'account',
+    'verificationToken', 'passwordResetToken',
+    'contactMessage', 'templateList', 'subscribeList', 'integration',
+    // RESTRICT FKs to User — must come before User
+    'popularResource', 'productUpdate',
+    'user',
+  ];
+  for (const table of tables) {
+    try {
+      await (prisma as any)[table].deleteMany();
+    } catch {
+      // Table may not exist — skip silently
+    }
+  }
+}
+
+/**
+ * Creates an N tasks using createMany (faster, no individual record returns).
  */
 export async function createManyTasks(
   workspaceId: string,
@@ -403,6 +462,18 @@ export async function createActivity(
   workspaceId: string,
   opts: CreateActivityOptions = {}
 ) {
+  // Use cache to avoid extra DB query
+  let workspaceSlug = opts.metadata?.workspaceSlug as string | undefined;
+  if (!workspaceSlug) {
+    if (workspaceSlugCache.has(workspaceId)) {
+      workspaceSlug = workspaceSlugCache.get(workspaceId)!;
+    } else {
+      const ws = await prisma.workspace.findUnique({ where: { id: workspaceId }, select: { slug: true } });
+      workspaceSlug = ws?.slug ?? 'unknown';
+      workspaceSlugCache.set(workspaceId, workspaceSlug);
+    }
+  }
+
   return prisma.activity.create({
     data: {
       action: opts.action ?? 'CREATED',
@@ -410,7 +481,7 @@ export async function createActivity(
       entityId: opts.entityId ?? faker.string.uuid(),
       userId,
       workspaceId,
-      workspaceSlug: (await prisma.workspace.findUnique({ where: { id: workspaceId } }))?.slug ?? 'unknown',
+      workspaceSlug,
       taskId: opts.taskId ?? null,
       metadata: opts.metadata ?? {},
     },

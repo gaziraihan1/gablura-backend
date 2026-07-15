@@ -56,6 +56,7 @@ export default defineConfig({
     setupFiles:  ['./src/tests/setup.ts'],
 
     // singleFork prevents "prepared statement already exists" PG errors
+    // and connection pool exhaustion when many workers hit the same DB.
     pool: 'forks',
     poolOptions: { forks: { singleFork: true } },
 

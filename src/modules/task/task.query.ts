@@ -55,21 +55,12 @@ export const TaskQuery = {
     where = TaskFilters.applyAdditionalFilters(where, filters);
     if (filters.search?.trim()) where = TaskFilters.applySearchFilter(where, filters.search);
 
-    console.log('🔍 Filter Mode:', {
-      projectId:   filters.projectId   || 'none',
-      workspaceId: filters.workspaceId || 'none',
-      type:        filters.type        || 'all',
-      mode:        filters.projectId ? 'PROJECT' : (!filters.workspaceId ? 'PERSONAL' : 'WORKSPACE'),
-    });
-
     const orderBy = TaskFilters.buildOrderBy(sortBy, sortOrder);
 
     const [tasks, totalCount] = await Promise.all([
       prisma.task.findMany({ where, include: taskFullInclude, orderBy, skip, take: pageSize }),
       prisma.task.count({ where }),
     ]);
-
-    console.log(`📊 Found ${totalCount} tasks (showing ${tasks.length} on page ${page})`);
 
     const now = new Date();
     return {
@@ -167,8 +158,6 @@ export const TaskQuery = {
     const cached = await CacheClient.get<TaskStats>(cacheKey);
     if (cached) return cached;
 
-    console.log('📊 Getting stats for:', { userId: params.userId, workspaceId: params.workspaceId || 'none', type: params.type || 'all' });
-
     const baseWhere = !params.workspaceId
       ? TaskFilters.buildPersonalTasksFilter({ userId: params.userId, type: params.type })
       : await TaskFilters.buildWorkspaceTasksFilter({ userId: params.userId, workspaceId: params.workspaceId, type: params.type });
@@ -224,7 +213,6 @@ export const TaskQuery = {
       ),
     };
 
-    console.log('📊 Stats result:', stats);
     CacheClient.set(cacheKey, stats, CACHE_TTL.TASK_STATS).catch(() => {});
     return stats;
   },

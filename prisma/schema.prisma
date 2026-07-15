@@ -413,7 +413,7 @@ model Project {
   slug         String
   announcement Announcement[]
   files        File[]
-  createdBy    User               @relation("ProjectCreator", fields: [createdById], references: [id])
+  createdBy    User               @relation("ProjectCreator", fields: [createdById], references: [id], onDelete: Cascade)
   workspace    Workspace?         @relation(fields: [workspaceId, workspaceSlug], references: [id, slug], onDelete: Cascade)
   favorites    ProjectFavorite[]
   members      ProjectMember[]
@@ -523,7 +523,7 @@ model Task {
   dailyTasks      DailyTask[]
   files           File[]
   focusSessions   FocusSession[]
-  createdBy       User             @relation("TaskCreator", fields: [createdById], references: [id])
+  createdBy       User             @relation("TaskCreator", fields: [createdById], references: [id], onDelete: Cascade)
   parent          Task?            @relation("Subtasks", fields: [parentId], references: [id])
   subtasks        Task[]           @relation("Subtasks")
   project         Project?         @relation(fields: [projectId], references: [id], onDelete: Cascade)
@@ -541,6 +541,7 @@ model Task {
   @@index([priority])
   @@index([dueDate])
   @@index([workspaceId])
+  @@index([parentId])
   @@index([focusRequired])
   @@index([energyType])
   @@index([createdAt])
@@ -610,7 +611,7 @@ model Meeting {
   updatedAt   DateTime          @updatedAt
   workspaceId String
   createdById String
-  createdBy   User              @relation("MeetingCreator", fields: [createdById], references: [id])
+  createdBy   User              @relation("MeetingCreator", fields: [createdById], references: [id], onDelete: Cascade)
   workspace   Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   attendees   MeetingAttendee[]
 
@@ -645,7 +646,7 @@ model Announcement {
   workspaceSlug String
   createdById String
   projectId   String?
-  createdBy   User                   @relation("AnnouncementCreator", fields: [createdById], references: [id])
+  createdBy   User                   @relation("AnnouncementCreator", fields: [createdById], references: [id], onDelete: Cascade)
   project     Project?               @relation(fields: [projectId], references: [id], onDelete: Cascade)
   workspace   Workspace              @relation(fields: [workspaceSlug], references: [slug], onDelete: Cascade)
   targets     AnnouncementTarget[]
@@ -699,7 +700,7 @@ model PopularResource {
   status      ResourceStatus @default(DRAFT)
 
   createdById String
-  createdBy   User           @relation("PopularResourceCreatedBy", fields: [createdById], references: [id])
+  createdBy   User           @relation("PopularResourceCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
 
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
@@ -722,7 +723,7 @@ model ProductUpdate {
   status      ResourceStatus @default(DRAFT)
 
   createdById String
-  createdBy   User           @relation("ProductUpdateCreatedBy", fields: [createdById], references: [id])
+  createdBy   User           @relation("ProductUpdateCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
 
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
@@ -829,7 +830,7 @@ model Label {
   createdAt   DateTime    @default(now())
   workspaceId String?
   createdById String
-  createdBy   User        @relation(fields: [createdById], references: [id])
+  createdBy   User        @relation(fields: [createdById], references: [id], onDelete: Cascade)
   workspace   Workspace?  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   tasks       TaskLabel[]
 
@@ -875,8 +876,8 @@ model CommentMention {
   mentionedByUserId String
   createdAt         DateTime @default(now())
   comment           Comment  @relation(fields: [commentId], references: [id], onDelete: Cascade)
-  mentionedByUser   User     @relation("MentionedBy", fields: [mentionedByUserId], references: [id])
-  mentionedUser     User     @relation("MentionedIn", fields: [mentionedUserId], references: [id])
+  mentionedByUser   User     @relation("MentionedBy", fields: [mentionedByUserId], references: [id], onDelete: Cascade)
+  mentionedUser     User     @relation("MentionedIn", fields: [mentionedUserId], references: [id], onDelete: Cascade)
 
   @@unique([commentId, mentionedUserId])
 }
@@ -897,7 +898,7 @@ model File {
   taskId       String?
   project      Project?   @relation(fields: [projectId], references: [id], onDelete: Cascade)
   task         Task?      @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  uploadedBy   User       @relation(fields: [uploadedById], references: [id])
+  uploadedBy   User       @relation(fields: [uploadedById], references: [id], onDelete: Cascade)
   workspace    Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@index([workspaceId])
@@ -1022,7 +1023,7 @@ model FeatureRequest {
   createdById String
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
-  createdBy   User          @relation(fields: [createdById], references: [id])
+  createdBy   User          @relation(fields: [createdById], references: [id], onDelete: Cascade)
   votes       FeatureVote[]
 
   @@index([status])
@@ -1036,7 +1037,7 @@ model FeatureVote {
   featureRequestId String
   createdAt        DateTime       @default(now())
   featureRequest   FeatureRequest @relation(fields: [featureRequestId], references: [id], onDelete: Cascade)
-  user             User           @relation(fields: [userId], references: [id])
+  user             User           @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, featureRequestId])
   @@index([featureRequestId])

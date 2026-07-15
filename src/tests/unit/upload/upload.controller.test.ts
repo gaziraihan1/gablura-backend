@@ -6,9 +6,24 @@ import { StorageQuery } from '../../../modules/storage/storage.query.js';
 import { Response } from 'express';
 import { AuthRequest } from '../../../middleware/auth.js';
 
-vi.mock('cloudinary');
+vi.mock('cloudinary', () => {
+  const v2: any = {
+    config: vi.fn(),
+    uploader: {
+      upload: vi.fn(),
+      destroy: vi.fn().mockResolvedValue({ result: 'ok' }),
+    },
+  };
+  v2.v2 = v2;
+  return { v2 };
+});
 vi.mock('../../../modules/storage/storage.mutation.js');
 vi.mock('../../../modules/storage/storage.query.js');
+
+// Mock the queue module to prevent job execution in tests
+vi.mock('../../../queue/index.js', () => ({
+  addInvalidateCacheJob: vi.fn().mockResolvedValue(undefined),
+}));
 
 describe('UploadController', () => {
   let mockRequest: Partial<AuthRequest>;
@@ -120,7 +135,7 @@ describe('UploadController', () => {
   describe('uploadFile - Workspace Upload', () => {
     beforeEach(() => {
       mockRequest.body.uploadType = 'file';
-      mockRequest.body.workspaceId = 'workspace-123';
+      mockRequest.body.workspaceId = 'clj1234567890abcdefghijklmnopqrstuvwxyz'; // Valid CUID format
     });
 
     it('should return 400 if workspaceId is missing', async () => {
@@ -136,6 +151,9 @@ describe('UploadController', () => {
     });
 
     it('should return 413 if storage quota is exceeded', async () => {
+      // Ensure workspaceId is valid CUID format
+      mockRequest.body.workspaceId = 'clj1234567890abcdefghijklmnopqrstuvwxyz';
+      
       (StorageMutation.canUploadFile as any).mockResolvedValue({
         allowed: false,
         reason: 'Storage quota exceeded',
@@ -151,6 +169,9 @@ describe('UploadController', () => {
     });
 
     it('should upload file, record in DB, and return 200', async () => {
+      // Ensure workspaceId is valid CUID format
+      mockRequest.body.workspaceId = 'clj1234567890abcdefghijklmnopqrstuvwxyz';
+      
       const mockCloudinaryResult = {
         secure_url: 'https://cloudinary.com/file.jpg',
         public_id: 'file_123',
@@ -186,6 +207,9 @@ describe('UploadController', () => {
     });
 
     it('should destroy cloudinary file if database recording fails', async () => {
+      // Ensure workspaceId is valid CUID format
+      mockRequest.body.workspaceId = 'clj1234567890abcdefghijklmnopqrstuvwxyz';
+      
       const mockCloudinaryResult = {
         secure_url: 'https://cloudinary.com/file.jpg',
         public_id: 'file_123',
@@ -200,10 +224,10 @@ describe('UploadController', () => {
       await uploadFile(mockRequest as AuthRequest, mockResponse as Response);
 
       expect(cloudinary.uploader.destroy).toHaveBeenCalledWith(mockCloudinaryResult.public_id);
-      expect(statusMock).toHaveBeenCalledWith(500);
+      expect(statusMock).toHaveBeenCalledWith(507);
       expect(jsonMock).toHaveBeenCalledWith({
         success: false,
-        message: 'Failed to upload file',
+        message: 'Failed to record file upload',
       });
     });
   });

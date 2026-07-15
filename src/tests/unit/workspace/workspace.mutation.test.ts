@@ -33,6 +33,11 @@ vi.mock("../../../lib/prisma.js", () => ({
   },
 }));
 
+// Mock the queue module to prevent job execution in tests
+vi.mock("../../../queue/index.js", () => ({
+  addInvalidateCacheJob: vi.fn().mockResolvedValue(undefined),
+}));
+
 vi.mock("../../../lib/redis/cache.client.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../../lib/redis/cache.client.js")>();
   return {
@@ -189,7 +194,12 @@ describe("WorkspaceMutation", () => {
   describe("removeMember", () => {
     it("removes member if user is admin", async () => {
       vi.mocked(prisma.workspaceMember.findFirst).mockResolvedValue({ role: "ADMIN" } as any);
-      vi.mocked(prisma.workspaceMember.findUnique).mockResolvedValue({ id: "mem-1", user: { notifications: true }, workspace: { name: "WS" } } as any);
+      vi.mocked(prisma.workspaceMember.findUnique).mockResolvedValue({ 
+        id: "mem-1", 
+        workspaceId: "ws-1",
+        user: { notifications: true }, 
+        workspace: { name: "WS" } 
+      } as any);
 
       await WorkspaceMutation.removeMember("ws-1", mockUser.id, "mem-1");
 
@@ -210,6 +220,10 @@ describe("WorkspaceMutation", () => {
       vi.mocked(prisma.workspaceMember.findFirst).mockResolvedValue({ 
         role: "OWNER", 
         workspace: { name: "WS" } 
+      } as any);
+      vi.mocked(prisma.workspaceMember.findUnique).mockResolvedValue({ 
+        id: "mem-1",
+        workspaceId: "ws-1"
       } as any);
       vi.mocked(prisma.workspaceMember.update).mockResolvedValue({ id: "mem-1", role: "ADMIN" } as any);
 

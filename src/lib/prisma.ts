@@ -98,9 +98,11 @@ export function getPoolMetrics(): PoolMetrics {
 const PRIMARY_URL = process.env.DATABASE_URL;
 if (!PRIMARY_URL) throw new Error("DATABASE_URL env variable is required");
 
+// In test mode, force connection_limit=1 to prevent deadlocks between
+// TRUNCATE (afterEach) and CREATE (beforeEach) on different pool connections.
 const _prisma = new PrismaClient({
   datasources: {
-    db: { url: buildDsn(PRIMARY_URL, primaryPoolSize) },
+    db: { url: buildDsn(PRIMARY_URL, process.env.NODE_ENV === "test" ? 1 : primaryPoolSize) },
   },
   log:
     process.env.NODE_ENV === "development"
@@ -137,41 +139,50 @@ _prisma.$use(async (params, next) => {
 
 // ─── Read replica client ──────────────────────────────────────────────────────
 
-const READ_URL = process.env.READ_DATABASE_URL ?? PRIMARY_URL;
+// In test mode, reuse the primary client to avoid a second connection pool.
+// TRUNCATE (used by setup.ts afterEach/beforeAll) requires ACCESS EXCLUSIVE locks;
+// a separate prismaRead connection would hold conflicting locks and cause 40P01
+// deadlocks when tests run sequentially in the same worker (singleFork: true).
+const _prismaRead: PrismaClient = process.env.NODE_ENV === "test"
+  ? _prisma
+  : new PrismaClient({
+      datasources: {
+        db: { url: buildDsn(
+          process.env.READ_DATABASE_URL ?? PRIMARY_URL,
+          replicaPoolSize,
+        )},
+      },
+      log: process.env.NODE_ENV === "development" ? ["warn", "error"] : ["error"],
+    });
 
-const _prismaRead = new PrismaClient({
-  datasources: {
-    db: { url: buildDsn(READ_URL, replicaPoolSize) },
-  },
-  log: process.env.NODE_ENV === "development" ? ["warn", "error"] : ["error"],
-});
-
-// Add query timeout middleware for read replica
-_prismaRead.$use(async (params, next) => {
-  const startTime = Date.now();
-  
-  try {
-    const result = await Promise.race([
-      next(params),
-      new Promise((_, reject) => 
-        setTimeout(() => reject(new Error("Query timeout")), QUERY_TIMEOUT_MS)
-      )
-    ]) as any;
+if (process.env.NODE_ENV !== "test") {
+  // Add query timeout middleware for read replica
+  _prismaRead.$use(async (params, next) => {
+    const startTime = Date.now();
     
-    const duration = Date.now() - startTime;
-    if (duration > QUERY_TIMEOUT_MS * 0.8) {
-      console.warn(`⚠️  Slow read query detected: ${params.model}.${params.action} took ${duration}ms`);
+    try {
+      const result = await Promise.race([
+        next(params),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error("Query timeout")), QUERY_TIMEOUT_MS)
+        )
+      ]) as any;
+      
+      const duration = Date.now() - startTime;
+      if (duration > QUERY_TIMEOUT_MS * 0.8) {
+        console.warn(`⚠️  Slow read query detected: ${params.model}.${params.action} took ${duration}ms`);
+      }
+      
+      return result;
+    } catch (error: any) {
+      if (error.message === "Query timeout") {
+        console.error(`❌ Read query timeout: ${params.model}.${params.action} exceeded ${QUERY_TIMEOUT_MS}ms`);
+        throw new Error("Database query timeout - please try again", { cause: error });
+      }
+      throw error;
     }
-    
-    return result;
-  } catch (error: any) {
-    if (error.message === "Query timeout") {
-      console.error(`❌ Read query timeout: ${params.model}.${params.action} exceeded ${QUERY_TIMEOUT_MS}ms`);
-      throw new Error("Database query timeout - please try again", { cause: error });
-    }
-    throw error;
-  }
-});
+  });
+}
 
 // ─── Connection health check ───────────────────────────────────────────────────
 

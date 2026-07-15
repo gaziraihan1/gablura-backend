@@ -6,7 +6,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { prisma } from '../../../lib/prisma.js';
 import { FocusSessionQuery } from '../../../modules/focusSession/focusSession.query.js';
-import { createUser, createWorkspaceWithOwner, addMemberToWorkspace, createProject, createTask } from '../../../tests/factories/index.js';
+import { createUser, createWorkspaceWithOwner, addMemberToWorkspace, createProject, createTask, cleanAllTestData } from '../../../tests/factories/index.js';
 
 describe('FocusSessionQuery', () => {
   let user: any;
@@ -17,12 +17,7 @@ describe('FocusSessionQuery', () => {
 
   beforeEach(async () => {
     // Clean up and setup
-    await prisma.focusSession.deleteMany();
-    await prisma.task.deleteMany();
-    await prisma.project.deleteMany();
-    await prisma.workspaceMember.deleteMany();
-    await prisma.workspace.deleteMany();
-    await prisma.user.deleteMany();
+    await cleanAllTestData();
 
     const ownerData = await createWorkspaceWithOwner();
     admin = ownerData.user;

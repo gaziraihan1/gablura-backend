@@ -7,16 +7,9 @@ import {
 } from "../../lib/prisma.js";
 
 describe("Database Connection Pool", () => {
-  beforeAll(async () => {
-    // Ensure database is connected
-    await prisma.$connect();
-    await prismaRead.$connect();
-  });
-
-  afterAll(async () => {
-    await prisma.$disconnect();
-    await prismaRead.$disconnect();
-  });
+  // Note: $connect/$disconnect are intentionally NOT called here because
+  // the shared prisma singleton is managed by setup.ts. Disconnecting it
+  // in a single test file would break all subsequent tests (singleFork mode).
 
   describe("Health Check", () => {
     it("should successfully check database health", async () => {

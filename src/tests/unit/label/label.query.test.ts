@@ -8,19 +8,14 @@ import {
   addMemberToWorkspace,
   createLabel,
   createTask,
+  cleanAllTestData,
 } from '../../factories/index.js';
 import { WorkspaceRole, TaskStatus, Priority } from '@prisma/client';
 
 describe('LabelQuery.getLabels', () => {
   beforeEach(async () => {
     try {
-      // Delete in order of dependency (children first, then parents)
-      await prisma.taskLabel.deleteMany();
-      await prisma.label.deleteMany();
-      await prisma.task.deleteMany();
-      await prisma.workspaceMember.deleteMany();
-      await prisma.workspace.deleteMany();
-      await prisma.user.deleteMany();
+      await cleanAllTestData();
     } catch (e) {
       // Table might not exist yet in the test DB, safe to ignore during setup
     }

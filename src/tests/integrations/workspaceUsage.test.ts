@@ -11,6 +11,7 @@ import {
   createTask,
   createUser,
   createWorkspaceWithOwner,
+  cleanAllTestData,
 } from "../factories/index.js";
 import { authHeaders } from "../helpers/auth.js";
 
@@ -18,15 +19,7 @@ const BASE = "/api/v1/workspace-usage";
 
 describe("WorkspaceUsage integration", () => {
   beforeEach(async () => {
-    await prisma.file.deleteMany();
-    await prisma.activity.deleteMany();
-    await prisma.comment.deleteMany();
-    await prisma.taskAssignee.deleteMany();
-    await prisma.task.deleteMany();
-    await prisma.project.deleteMany();
-    await prisma.workspaceMember.deleteMany();
-    await prisma.workspace.deleteMany();
-    await prisma.user.deleteMany();
+    await cleanAllTestData();
   });
 
   describe("GET /api/v1/workspace-usage/:workspaceId/usage", () => {

@@ -1,5 +1,6 @@
-import { afterAll, afterEach, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, vi } from 'vitest';
 import { prisma } from '../lib/prisma.js';
+import { clearFactoryCaches } from './factories/index.js';
 
 process.env.NODE_ENV = 'test';
 if (process.env.TEST_DATABASE_URL) {
@@ -42,7 +43,7 @@ const createInMemoryRedisMock = () => {
     }),
     decrby: vi.fn(async (key: string, n: number) => {
       const cur = parseInt(redisStore.get(key) ?? '0', 10);
-      const next = Math.max(0, cur - n);
+      const next = Math.max(0, cur + n);
       redisStore.set(key, String(next));
       return next;
     }),
@@ -182,43 +183,60 @@ vi.mock('nodemailer', () => ({
   },
 }));
 
-// ── Table truncation ──────────────────────────────────────────────────────────
+// ── Table cleanup ─────────────────────────────────────────────────────────────
 // All tables that need to be cleaned between tests.
-// Order doesn't matter — PostgreSQL handles FK dependencies via CASCADE.
+// Order matters: child tables BEFORE parent tables (for FK compliance with DELETE).
+// Tables with onDelete: Cascade handle their own children automatically.
+// Tables with onDelete: Restrict (the Prisma default) MUST be deleted before their parent.
+// IMPORTANT: popular_resources and product_updates have RESTRICT FKs to User,
+// so they must appear BEFORE User in this list.
 const ALL_TABLES = [
   'CommentMention', 'Comment', 'TaskLabel', 'TaskAssignee', 'TaskDependency',
   'TaskRecurrence', 'DailyTask', 'TimeEntry', 'FocusSession', 'AnnouncementTarget',
   'MeetingAttendee', 'FeatureVote', 'ProjectFavorite', 'ProjectMember',
   'ProjectMilestone', 'ProjectSection', 'ProjectView', 'Sprint', 'BurnoutSignal',
   'CalendarDayAggregate', 'GoalCheckpoint', 'SystemCalendarEvent', 'UserCapacity',
-  'UserWorkSchedule', 'UploadRateLimit', 'File', 'Activity', 'Notification',
+  'UserWorkSchedule', 'UploadRateLimit',
+  'EnergyLevel', 'WellnessRecommendation',
+  'File', 'Activity', 'Notification',
   'Task', 'Label', 'FeatureRequest', 'Announcement', 'Meeting', 'Project',
   'JobPosting', 'Invoice', 'Subscription', 'Payment', 'UsageRecord', 'BillingEvent',
   'WorkspaceInvitation', 'WorkspaceMember', 'Workspace', 'RefreshToken',
-  'Session', 'Account', 'VerificationToken', 'PasswordResetToken', 'User',
-  'ContactMessage', 'TemplateList', 'SubscribeList', 'Integration', 'popular_resources', 'product_updates',
+  'Session', 'Account', 'VerificationToken', 'PasswordResetToken',
+  // popular_resources and product_updates have RESTRICT FKs to User — must come before User
+  'ContactMessage', 'TemplateList', 'SubscribeList', 'Integration',
+  'popular_resources', 'product_updates',
+  'User',
 ] as const;
 
-// Build a single atomic TRUNCATE statement for all tables.
-// A single TRUNCATE of multiple tables in one statement is fully atomic
-// in PostgreSQL and handles all FK cycles via CASCADE — no ordering needed.
-const TRUNCATE_ALL_SQL = `TRUNCATE TABLE ${
-  ALL_TABLES.map((t) => `"${t}"`).join(', ')
-} RESTART IDENTITY CASCADE`;
+// Build the list of tables that actually exist in the DB.
+let _cachedDeleteTables: string[] | null = null;
+
+async function getDeleteTables(): Promise<string[]> {
+  if (_cachedDeleteTables !== null) return _cachedDeleteTables;
+
+  try {
+    const rows = await prisma.$queryRaw<{ tablename: string }[]>`
+      SELECT tablename FROM pg_tables WHERE schemaname = 'public'
+    `;
+    const existing = new Set(rows.map((r) => r.tablename));
+    _cachedDeleteTables = ALL_TABLES.filter((t) => existing.has(t));
+    return _cachedDeleteTables;
+  } catch {
+    return [];
+  }
+}
 
 // Per-file DB-availability probe.
 // IMPORTANT: We reset this to `null` in afterAll so that the NEXT test file
-// (which shares the same prog
-// If we kept it permanently set to `true` and the connection drops or tables
-// disappear, subsequent files would run a broken truncation silently.
+// (which shares this process if singleFork is true) will re-probe.
 let dbAvailable: boolean | null = null;
 
 async function checkDbAvailable(): Promise<boolean> {
   if (dbAvailable !== null) return dbAvailable;
   try {
-    // Quick ping to confirm the connection is alive
+    await prisma.$connect();
     await prisma.$queryRaw`SELECT 1`;
-    // Check that the core schema has actually been applied
     const result = await prisma.$queryRaw<{ exists: boolean }[]>`
       SELECT EXISTS (
         SELECT FROM information_schema.tables
@@ -226,39 +244,65 @@ async function checkDbAvailable(): Promise<boolean> {
           AND table_name = 'User'
       ) AS "exists"`;
     dbAvailable = result[0]?.exists === true;
-  } catch {
+  } catch (error) {
+    console.warn('[setup] Database check failed:', error);
     dbAvailable = false;
   }
   return dbAvailable;
 }
 
-afterEach(async () => {
-  // Always clear the in-memory Redis mock, even when the DB is unavailable.
+// DELETE all test data between tests.
+// Each DELETE is an individual statement. If one deadlocks (40P01), it is
+// retried once — deadlocks are transient and a retry almost always succeeds.
+async function deleteAllTables(): Promise<void> {
+  const tables = await getDeleteTables();
+  for (const table of tables) {
+    try {
+      await prisma.$executeRawUnsafe(`DELETE FROM "${table}"`);
+    } catch (err: any) {
+      // Retry once on deadlock (PostgreSQL error code 40P01)
+      if (err?.code === '40P01') {
+        await prisma.$executeRawUnsafe(`DELETE FROM "${table}"`);
+      }
+      // FK violations during partial cleanup are non-fatal — skip silently
+    }
+  }
+}
+
+beforeAll(async () => {
   redisStore.clear();
-
-  if (!(await checkDbAvailable())) return;
-
-  // Single atomic TRUNCATE: faster than 47 sequential calls, and fully
-  // consistent — PostgreSQL either cleans everything or nothing.
+  clearFactoryCaches();
   try {
-    await prisma.$executeRawUnsafe(TRUNCATE_ALL_SQL);
+    await prisma.$connect();
+  } catch (error) {
+    console.warn('[setup] Failed to connect to database:', error);
+  }
+  if (!(await checkDbAvailable())) return;
+  try {
+    await deleteAllTables();
   } catch (err: any) {
-    // If the truncation fails, the next test's beforeEach will also fail.
-    // Log clearly so the failure is visible rather than silently swallowed.
-    // Then reset the probe so we re-check on the next afterEach.
-    console.warn('[setup] afterEach TRUNCATE failed (DB may have reset):', err?.message ?? err);
+    console.warn('[setup] beforeAll DELETE failed:', err?.message ?? err);
+    dbAvailable = null;
+  }
+});
+
+afterEach(async () => {
+  redisStore.clear();
+  if (!(await checkDbAvailable())) return;
+  try {
+    await deleteAllTables();
+  } catch (err: any) {
+    console.warn('[setup] afterEach DELETE failed (DB may have reset):', err?.message ?? err);
     dbAvailable = null;
   }
 });
 
 afterEach(() => {
-  // Clear admin IDs registered during this test.
   process.env.FOCURA_ADMIN_IDS = '';
 });
 
 afterAll(async () => {
-  // Reset the probe so the next test FILE (which shares this process in
-  // singleFork mode) will re-probe DB availability from scratch.
   dbAvailable = null;
+  _cachedDeleteTables = null;
   await prisma.$disconnect();
 });

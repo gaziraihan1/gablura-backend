@@ -20,3 +20,5 @@ PERFORMANCE_TESTING.md
 performance/results/
 .devin
 .mimocode
+debug-*.ts
+debug-*.mjs

@@ -8,21 +8,19 @@ import { authHeaders, TestUser } from "../helpers/auth.js";
 import { getRedisClient } from "../../redis/redis.client.js";
 import * as adminConfig from "../../config/admin.config.js";
 
-let adminUserId: string;
-
 describe("Templates Module Integration Tests", () => {
   let adminUser: TestUser;
+  let isFocuraAdminSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(async () => {
     adminUser = await createUser({ role: "ADMIN" });
-    adminUserId = adminUser.id;
-    vi.spyOn(adminConfig, "isFocuraAdmin").mockImplementation((userId: string) => {
-      return userId === adminUserId;
+    isFocuraAdminSpy = vi.spyOn(adminConfig, "isFocuraAdmin").mockImplementation((userId: string) => {
+      return userId === adminUser.id;
     });
   });
 
   afterEach(() => {
-    vi.restoreAllMocks();
+    isFocuraAdminSpy?.mockRestore();
   });
 
   describe("POST /api/v1/templates", () => {
@@ -65,11 +63,10 @@ describe("Templates Module Integration Tests", () => {
       const emailBase = `rate-${Date.now()}@example.com`;
       const fixedIp = `test-ip-${Date.now()}`;
 
-      // Mock Redis pipeline to reliably trigger 429
       const slidingWindowCounts = new Map<string, number[]>();
       const redis = getRedisClient();
       
-      vi.spyOn(redis, "pipeline").mockImplementation(() => {
+      const pipelineSpy = vi.spyOn(redis, "pipeline").mockImplementation(() => {
         let pendingKey: string | null = null;
         let windowBound: number | null = null;
 
@@ -95,21 +92,25 @@ describe("Templates Module Integration Tests", () => {
         return pipelineMock as any;
       });
 
-      // Exhaust the limit (max = 5)
-      for (let i = 0; i < 6; i++) {
-        await request(app)
+      try {
+        // Exhaust the limit (max = 5)
+        for (let i = 0; i < 6; i++) {
+          await request(app)
+            .post("/api/v1/templates")
+            .set("x-forwarded-for", fixedIp)
+            .send({ email: `${i}-${emailBase}` });
+        }
+
+        const res = await request(app)
           .post("/api/v1/templates")
           .set("x-forwarded-for", fixedIp)
-          .send({ email: `${i}-${emailBase}` });
+          .send({ email: `overflow-${emailBase}` });
+
+        expect(res.status).toBe(429);
+        expect(res.body.error).toBe("Too many requests");
+      } finally {
+        pipelineSpy.mockRestore();
       }
-
-      const res = await request(app)
-        .post("/api/v1/templates")
-        .set("x-forwarded-for", fixedIp)
-        .send({ email: `overflow-${emailBase}` });
-
-      expect(res.status).toBe(429);
-      expect(res.body.error).toBe("Too many requests");
     });
   });
 

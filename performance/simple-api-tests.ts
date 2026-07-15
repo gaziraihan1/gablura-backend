@@ -66,7 +66,7 @@ class SimpleApiPerformanceTester {
       console.log(`   Latency (avg): ${result.latency.mean.toFixed(2)}ms`);
       console.log(`   Latency (p95): ${p95.toFixed(2)}ms`);
       console.log(`   Latency (p99): ${p99.toFixed(2)}ms`);
-      console.log(`   Errors: ${result.errors} (${((result.errors / result.requests.total) * 100).toFixed(2)}%)`);
+      console.log(`   Errors: ${result.errors} (${result.requests.total > 0 ? ((result.errors / result.requests.total) * 100).toFixed(2) : '100.00'}%)`);
 
       return {
         name: config.name,

@@ -15,7 +15,7 @@
 
 import { execSync }          from 'child_process';
 import { generateKeyPairSync } from 'crypto';
-import { writeFileSync, existsSync, unlinkSync } from 'fs';
+import { writeFileSync, existsSync, unlinkSync, renameSync } from 'fs';
 import { tmpdir }            from 'os';
 import path                  from 'path';
 
@@ -68,7 +68,20 @@ export async function setup() {
   }
 
   console.log('🔧 [globalSetup] Pushing schema to test database...');
-  
+
+  // Prisma CLI always loads .env which overrides process.env.
+  // Temporarily rename .env so our passed DATABASE_URL takes effect,
+  // then restore it after the push/seed commands complete.
+  const envPath = path.join(process.cwd(), '.env');
+  const envBakPath = envPath + '.bak';
+  let hadEnv = false;
+  if (existsSync(envPath)) {
+    renameSync(envPath, envBakPath);
+    hadEnv = true;
+  }
+
+  let pushError: Error | null = null;
+
   try {
     execSync('npx prisma db push --force-reset', {
       env: {
@@ -78,9 +91,9 @@ export async function setup() {
         NODE_ENV:     'test',
       },
       stdio: 'pipe',
-      timeout: 60000, // 60 second timeout
+      timeout: 60000,
     });
-    
+
     console.log('🌱 [globalSetup] Seeding test database...');
     execSync('npm run db:seed', {
       env: {
@@ -90,13 +103,21 @@ export async function setup() {
         NODE_ENV:     'test',
       },
       stdio: 'pipe',
-      timeout: 30000, // 30 second timeout
+      timeout: 60000,
     });
 
     console.log('✅ [globalSetup] Test database ready and seeded.\n');
   } catch (err) {
-    const msg = (err as any).stderr?.toString() ?? (err as Error).message;
-    console.error('❌ [globalSetup] prisma db push failed:\n', msg);
+    pushError = err as Error;
+  } finally {
+    if (hadEnv) {
+      try { renameSync(envBakPath, envPath); } catch {}
+    }
+  }
+
+  if (pushError) {
+    const msg = (pushError as any).stderr?.toString() ?? pushError.message;
+    console.error('❌ [globalSetup] failed:\n', msg);
     process.exit(1);
   }
 }

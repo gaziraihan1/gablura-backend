@@ -9,8 +9,8 @@ import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-vi.mock('cloudinary', () => ({
-  v2: {
+vi.mock('cloudinary', () => {
+  const v2: any = {
     config: vi.fn(),
     uploader: {
       upload: vi.fn().mockResolvedValue({
@@ -22,8 +22,10 @@ vi.mock('cloudinary', () => ({
       }),
       destroy: vi.fn().mockResolvedValue({ result: 'ok' }),
     },
-  },
-}));
+  };
+  v2.v2 = v2;
+  return { v2 };
+});
 
 vi.mock('../../middleware/auth.js', () => ({
   authenticate: (req: any, res: any, next: any) => {

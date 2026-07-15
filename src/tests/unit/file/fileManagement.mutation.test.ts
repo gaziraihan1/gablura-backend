@@ -6,7 +6,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { prisma } from '../../../lib/prisma.js';
 import { FileManagementMutation } from '../../../modules/file/fileManagement.mutation.js';
-import { createWorkspaceWithOwner, createUser, addMemberToWorkspace } from '../../../tests/factories/index.js';
+import { createWorkspaceWithOwner, createUser, addMemberToWorkspace, cleanAllTestData } from '../../../tests/factories/index.js';
 import { NotFoundError, ForbiddenError } from '../../../errors/index.js';
 import { WorkspaceRole } from '@prisma/client';
 
@@ -17,10 +17,7 @@ describe('FileManagementMutation', () => {
 
   beforeEach(async () => {
     // Clean up and setup
-    await prisma.file.deleteMany();
-    await prisma.workspaceMember.deleteMany();
-    await prisma.workspace.deleteMany();
-    await prisma.user.deleteMany();
+    await cleanAllTestData();
 
     const ownerData = await createWorkspaceWithOwner();
     user = ownerData.user;

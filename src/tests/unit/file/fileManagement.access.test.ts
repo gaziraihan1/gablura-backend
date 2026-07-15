@@ -7,7 +7,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { prisma } from '../../../lib/prisma.js';
 import { FileManagementAccess } from '../../../modules/file/fileManagement.access.js';
 import { ForbiddenError } from '../../../errors/index.js';
-import { createWorkspaceWithOwner, createUser, addMemberToWorkspace } from '../../../tests/factories/index.js';
+import { createWorkspaceWithOwner, createUser, addMemberToWorkspace, cleanAllTestData } from '../../../tests/factories/index.js';
 
 describe('FileManagementAccess', () => {
   let user: any;
@@ -16,10 +16,7 @@ describe('FileManagementAccess', () => {
 
   beforeEach(async () => {
     // Clean up and setup
-    await prisma.file.deleteMany();
-    await prisma.workspaceMember.deleteMany();
-    await prisma.workspace.deleteMany();
-    await prisma.user.deleteMany();
+    await cleanAllTestData();
 
     const ownerData = await createWorkspaceWithOwner();
     user = ownerData.user;

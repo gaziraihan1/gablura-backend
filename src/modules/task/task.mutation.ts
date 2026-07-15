@@ -1,6 +1,6 @@
 import { prisma }          from '../../lib/prisma.js';
 import type { CreateTaskInput, UpdateTaskInput } from './task.types.js';
-import { taskFullInclude, taskWithAssigneesInclude } from './task.selects.js';
+import { taskFullInclude } from './task.selects.js';
 import { TaskAccess }      from './task.access.js';
 import { getTimeStatus }   from './task.utils.js';
 import {
@@ -8,63 +8,12 @@ import {
   checkAndConsumeWorkspaceQuota,
   rollbackPersonalQuota,
   rollbackWorkspaceQuota,
+  resolveUserPlan,
+  resolveWorkspacePlan,
 } from './task.quota.service.js';
-import { AnalyticsCache, WorkspaceCache, TaskCache, CalendarCache, AccessControlCache } from '../../lib/redis/cache.client.js';
-import { getRedisClient }  from '../../redis/redis.client.js';
 import { ProjectAccess }   from '../project/project.access.js';
 import { BadRequestError, ForbiddenError, NotFoundError } from '../../errors/index.js';
 import { addInvalidateCacheJob } from '../../queue/index.js';
-
-// ─── Plan resolution ──────────────────────────────────────────────────────────
-
-async function resolveUserPlan(userId: string): Promise<'FREE' | 'PRO'> {
-  const cacheKey = `plan:user:${userId}`;
-  const redis    = getRedisClient();
-
-  const cached = await redis.get(cacheKey);
-  if (cached) return (cached === 'PRO' ? 'PRO' : 'FREE') as 'FREE' | 'PRO';
-
-  const bestSub = await prisma.subscription.findFirst({
-    where: {
-      workspace: { ownerId: userId },
-      status:    { in: ['ACTIVE', 'TRIALING'] },
-    },
-    orderBy: { createdAt: 'desc' },
-    select:  { plan: { select: { name: true } } },
-  });
-
-  const planName = bestSub?.plan.name ?? 'FREE';
-  await redis.setex(cacheKey, 600, planName);
-  return (planName === 'PRO' ? 'PRO' : 'FREE') as 'FREE' | 'PRO';
-}
-
-async function resolveWorkspacePlan(
-  workspaceId: string,
-): Promise<'FREE' | 'PRO' | 'BUSINESS' | 'ENTERPRISE'> {
-  const cacheKey = `plan:workspace:${workspaceId}`;
-  const redis    = getRedisClient();
-
-  const cached = await redis.get(cacheKey);
-  if (cached) {
-    if (cached === 'ENTERPRISE') return 'ENTERPRISE';
-    if (cached === 'BUSINESS')   return 'BUSINESS';
-    if (cached === 'PRO')        return 'PRO';
-    return 'FREE';
-  }
-
-  const ws = await prisma.workspace.findUnique({
-    where:  { id: workspaceId },
-    select: { plan: true },
-  });
-
-  const planName = (ws?.plan ?? 'FREE') as string;
-  await redis.setex(cacheKey, 600, planName);
-
-  if (planName === 'ENTERPRISE') return 'ENTERPRISE';
-  if (planName === 'BUSINESS')   return 'BUSINESS';
-  if (planName === 'PRO')        return 'PRO';
-  return 'FREE';
-}
 
 // ─── Callback types ───────────────────────────────────────────────────────────
 
@@ -133,13 +82,11 @@ export const TaskMutation = {
       );
       if (!quota.allowed) throw new BadRequestError(quota.reason ?? 'Workspace task creation limit reached');
       quotaConsumed = 'workspace';
-      console.log(`📊 Workspace quota consumed — ${quota.remaining ?? '∞'} remaining`);
     } else {
       const plan  = await resolveUserPlan(data.createdById);
       const quota = await checkAndConsumePersonalQuota(data.createdById, plan);
       if (!quota.allowed) throw new BadRequestError(quota.reason ?? 'Daily personal task creation limit reached');
       quotaConsumed = 'personal';
-      console.log(`📊 Personal quota consumed — ${quota.remaining} remaining today`);
     }
 
     let computedPriority = data.priority ?? 'MEDIUM';
@@ -185,8 +132,6 @@ export const TaskMutation = {
       throw dbError;
     }
 
-    console.log(`✨ Task created: "${task.title}" (ID: ${task.id})`);
-
     if (finalWorkspaceId) {
       addInvalidateCacheJob({ type: 'analytics', workspaceId: finalWorkspaceId }).catch(() => {});
       addInvalidateCacheJob({ type: 'workspace', workspaceId: finalWorkspaceId }).catch(() => {});
@@ -212,11 +157,8 @@ export const TaskMutation = {
       throw new ForbiddenError(permission.reason || 'You do not have permission to edit this task');
     }
 
-    const existingTask = await prisma.task.findUnique({
-      where:   { id: taskId },
-      include: { project: true, assignees: true },
-    });
-    if (!existingTask) throw new NotFoundError('Task');
+    // Reuse task data from permission check (avoids redundant DB query)
+    const existingTask = permission.task!;
     if (existingTask.projectId) {
       await ProjectAccess.assertProjectNotArchived(existingTask.projectId);
     }
@@ -263,8 +205,6 @@ export const TaskMutation = {
       data:    updateData,
       include: taskFullInclude,
     });
-
-    console.log(`✏️  Task updated: "${task.title}" (ID: ${task.id})`);
 
     if (existingTask.workspaceId) {
       addInvalidateCacheJob({ type: 'analytics', workspaceId: existingTask.workspaceId }).catch(() => {});
@@ -319,11 +259,8 @@ export const TaskMutation = {
       throw new ForbiddenError(permission.reason || 'You do not have permission to change this task status');
     }
 
-    const existingTask = await prisma.task.findUnique({
-      where:   { id: taskId },
-      include: taskWithAssigneesInclude,
-    });
-    if (!existingTask) throw new NotFoundError('Task');
+    // Reuse task data from permission check (avoids redundant DB query)
+    const existingTask = permission.task!;
     if (existingTask.projectId) {
       await ProjectAccess.assertProjectNotArchived(existingTask.projectId);
     }
@@ -335,8 +272,6 @@ export const TaskMutation = {
       data:    { status: status as any, ...(wasCompleted && { completedAt: new Date() }) },
       include: taskFullInclude,
     });
-
-    console.log(`🔄 Task status updated: "${existingTask.title}" → ${status}`);
 
     if (existingTask.workspaceId) {
       addInvalidateCacheJob({ type: 'analytics', workspaceId: existingTask.workspaceId }).catch(() => {});
@@ -364,8 +299,6 @@ export const TaskMutation = {
 
     const workspaceId = task.workspaceId;
     await prisma.task.delete({ where: { id: taskId } });
-
-    console.log(`🗑️  Task deleted: "${task.title}" (ID: ${task.id})`);
 
     if (workspaceId) {
       addInvalidateCacheJob({ type: 'analytics', workspaceId }).catch(() => {});

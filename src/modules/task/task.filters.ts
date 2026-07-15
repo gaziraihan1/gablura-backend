@@ -52,10 +52,6 @@ export const TaskFilters = {
     };
 
     if (isWorkspaceAdmin) {
-      console.log(
-        "👑 User is workspace OWNER/ADMIN - showing all workspace tasks",
-      );
-
       if (filters.type === "assigned") {
         return {
           AND: [
@@ -73,8 +69,6 @@ export const TaskFilters = {
 
       return baseWorkspaceCondition;
     }
-
-    console.log("👤 User is workspace MEMBER - filtering by involvement");
 
     const userInvolvementConditions = {
       OR: [

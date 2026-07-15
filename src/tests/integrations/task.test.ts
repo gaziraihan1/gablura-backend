@@ -66,6 +66,8 @@ vi.mock("../../modules/task/task.quota.service.js", () => ({
     resetAt: new Date(),
     perMemberBreakdown: [],
   }),
+  resolveWorkspacePlan: vi.fn().mockResolvedValue("FREE"),
+  resolveUserPlan: vi.fn().mockResolvedValue("FREE"),
 }));
 
 beforeEach(async () => {
@@ -121,6 +123,12 @@ async function createManyWorkspaceTasks(
   count: number,
   opts: { status?: TaskStatus; priority?: Priority } = {},
 ) {
+  // Ensure user exists before creating tasks
+  const user = await prisma.user.findUnique({ where: { id: createdById } });
+  if (!user) {
+    throw new Error(`User with ID ${createdById} does not exist`);
+  }
+  
   const project = await prisma.project.create({
     data: {
       name: `Bulk-${Date.now()}`,

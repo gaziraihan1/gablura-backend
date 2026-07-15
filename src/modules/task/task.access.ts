@@ -20,6 +20,8 @@ export const TaskAccess = {
           createdById: true,
           projectId:   true,
           workspaceId: true,
+          status:      true,
+          assignees:   { select: { userId: true } },
         },
       });
 
