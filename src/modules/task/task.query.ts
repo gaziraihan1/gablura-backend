@@ -5,33 +5,44 @@ import { TaskFilters }   from './task.filters.js';
 import { getTimeStatus } from './task.utils.js';
 import { CacheClient, CACHE_KEYS, CACHE_TTL } from '../../lib/redis/cache.client.js';
 import { NotFoundError } from '../../errors/index.js';
-import { Prisma, TaskStatus } from '@prisma/client';
+import { TaskStatus } from '@prisma/client';
+
+function isTaskOverdue(
+  task: { estimatedHours: number | null; actualHours: number | null; dueDate: Date | null; createdAt: Date },
+  now: Date,
+): boolean {
+  if (task.estimatedHours != null && task.actualHours != null) {
+    return task.actualHours > task.estimatedHours;
+  }
+  if (task.estimatedHours != null && task.actualHours == null) {
+    const elapsedHours = (now.getTime() - task.createdAt.getTime()) / 3_600_000;
+    return elapsedHours > task.estimatedHours;
+  }
+  if (task.estimatedHours == null && task.dueDate != null) {
+    return task.dueDate < now;
+  }
+  return false;
+}
 
 async function countOverdueTasks(baseWhere: Record<string, unknown>, now: Date): Promise<number> {
-  // Step 1: Get scoped task IDs via Prisma (respects complex baseWhere filter)
-  const scopedIds = await prisma.task.findMany({
-    where:  { ...baseWhere, status: { notIn: ['COMPLETED', 'CANCELLED'] } },
-    select: { id: true },
+  // Single DB round-trip: fetch only the fields needed for overdue evaluation,
+  // then filter in JS. This avoids the previous 2-query pattern (findMany IDs
+  // → second $queryRaw with ARRAY[...]) and the huge array parameter.
+  const scoped = await prisma.task.findMany({
+    where: { ...baseWhere, status: { notIn: ['COMPLETED', 'CANCELLED'] as TaskStatus[] } },
+    select: {
+      estimatedHours: true,
+      actualHours:    true,
+      dueDate:        true,
+      createdAt:      true,
+    },
   });
 
-  if (scopedIds.length === 0) return 0;
-
-  const ids = scopedIds.map((t) => t.id);
-
-  // Step 2: Count overdue tasks among the scoped IDs
-  const result = await prisma.$queryRaw<[{ count: bigint }]>`
-    SELECT COUNT(*)::int AS count
-    FROM   "Task"
-    WHERE  id = ANY(${Prisma.sql`ARRAY[${Prisma.join(ids)}]::text[]`})
-      AND  status NOT IN ('COMPLETED', 'CANCELLED')
-      AND  (
-             ("estimatedHours" IS NOT NULL AND "actualHours" IS NOT NULL AND "actualHours" > "estimatedHours")
-             OR ("estimatedHours" IS NOT NULL AND "actualHours" IS NULL
-                 AND EXTRACT(EPOCH FROM (${now}::timestamptz - "createdAt")) / 3600 > "estimatedHours")
-             OR ("estimatedHours" IS NULL AND "dueDate" IS NOT NULL AND "dueDate" < ${now})
-           )
-  `;
-  return Number(result[0].count);
+  let count = 0;
+  for (const task of scoped) {
+    if (isTaskOverdue(task, now)) count++;
+  }
+  return count;
 }
 
 export const TaskQuery = {

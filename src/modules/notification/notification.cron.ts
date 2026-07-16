@@ -52,10 +52,6 @@ async function wasSent(key: string): Promise<boolean> {
   return !!val;
 }
 
-async function markSent(key: string): Promise<void> {
-  await getRedisClient().setex(key, NOTIF_TTL_S, "1"); // ioredis: setex(key, ttl, value)
-}
-
 // ─── DB cursor pagination ─────────────────────────────────────────────────────
 
 async function fetchTaskPage(cursor?: string) {
@@ -146,18 +142,34 @@ async function processPendingNotifs(pending: PendingNotif[]): Promise<number> {
   const toSend = pending.filter((_, i) => !sentFlags[i]);
   if (toSend.length === 0) return 0;
 
+  // Send all notifications in parallel.
   const results = await Promise.allSettled(
-    toSend.map(async (n) => {
-      await notifyUser({
+    toSend.map((n) =>
+      notifyUser({
         userId:    n.userId,
         type:      n.type,
         title:     n.title,
         message:   n.message,
         actionUrl: n.actionUrl,
-      });
-      await markSent(n.key);
-    }),
+      }),
+    ),
   );
+
+  // Batch all markSent calls into a single Redis pipeline —
+  // one round-trip instead of N individual setex calls.
+  const succeededKeys: string[] = [];
+  for (let i = 0; i < results.length; i++) {
+    if (results[i].status === "fulfilled") succeededKeys.push(toSend[i].key);
+  }
+
+  if (succeededKeys.length > 0) {
+    const redis = getRedisClient();
+    const pipeline = redis.pipeline();
+    for (const key of succeededKeys) {
+      pipeline.setex(key, NOTIF_TTL_S, "1");
+    }
+    await pipeline.exec();
+  }
 
   const failed = results.filter((r) => r.status === "rejected");
   if (failed.length > 0) {

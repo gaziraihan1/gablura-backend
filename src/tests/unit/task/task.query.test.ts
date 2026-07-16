@@ -137,12 +137,59 @@ describe("TaskQuery", () => {
       vi.mocked(TaskFilters.buildPersonalTasksFilter).mockReturnValue({});
       vi.mocked(prisma.task.count).mockResolvedValue(10);
       vi.mocked(prisma.task.groupBy).mockResolvedValue([] as any);
-      vi.mocked(prisma.$queryRaw).mockResolvedValue([{ count: 0n }] as any);
+      // countOverdueTasks now uses prisma.task.findMany (single query, JS filter)
+      vi.mocked(prisma.task.findMany).mockResolvedValue([]);
 
       const result = await TaskQuery.getTaskStats({ userId: "u1" });
 
       expect(result.totalTasks).toBe(10);
+      expect(result.overdue).toBe(0);
       expect(CacheClient.set).toHaveBeenCalled();
+    });
+
+    it("should count overdue tasks with actualHours > estimatedHours", async () => {
+      vi.mocked(CacheClient.get).mockResolvedValue(null);
+      vi.mocked(TaskFilters.buildPersonalTasksFilter).mockReturnValue({});
+      vi.mocked(prisma.task.count).mockResolvedValue(5);
+      vi.mocked(prisma.task.groupBy).mockResolvedValue([] as any);
+      vi.mocked(prisma.task.findMany).mockResolvedValue([
+        { estimatedHours: 5, actualHours: 8, dueDate: null, createdAt: new Date() },
+        { estimatedHours: 10, actualHours: 3, dueDate: null, createdAt: new Date() },
+      ] as any);
+
+      const result = await TaskQuery.getTaskStats({ userId: "u1" });
+
+      expect(result.overdue).toBe(1);
+    });
+
+    it("should count overdue tasks with estimatedHours elapsed", async () => {
+      vi.mocked(CacheClient.get).mockResolvedValue(null);
+      vi.mocked(TaskFilters.buildPersonalTasksFilter).mockReturnValue({});
+      vi.mocked(prisma.task.count).mockResolvedValue(5);
+      vi.mocked(prisma.task.groupBy).mockResolvedValue([] as any);
+      const twoDaysAgo = new Date(Date.now() - 48 * 3_600_000);
+      vi.mocked(prisma.task.findMany).mockResolvedValue([
+        { estimatedHours: 2, actualHours: null, dueDate: null, createdAt: twoDaysAgo },
+      ] as any);
+
+      const result = await TaskQuery.getTaskStats({ userId: "u1" });
+
+      expect(result.overdue).toBe(1);
+    });
+
+    it("should count overdue tasks with past dueDate", async () => {
+      vi.mocked(CacheClient.get).mockResolvedValue(null);
+      vi.mocked(TaskFilters.buildPersonalTasksFilter).mockReturnValue({});
+      vi.mocked(prisma.task.count).mockResolvedValue(5);
+      vi.mocked(prisma.task.groupBy).mockResolvedValue([] as any);
+      const yesterday = new Date(Date.now() - 86_400_000);
+      vi.mocked(prisma.task.findMany).mockResolvedValue([
+        { estimatedHours: null, actualHours: null, dueDate: yesterday, createdAt: new Date() },
+      ] as any);
+
+      const result = await TaskQuery.getTaskStats({ userId: "u1" });
+
+      expect(result.overdue).toBe(1);
     });
   });
 

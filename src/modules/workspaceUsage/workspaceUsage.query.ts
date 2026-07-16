@@ -438,67 +438,68 @@ export const WorkspaceUsageQuery = {
 
     const projectIds = projects.map((p) => p.id);
 
-    // Fetch tasks belonging to these projects (id → projectId lookup).
-    const tasks = await prisma.task.findMany({
-      where: { projectId: { in: projectIds } },
-      select: { id: true, projectId: true },
-    });
-    const taskProjectMap = new Map(tasks.map((t) => [t.id, t.projectId!]));
-
-    // Aggregate comments & recent activity per project in parallel.
-    const [commentsByProject, activitiesByProject, lastActivities] = await Promise.all([
-      prisma.comment
-        .groupBy({
-          by: ["taskId"],
-          where: { task: { projectId: { in: projectIds } } },
-          _count: { id: true },
-        })
-        .then((counts) => {
-          const map = new Map<string, number>();
-          for (const c of counts) {
-            const projId = taskProjectMap.get(c.taskId);
-            if (projId) map.set(projId, (map.get(projId) ?? 0) + c._count.id);
-          }
-          return map;
-        }),
-
-      prisma.activity
-        .groupBy({
-          by: ["taskId"],
-          where: {
-            task: { projectId: { in: projectIds } },
-            createdAt: { gte: thirtyDaysAgo },
-          },
-          _count: { id: true },
-        })
-        .then((counts) => {
-          const map = new Map<string, number>();
-          for (const c of counts) {
-            if (c.taskId) {
-              const projId = taskProjectMap.get(c.taskId);
-              if (projId) map.set(projId, (map.get(projId) ?? 0) + c._count.id);
-            }
-          }
-          return map;
-        }),
-
-      // Most-recent activity per project: fetch ordered rows, take first per project.
-      prisma.activity
-        .findMany({
-          where: { task: { projectId: { in: projectIds } } },
-          select: { taskId: true, createdAt: true },
-          orderBy: { createdAt: "desc" },
-        })
-        .then((rows) => {
-          const map = new Map<string, Date>();
-          for (const { taskId, createdAt } of rows) {
-            if (!taskId) continue;
-            const projId = taskProjectMap.get(taskId);
-            if (projId && !map.has(projId)) map.set(projId, createdAt);
-          }
-          return map;
-        }),
+    // Run the three aggregation queries in parallel. These return taskId-based
+    // results which we'll map to projectId after fetching the minimal task set.
+    const [commentCounts, activityCounts, lastActivityRows] = await Promise.all([
+      prisma.comment.groupBy({
+        by: ["taskId"],
+        where: { task: { projectId: { in: projectIds } } },
+        _count: { id: true },
+      }),
+      prisma.activity.groupBy({
+        by: ["taskId"],
+        where: {
+          task: { projectId: { in: projectIds } },
+          createdAt: { gte: thirtyDaysAgo },
+        },
+        _count: { id: true },
+      }),
+      // Most-recent activity per project: groupBy taskId with _max createdAt,
+      // instead of fetching all activity rows ordered.
+      prisma.activity.groupBy({
+        by: ["taskId"],
+        where: { task: { projectId: { in: projectIds } } },
+        _max: { createdAt: true },
+      }),
     ]);
+
+    // Collect only the taskIds referenced by the aggregation results.
+    const referencedTaskIds = new Set<string>();
+    for (const c of commentCounts) referencedTaskIds.add(c.taskId);
+    for (const c of activityCounts) if (c.taskId) referencedTaskIds.add(c.taskId);
+    for (const r of lastActivityRows) if (r.taskId) referencedTaskIds.add(r.taskId);
+
+    // Fetch only the tasks we actually need for the taskId → projectId mapping
+    // (much smaller than fetching ALL tasks in the workspace).
+    const referencedTasks = referencedTaskIds.size > 0
+      ? await prisma.task.findMany({
+          where: { id: { in: Array.from(referencedTaskIds) } },
+          select: { id: true, projectId: true },
+        })
+      : [];
+    const taskProjectMap = new Map(referencedTasks.map((t) => [t.id, t.projectId!]));
+
+    // Map aggregation results to projectId.
+    const commentsByProject = new Map<string, number>();
+    for (const c of commentCounts) {
+      const projId = taskProjectMap.get(c.taskId);
+      if (projId) commentsByProject.set(projId, (commentsByProject.get(projId) ?? 0) + c._count.id);
+    }
+
+    const activitiesByProject = new Map<string, number>();
+    for (const c of activityCounts) {
+      if (c.taskId) {
+        const projId = taskProjectMap.get(c.taskId);
+        if (projId) activitiesByProject.set(projId, (activitiesByProject.get(projId) ?? 0) + c._count.id);
+      }
+    }
+
+    const lastActivities = new Map<string, Date>();
+    for (const { taskId, _max } of lastActivityRows) {
+      if (!taskId || !_max.createdAt) continue;
+      const projId = taskProjectMap.get(taskId);
+      if (projId && !lastActivities.has(projId)) lastActivities.set(projId, _max.createdAt);
+    }
 
     const now = new Date();
 

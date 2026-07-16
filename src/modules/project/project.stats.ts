@@ -6,9 +6,12 @@ export function calculateProjectStats(project: ProjectForStats): ProjectStats {
   let completedTasks  = 0;
   let inProgressTasks = 0;
   let overdueTasks    = 0;
-  const completedAssignees: Array<{
-    id: string; name: string | null; email: string; image: string | null;
-  }> = [];
+
+  // Count assignees on completed tasks directly in a single pass —
+  // avoids collecting into an intermediate array and then reducing.
+  const assigneeCounts = new Map<string, number>();
+  let topPerformerId: string | null = null;
+  let topPerformerCount = 0;
 
   for (const task of project.tasks) {
     const isCompleted = task.status === 'COMPLETED';
@@ -18,7 +21,13 @@ export function calculateProjectStats(project: ProjectForStats): ProjectStats {
     if (isCompleted) {
       completedTasks++;
       for (const a of task.assignees) {
-        completedAssignees.push(a.user);
+        const userId = a.user.id;
+        const newCount = (assigneeCounts.get(userId) ?? 0) + 1;
+        assigneeCounts.set(userId, newCount);
+        if (newCount > topPerformerCount) {
+          topPerformerCount = newCount;
+          topPerformerId = userId;
+        }
       }
     }
     if (isInProgress) {
@@ -32,14 +41,6 @@ export function calculateProjectStats(project: ProjectForStats): ProjectStats {
   const projectDays = Math.ceil(
     (now.getTime() - new Date(startDate).getTime()) / (1000 * 60 * 60 * 24),
   );
-
-  const counts = completedAssignees.reduce<Record<string, number>>((acc, user) => {
-    acc[user.id] = (acc[user.id] ?? 0) + 1;
-    return acc;
-  }, {});
-
-  const topPerformerId = Object.entries(counts)
-    .sort(([, a], [, b]) => b - a)[0]?.[0];
 
   const topPerformer = topPerformerId
     ? (project.members.find((m) => m.userId === topPerformerId)?.user ?? null)
