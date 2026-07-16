@@ -35,7 +35,7 @@ describe('DailyTask Cron', () => {
     initDailyTaskCrons();
 
     // Get the callback that was passed to cron.schedule
-    const callback = vi.mocked(cron.schedule).mock.calls[0][1] as Function;
+    const callback = vi.mocked(cron.schedule).mock.calls[0][1] as (...args: any[]) => Promise<void>;
     await callback();
 
     expect(DailyTaskMutation.clearExpiredDailyTasks).toHaveBeenCalled();
@@ -46,7 +46,7 @@ describe('DailyTask Cron', () => {
 
     initDailyTaskCrons();
 
-    const callback = vi.mocked(cron.schedule).mock.calls[0][1] as Function;
+    const callback = vi.mocked(cron.schedule).mock.calls[0][1] as (...args: any[]) => Promise<void>;
     await expect(callback()).resolves.not.toThrow();
   });
 });

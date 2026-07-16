@@ -27,12 +27,12 @@ describe('wellness.cron', () => {
 
   it('should call generateRecommendations for each user when cron fires', async () => {
     vi.mocked(prisma.user.findMany)
-      .mockResolvedValueOnce([{ id: 'u1' }, { id: 'u2' }])
-      .mockResolvedValueOnce([]);
+      .mockResolvedValueOnce([{ id: 'u1' }, { id: 'u2' }] as any)
+      .mockResolvedValueOnce([] as any);
     vi.mocked(WellnessService.generateRecommendations).mockResolvedValue(undefined as any);
 
     initWellnessCrons();
-    const callback = vi.mocked(cron.schedule).mock.calls[0][1] as Function;
+    const callback = vi.mocked(cron.schedule).mock.calls[0][1] as (...args: any[]) => Promise<void>;
     await callback();
 
     expect(WellnessService.generateRecommendations).toHaveBeenCalledTimes(2);
@@ -42,25 +42,25 @@ describe('wellness.cron', () => {
 
   it('should not throw when generateRecommendations fails', async () => {
     vi.mocked(prisma.user.findMany)
-      .mockResolvedValueOnce([{ id: 'u1' }])
-      .mockResolvedValueOnce([]);
+      .mockResolvedValueOnce([{ id: 'u1' }] as any)
+      .mockResolvedValueOnce([] as any);
     vi.mocked(WellnessService.generateRecommendations).mockRejectedValue(new Error('DB error'));
 
     initWellnessCrons();
-    const callback = vi.mocked(cron.schedule).mock.calls[0][1] as Function;
+    const callback = vi.mocked(cron.schedule).mock.calls[0][1] as (...args: any[]) => Promise<void>;
 
     await expect(callback()).resolves.not.toThrow();
   });
 
   it('should paginate through users in batches', async () => {
     vi.mocked(prisma.user.findMany)
-      .mockResolvedValueOnce(Array.from({ length: 50 }, (_, i) => ({ id: `u${i}` })))
-      .mockResolvedValueOnce(Array.from({ length: 10 }, (_, i) => ({ id: `u${i + 50}` })))
-      .mockResolvedValueOnce([]);
+      .mockResolvedValueOnce(Array.from({ length: 50 }, (_, i) => ({ id: `u${i}` })) as any)
+      .mockResolvedValueOnce(Array.from({ length: 10 }, (_, i) => ({ id: `u${i + 50}` })) as any)
+      .mockResolvedValueOnce([] as any);
     vi.mocked(WellnessService.generateRecommendations).mockResolvedValue(undefined as any);
 
     initWellnessCrons();
-    const callback = vi.mocked(cron.schedule).mock.calls[0][1] as Function;
+    const callback = vi.mocked(cron.schedule).mock.calls[0][1] as (...args: any[]) => Promise<void>;
     await callback();
 
     expect(WellnessService.generateRecommendations).toHaveBeenCalledTimes(60);
