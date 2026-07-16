@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { getTimeStatus, getTimeStatusBatch } from '../../../modules/task/task.utils.js';
+import { isTaskOverdue } from '../../../modules/task/task.query.js';
 import type { TaskForTimeTracking } from '../../../modules/task/task.types.js';
 
 describe('Task Utils - getTimeStatus', () => {
@@ -154,5 +155,162 @@ describe('Task Utils - getTimeStatusBatch', () => {
     expect(results.size).toBe(2);
     expect(results.has('1')).toBe(true);
     expect(results.has('2')).toBe(true);
+  });
+});
+
+describe('isTaskOverdue', () => {
+  const now = new Date('2026-07-15T12:00:00Z');
+
+  describe('actualHours > estimatedHours', () => {
+    it('should return true when actual exceeds estimated', () => {
+      const task = {
+        estimatedHours: 5,
+        actualHours: 8,
+        dueDate: null,
+        createdAt: new Date('2026-07-14T00:00:00Z'),
+      };
+      expect(isTaskOverdue(task, now)).toBe(true);
+    });
+
+    it('should return false when actual is within estimated', () => {
+      const task = {
+        estimatedHours: 10,
+        actualHours: 5,
+        dueDate: null,
+        createdAt: new Date('2026-07-14T00:00:00Z'),
+      };
+      expect(isTaskOverdue(task, now)).toBe(false);
+    });
+
+    it('should return false when actual equals estimated', () => {
+      const task = {
+        estimatedHours: 8,
+        actualHours: 8,
+        dueDate: null,
+        createdAt: new Date('2026-07-14T00:00:00Z'),
+      };
+      expect(isTaskOverdue(task, now)).toBe(false);
+    });
+  });
+
+  describe('estimatedHours set, actualHours null (elapsed time)', () => {
+    it('should return true when elapsed hours exceed estimated', () => {
+      const task = {
+        estimatedHours: 4,
+        actualHours: null,
+        dueDate: null,
+        createdAt: new Date('2026-07-15T00:00:00Z'), // 12 hours ago
+      };
+      expect(isTaskOverdue(task, now)).toBe(true);
+    });
+
+    it('should return false when elapsed hours are within estimated', () => {
+      const task = {
+        estimatedHours: 24,
+        actualHours: null,
+        dueDate: null,
+        createdAt: new Date('2026-07-15T00:00:00Z'), // 12 hours ago
+      };
+      expect(isTaskOverdue(task, now)).toBe(false);
+    });
+
+    it('should return false when elapsed exactly equals estimated', () => {
+      const task = {
+        estimatedHours: 12,
+        actualHours: null,
+        dueDate: null,
+        createdAt: new Date('2026-07-15T00:00:00Z'), // exactly 12 hours ago
+      };
+      expect(isTaskOverdue(task, now)).toBe(false);
+    });
+  });
+
+  describe('no estimatedHours, dueDate set', () => {
+    it('should return true when dueDate is in the past', () => {
+      const task = {
+        estimatedHours: null,
+        actualHours: null,
+        dueDate: new Date('2026-07-14T12:00:00Z'), // yesterday
+        createdAt: new Date('2026-07-10T00:00:00Z'),
+      };
+      expect(isTaskOverdue(task, now)).toBe(true);
+    });
+
+    it('should return false when dueDate is in the future', () => {
+      const task = {
+        estimatedHours: null,
+        actualHours: null,
+        dueDate: new Date('2026-07-16T12:00:00Z'), // tomorrow
+        createdAt: new Date('2026-07-10T00:00:00Z'),
+      };
+      expect(isTaskOverdue(task, now)).toBe(false);
+    });
+
+    it('should return false when dueDate equals now', () => {
+      const task = {
+        estimatedHours: null,
+        actualHours: null,
+        dueDate: new Date('2026-07-15T12:00:00Z'), // exactly now
+        createdAt: new Date('2026-07-10T00:00:00Z'),
+      };
+      expect(isTaskOverdue(task, now)).toBe(false);
+    });
+  });
+
+  describe('no estimatedHours, no dueDate', () => {
+    it('should return false when both are null', () => {
+      const task = {
+        estimatedHours: null,
+        actualHours: null,
+        dueDate: null,
+        createdAt: new Date('2026-07-10T00:00:00Z'),
+      };
+      expect(isTaskOverdue(task, now)).toBe(false);
+    });
+  });
+
+  describe('edge cases', () => {
+    it('should prefer actualHours check over elapsed time when both estimatedHours and actualHours are set', () => {
+      // estimatedHours=5, actualHours=3 (not over), but created 48h ago (would be over)
+      // The first branch wins: actualHours < estimatedHours, so NOT overdue
+      const task = {
+        estimatedHours: 5,
+        actualHours: 3,
+        dueDate: new Date('2026-07-10T00:00:00Z'), // past due
+        createdAt: new Date('2026-07-13T00:00:00Z'),
+      };
+      expect(isTaskOverdue(task, now)).toBe(false);
+    });
+
+    it('should return true when actualHours is set and exceeds, even with dueDate in future', () => {
+      const task = {
+        estimatedHours: 2,
+        actualHours: 10,
+        dueDate: new Date('2026-07-20T12:00:00Z'), // future
+        createdAt: new Date('2026-07-14T00:00:00Z'),
+      };
+      expect(isTaskOverdue(task, now)).toBe(true);
+    });
+
+    it('should handle zero estimatedHours with actualHours set', () => {
+      const task = {
+        estimatedHours: 0,
+        actualHours: 1,
+        dueDate: null,
+        createdAt: new Date('2026-07-15T00:00:00Z'),
+      };
+      expect(isTaskOverdue(task, now)).toBe(true);
+    });
+
+    it('should handle zero estimatedHours with null actualHours', () => {
+      const task = {
+        estimatedHours: 0,
+        actualHours: null,
+        dueDate: null,
+        createdAt: new Date('2026-07-14T00:00:00Z'),
+      };
+      // elapsed = 36h > 0, so overdue
+      expect(isTaskOverdue(task, now)).toBe(true);
+    });
   });
 });

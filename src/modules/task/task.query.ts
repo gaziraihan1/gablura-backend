@@ -7,7 +7,7 @@ import { CacheClient, CACHE_KEYS, CACHE_TTL } from '../../lib/redis/cache.client
 import { NotFoundError } from '../../errors/index.js';
 import { TaskStatus } from '@prisma/client';
 
-function isTaskOverdue(
+export function isTaskOverdue(
   task: { estimatedHours: number | null; actualHours: number | null; dueDate: Date | null; createdAt: Date },
   now: Date,
 ): boolean {
