@@ -383,18 +383,26 @@ describe('AnalyticsQuery', () => {
 
     it('should aggregate actions per day', async () => {
       vi.mocked(CacheClient.get).mockResolvedValue(null);
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
+      // Build a date that matches what getDayKey produces (UTC midnight)
+      const now = new Date();
+      const startDate = new Date(now);
+      startDate.setDate(startDate.getDate() - 30);
+      // Use the same date the function will generate for day index 0
+      const day0 = new Date(startDate);
       vi.mocked(prisma.$queryRaw).mockResolvedValue([
-        { day: today, action: 'CREATED', count: 3n },
-        { day: today, action: 'UPDATED', count: 2n },
+        { day: day0, action: 'CREATED', count: 3n },
+        { day: day0, action: 'UPDATED', count: 2n },
       ]);
 
-      const result = await AnalyticsQuery.getActivityVolumeTrend('ws1', 'u1', 1);
+      const result = await AnalyticsQuery.getActivityVolumeTrend('ws1', 'u1', 30);
 
-      expect(result[0].created).toBe(3);
-      expect(result[0].updated).toBe(2);
-      expect(result[0].total).toBe(5);
+      // Find the entry for day0's key
+      const day0Key = day0.toISOString().split('T')[0];
+      const day0Entry = result.find((p) => p.date.toISOString().split('T')[0] === day0Key);
+      expect(day0Entry).toBeDefined();
+      expect(day0Entry!.created).toBe(3);
+      expect(day0Entry!.updated).toBe(2);
+      expect(day0Entry!.total).toBe(5);
     });
   });
 
