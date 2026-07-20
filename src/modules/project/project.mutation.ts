@@ -79,13 +79,17 @@ export const ProjectMutation = {
 
     if (existing?.workspaceId) {
   const workspaceId = existing.workspaceId as string;
-  const slug = existing?.workspace?.slug || existing.slug;
-  // Invalidate caches in a non-blocking way
+  const projectSlug = existing.slug;
+  const workspaceSlug = existing?.workspace?.slug;
+  // Invalidate caches in a non-blocking way.
+  // NOTE: ProjectCache.invalidateProject expects the PROJECT slug
+  // (cache key `project:slug:<projectSlug>`); the workspace slug is used
+  // only for WorkspaceCache invalidation.
   Promise.all([
-    ProjectCache.invalidateProject(projectId, slug),
+    ProjectCache.invalidateProject(projectId, projectSlug),
     ProjectCache.invalidateWorkspaceProjects(workspaceId),
     ProjectCache.invalidateUserProjects(userId),
-    WorkspaceCache.invalidateWorkspace(workspaceId, slug),
+    WorkspaceCache.invalidateWorkspace(workspaceId, workspaceSlug),
     AnalyticsCache.invalidateWorkspace(workspaceId),
   ]).catch(() => {});
 }
@@ -110,13 +114,17 @@ await prisma.project.delete({ where: { id: projectId } });
 
   if (project?.workspaceId) {
     const workspaceId = project.workspaceId as string;
-    const slug = project?.workspace?.slug || project.slug;
-    // Invalidate caches in a non-blocking way
+    const projectSlug = project.slug;
+    const workspaceSlug = project?.workspace?.slug;
+    // Invalidate caches in a non-blocking way.
+    // NOTE: ProjectCache.invalidateProject expects the PROJECT slug
+    // (cache key `project:slug:<projectSlug>`); the workspace slug is used
+    // only for WorkspaceCache invalidation.
     Promise.all([
-      ProjectCache.invalidateProject(projectId, slug),
+      ProjectCache.invalidateProject(projectId, projectSlug),
       ProjectCache.invalidateWorkspaceProjects(workspaceId),
       ProjectCache.invalidateUserProjects(userId),
-      WorkspaceCache.invalidateWorkspace(workspaceId, slug),
+      WorkspaceCache.invalidateWorkspace(workspaceId, workspaceSlug),
       AnalyticsCache.invalidateWorkspace(workspaceId),
       AccessControlCache.invalidateProjectUsers(projectId),
     ]).catch(() => {});
