@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import { authenticate } from '../middleware/auth.js';
-import { getUserProfile, updateUserProfile } from '../controllers/user.controller.js';
+import { getUserProfile, updateUserProfile, changePassword } from '../controllers/user.controller.js';
 import { AuthRequest } from '../middleware/auth.js';
 import { prisma } from '../lib/prisma.js';
 
@@ -9,6 +9,8 @@ const router = Router();
 router.get('/profile', authenticate, getUserProfile);
 
 router.put('/profile', authenticate, updateUserProfile);
+
+router.put('/password', authenticate, changePassword);
 
 router.get('/workspace-members', authenticate, async (req: AuthRequest, res: Response) => {
   try {
