@@ -201,13 +201,23 @@ export const TaskQuery = {
       prisma.task.count({
         where: {
           assignees: { some: { userId: params.userId } },
-          ...(params.workspaceId && { project: { workspaceId: params.workspaceId } }),
+          ...(params.workspaceId && {
+            OR: [
+              { workspaceId: params.workspaceId },
+              { project: { workspaceId: params.workspaceId } },
+            ],
+          }),
         },
       }),
       prisma.task.count({
         where: {
           createdById: params.userId,
-          ...(params.workspaceId && { project: { workspaceId: params.workspaceId } }),
+          ...(params.workspaceId && {
+            OR: [
+              { workspaceId: params.workspaceId },
+              { project: { workspaceId: params.workspaceId } },
+            ],
+          }),
         },
       }),
     ]);

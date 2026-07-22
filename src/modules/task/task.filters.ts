@@ -54,15 +54,21 @@ export const TaskFilters = {
       CACHE_TTL.ACCESS_CONTROL_WORKSPACE_MEMBER,
     );
 
-    const baseWorkspaceCondition = {
-      project: { workspaceId: filters.workspaceId },
+    // A task belongs to the workspace if it has workspaceId set directly,
+    // or if it belongs to a project that is in the workspace.
+    const workspaceBelongsToCondition = {
+      OR: [
+        { workspaceId: filters.workspaceId },
+        { project: { workspaceId: filters.workspaceId } },
+      ],
     };
 
     if (isWorkspaceAdmin) {
+      // Admins see all tasks in the workspace
       if (filters.type === "assigned") {
         return {
           AND: [
-            baseWorkspaceCondition,
+            workspaceBelongsToCondition,
             { assignees: { some: { userId: filters.userId } } },
           ],
         };
@@ -70,13 +76,34 @@ export const TaskFilters = {
 
       if (filters.type === "created") {
         return {
-          AND: [baseWorkspaceCondition, { createdById: filters.userId }],
+          AND: [workspaceBelongsToCondition, { createdById: filters.userId }],
         };
       }
 
-      return baseWorkspaceCondition;
+      return workspaceBelongsToCondition;
     }
 
+    // Non-admin members: tasks must belong to the workspace AND user must be involved
+    if (filters.type === "personal") {
+      return { id: "no-personal-tasks-in-workspace" };
+    }
+
+    if (filters.type === "assigned") {
+      return {
+        AND: [
+          workspaceBelongsToCondition,
+          { assignees: { some: { userId: filters.userId } } },
+        ],
+      };
+    }
+
+    if (filters.type === "created") {
+      return {
+        AND: [workspaceBelongsToCondition, { createdById: filters.userId }],
+      };
+    }
+
+    // Default: user is involved via creation, assignment, or project membership
     const userInvolvementConditions = {
       OR: [
         { createdById: filters.userId },
@@ -92,27 +119,8 @@ export const TaskFilters = {
       ],
     };
 
-    if (filters.type === "personal") {
-      return { id: "no-personal-tasks-in-workspace" };
-    }
-
-    if (filters.type === "assigned") {
-      return {
-        AND: [
-          baseWorkspaceCondition,
-          { assignees: { some: { userId: filters.userId } } },
-        ],
-      };
-    }
-
-    if (filters.type === "created") {
-      return {
-        AND: [baseWorkspaceCondition, { createdById: filters.userId }],
-      };
-    }
-
     return {
-      AND: [baseWorkspaceCondition, userInvolvementConditions],
+      AND: [workspaceBelongsToCondition, userInvolvementConditions],
     };
   },
 

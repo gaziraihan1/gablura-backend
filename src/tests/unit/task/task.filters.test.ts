@@ -65,7 +65,12 @@ describe('Task Filters', () => {
       (prisma.workspaceMember.findFirst as any).mockResolvedValue({ role: 'ADMIN' });
       const filters = { workspaceId: mockWorkspaceId, userId: mockUserId } as any;
       const result = await TaskFilters.buildWorkspaceTasksFilter(filters);
-      expect(result).toEqual({ project: { workspaceId: mockWorkspaceId } });
+      expect(result).toEqual({
+        OR: [
+          { workspaceId: mockWorkspaceId },
+          { project: { workspaceId: mockWorkspaceId } },
+        ],
+      });
     });
 
     it('should filter by involvement for regular members', async () => {
@@ -74,7 +79,12 @@ describe('Task Filters', () => {
       const result = await TaskFilters.buildWorkspaceTasksFilter(filters);
       expect(result).toEqual({
         AND: [
-          { project: { workspaceId: mockWorkspaceId } },
+          {
+            OR: [
+              { workspaceId: mockWorkspaceId },
+              { project: { workspaceId: mockWorkspaceId } },
+            ],
+          },
           {
             OR: [
               { createdById: mockUserId },
@@ -99,7 +109,12 @@ describe('Task Filters', () => {
       const result = await TaskFilters.buildWorkspaceTasksFilter(filters);
       expect(result).toEqual({
         AND: [
-          { project: { workspaceId: mockWorkspaceId } },
+          {
+            OR: [
+              { workspaceId: mockWorkspaceId },
+              { project: { workspaceId: mockWorkspaceId } },
+            ],
+          },
           { assignees: { some: { userId: mockUserId } } },
         ],
       });
