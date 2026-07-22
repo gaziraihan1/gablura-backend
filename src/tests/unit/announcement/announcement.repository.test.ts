@@ -98,7 +98,7 @@ describe('AnnouncementRepository', () => {
       const result = await AnnouncementRepository.findMany({
         workspaceSlug: 'ws-slug',
         userId: 'u1',
-        visibility: 'ALL',
+        visibility: 'PUBLIC',
       });
 
       expect(result.data).toHaveLength(1);
@@ -112,14 +112,14 @@ describe('AnnouncementRepository', () => {
       await AnnouncementRepository.findMany({
         workspaceSlug: 'ws-slug',
         userId: 'u1',
-        visibility: 'ALL',
+        visibility: 'PUBLIC',
         page: 2,
         pageSize: 5,
       });
 
-      const call = vi.mocked(prisma.announcement.findMany).mock.calls[0][0];
-      expect(call.skip).toBe(5);
-      expect(call.take).toBe(5);
+      const call = vi.mocked(prisma.announcement.findMany).mock.calls[0]![0];
+      expect(call!.skip).toBe(5);
+      expect(call!.take).toBe(5);
     });
   });
 

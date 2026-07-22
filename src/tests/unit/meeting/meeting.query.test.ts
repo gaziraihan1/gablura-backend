@@ -49,7 +49,7 @@ describe('MeetingQuery', () => {
         isAdmin: true,
       });
 
-      const call = vi.mocked(prisma.meeting.findMany).mock.calls[0][0];
+      const call = vi.mocked(prisma.meeting.findMany).mock.calls[0]![0]!;
       const where = call.where as any;
       expect(where.OR).toBeUndefined();
     });
@@ -64,7 +64,7 @@ describe('MeetingQuery', () => {
         isAdmin: false,
       });
 
-      const call = vi.mocked(prisma.meeting.findMany).mock.calls[0][0];
+      const call = vi.mocked(prisma.meeting.findMany).mock.calls[0]![0]!;
       const where = call.where as any;
       expect(where.OR).toBeDefined();
       expect(where.OR).toHaveLength(2);
@@ -81,7 +81,7 @@ describe('MeetingQuery', () => {
         status: 'SCHEDULED',
       });
 
-      const call = vi.mocked(prisma.meeting.findMany).mock.calls[0][0];
+      const call = vi.mocked(prisma.meeting.findMany).mock.calls[0]![0]!;
       expect((call.where as any).status).toBe('SCHEDULED');
     });
 
@@ -96,7 +96,7 @@ describe('MeetingQuery', () => {
         upcoming: true,
       });
 
-      const call = vi.mocked(prisma.meeting.findMany).mock.calls[0][0];
+      const call = vi.mocked(prisma.meeting.findMany).mock.calls[0]![0]!;
       const where = call.where as any;
       expect(where.startTime.gte).toBeInstanceOf(Date);
     });
@@ -112,7 +112,7 @@ describe('MeetingQuery', () => {
         limit: 100,
       });
 
-      const call = vi.mocked(prisma.meeting.findMany).mock.calls[0][0];
+      const call = vi.mocked(prisma.meeting.findMany).mock.calls[0]![0]!;
       expect(call.take).toBe(50);
     });
 
@@ -145,7 +145,7 @@ describe('MeetingQuery', () => {
         cursor: 'm5',
       });
 
-      const call = vi.mocked(prisma.meeting.findMany).mock.calls[0][0];
+      const call = vi.mocked(prisma.meeting.findMany).mock.calls[0]![0]!;
       expect(call.cursor).toEqual({ id: 'm5' });
       expect(call.skip).toBe(1);
     });

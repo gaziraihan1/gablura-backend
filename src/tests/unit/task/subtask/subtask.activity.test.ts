@@ -53,7 +53,7 @@ describe('SubtaskActivity', () => {
 
       await SubtaskActivity.logUpdated({
         ...baseParams,
-        changes: { title: 'old', title: 'new' },
+        changes: { title: { from: 'old', to: 'new' } },
       });
 
       expect(prisma.activity.create).toHaveBeenCalledWith({
@@ -61,7 +61,7 @@ describe('SubtaskActivity', () => {
           action: 'UPDATED',
           metadata: expect.objectContaining({
             isSubtask: true,
-            changes: { title: 'old', title: 'new' },
+            changes: { title: { from: 'old', to: 'new' } },
           }),
         }),
       });

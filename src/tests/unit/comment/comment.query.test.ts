@@ -68,8 +68,8 @@ describe('CommentQuery', () => {
 
       await CommentQuery.getComments('t1', 'u1');
 
-      const call = vi.mocked(prisma.comment.findMany).mock.calls[0][0];
-      expect((call.where as any).parentId).toBeNull();
+      const call = vi.mocked(prisma.comment.findMany).mock.calls[0]![0];
+      expect((call!.where as any).parentId).toBeNull();
     });
   });
 });

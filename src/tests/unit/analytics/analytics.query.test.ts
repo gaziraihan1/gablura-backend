@@ -196,7 +196,7 @@ describe('AnalyticsQuery', () => {
       expect(prisma.$queryRaw).toHaveBeenCalled();
       const call = vi.mocked(prisma.$queryRaw).mock.calls[0];
       // Verify the query template contains the workspace ID
-      expect(call[0].join('')).toContain('Task');
+      expect((call[0] as unknown as TemplateStringsArray).join('')).toContain('Task');
     });
   });
 
@@ -526,8 +526,8 @@ describe('AnalyticsQuery', () => {
       const result = await AnalyticsQuery.getTasksByPriority('ws1', 'u1');
 
       expect(result).toHaveLength(2);
-      expect(result[0].priority).toBe('HIGH');
-      expect(result[0].count).toBe(5);
+      expect((result as Array<{ priority: string; count: number }>)[0].priority).toBe('HIGH');
+      expect((result as Array<{ priority: string; count: number }>)[0].count).toBe(5);
     });
   });
 
@@ -559,10 +559,10 @@ describe('AnalyticsQuery', () => {
       vi.mocked(prisma.task.findMany)
         .mockResolvedValueOnce([])
         .mockResolvedValueOnce([
-          { id: 't1', title: 'T1', dueDate: new Date(), priority: 'URGENT' },
-          { id: 't2', title: 'T2', dueDate: new Date(), priority: 'HIGH' },
-          { id: 't3', title: 'T3', dueDate: new Date(), priority: 'URGENT' },
-        ]);
+          { id: 't1', title: 'T1', dueDate: new Date(), priority: 'URGENT', status: 'TODO', createdById: 'u1', createdAt: new Date(), updatedAt: new Date() },
+          { id: 't2', title: 'T2', dueDate: new Date(), priority: 'HIGH', status: 'TODO', createdById: 'u1', createdAt: new Date(), updatedAt: new Date() },
+          { id: 't3', title: 'T3', dueDate: new Date(), priority: 'URGENT', status: 'TODO', createdById: 'u1', createdAt: new Date(), updatedAt: new Date() },
+        ] as any);
       vi.mocked(prisma.task.count).mockResolvedValue(3);
 
       const result = await AnalyticsQuery.getDeadlineRiskAnalysis('ws1', 'u1');
@@ -575,9 +575,9 @@ describe('AnalyticsQuery', () => {
       vi.mocked(prisma.task.findMany)
         .mockResolvedValueOnce([])
         .mockResolvedValueOnce([
-          { id: 't1', title: 'T1', dueDate: new Date(), priority: 'HIGH' },
-          { id: 't2', title: 'T2', dueDate: new Date(), priority: 'URGENT' },
-        ]);
+          { id: 't1', title: 'T1', dueDate: new Date(), priority: 'HIGH', status: 'TODO', createdById: 'u1', createdAt: new Date(), updatedAt: new Date() },
+          { id: 't2', title: 'T2', dueDate: new Date(), priority: 'URGENT', status: 'TODO', createdById: 'u1', createdAt: new Date(), updatedAt: new Date() },
+        ] as any);
       vi.mocked(prisma.task.count).mockResolvedValue(2);
 
       const result = await AnalyticsQuery.getDeadlineRiskAnalysis('ws1', 'u1');

@@ -220,7 +220,7 @@ export const TaskMutation = {
 
     let addedAssigneeIds: string[] = [];
     if (data.assigneeIds !== undefined) {
-      const existingIds = existingTask.assignees.map((a) => a.userId);
+      const existingIds = existingTask.assignees.map((a: {userId: string}) => a.userId);
       addedAssigneeIds  = data.assigneeIds.filter((uid) => !existingIds.includes(uid));
       await prisma.taskAssignee.deleteMany({ where: { taskId } });
       if (data.assigneeIds.length > 0) {

@@ -1,5 +1,5 @@
 // templates.test.ts
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi, type MockInstance } from "vitest";
 import request from "supertest";
 import app from "../../app.js";
 import { prisma } from "../../lib/prisma.js";
@@ -10,7 +10,7 @@ import * as adminConfig from "../../config/admin.config.js";
 
 describe("Templates Module Integration Tests", () => {
   let adminUser: TestUser;
-  let isFocuraAdminSpy: ReturnType<typeof vi.spyOn>;
+  let isFocuraAdminSpy: MockInstance;
 
   beforeEach(async () => {
     adminUser = await createUser({ role: "ADMIN" });
