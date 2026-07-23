@@ -263,8 +263,27 @@ model User {
   workspaceMembers       WorkspaceMember[]
   popularResourcesCreated PopularResource[] @relation("PopularResourceCreatedBy")
   productUpdatesCreated   ProductUpdate[]   @relation("ProductUpdateCreatedBy")
+  apiKeys                 ApiKey[]
 
   @@index([stripeCustomerId])
+}
+
+model ApiKey {
+  id          String    @id @default(cuid())
+  name        String
+  prefix      String    // First 8 chars for display (e.g., "foc_a1b2c3d4")
+  hash        String    // Argon2 hash of the full token
+  userId      String
+  lastUsedAt  DateTime?
+  expiresAt   DateTime?
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([prefix])
+  @@index([isActive])
 }
 
 model Workspace {

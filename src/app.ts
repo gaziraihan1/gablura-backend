@@ -40,6 +40,7 @@ import { errorHandler, notFoundHandler } from "./errors/errorHandler.js";
 import { adminResourceRouter, publicResourceRouter } from "./modules/resource/index.js";
 import { securityHeaders } from "./middleware/securityHeaders.js";
 import { requireFocuraAdmin } from "./middleware/focuraAdmin.js";
+import apiKeyRouter from "./modules/apikey/apikey.routes.js";
 
 const isProd = process.env.NODE_ENV === "production";
 
@@ -81,11 +82,9 @@ app.use((err: any, req: Request, res: Response, next: NextFunction) => {
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow requests with no origin (same-origin, server-to-server, curl)
-      // ONLY in development. In production, require a valid origin header.
+      // Allow requests with no origin (same-origin, server-to-server, curl, API tokens)
       if (!origin) {
-        if (!isProd) return callback(null, true);
-        return callback(new Error("Not allowed by CORS"));
+        return callback(null, true);
       }
       if (allowedOrigins.includes(origin)) return callback(null, true);
       return callback(new Error("Not allowed by CORS"));
@@ -205,6 +204,7 @@ app.use("/api/v1/tasks", authenticate, requireCsrfToken(), taskRouter);
 app.use("/api/v1/daily-tasks", authenticate, requireCsrfToken(), dailyTaskRouter);
 app.use("/api/v1/activities", authenticate, requireCsrfToken(), activityRouter);
 app.use("/api/v1/user", authenticate, requireCsrfToken(), userRoutes);
+app.use("/api/v1/api-keys", apiKeyRouter);
 app.use("/api/v1/upload", authenticate, requireCsrfToken(), uploadRoutes);
 app.use("/api/v1/labels", authenticate, requireCsrfToken(), labelRouter);
 app.use("/api/v1/calendar", authenticate, requireCsrfToken(), calendarRouter);
