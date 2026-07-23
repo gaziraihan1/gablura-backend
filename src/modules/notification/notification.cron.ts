@@ -17,8 +17,16 @@
 import cron from "node-cron";
 import { prisma } from "../../lib/prisma.js";
 import { NotificationMutation } from "./notification.mutation.js";
-import { addSendNotificationJob } from "../../queue/queues/notification.queue.js";
-import { getRedisClient } from "../../redis/redis.client.js";
+import {
+  batchWasAlreadySent,
+  processPendingNotifications,
+  DEDUP_PREFIX,
+  type PendingNotification,
+} from "./cron.utils.js";
+import {
+  startProjectReminderCron,
+  startProjectAutoArchiveCron,
+} from "./project.cron.js";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -40,51 +48,6 @@ const OVERDUE_MARKS = [
 
 /** Tolerance window for cron interval alignment (5 min) */
 const WINDOW_MS = 5 * 60 * 1000;
-
-/** Redis key prefix for dedup */
-const DEDUP_PREFIX = "notif:cron:sent:";
-const DEDUP_TTL_S = 25 * 60 * 60; // 25 hours
-
-// ─── Redis dedup via pipeline ─────────────────────────────────────────────────
-
-/**
- * Batch-check dedup keys using a single Redis pipeline.
- * Returns a Set of keys that were already sent.
- */
-async function batchWasAlreadySent(keys: string[]): Promise<Set<string>> {
-  if (keys.length === 0) return new Set();
-
-  const redis = getRedisClient();
-  const pipeline = redis.pipeline();
-  for (const key of keys) {
-    pipeline.get(key);
-  }
-  const results = await pipeline.exec();
-
-  const sent = new Set<string>();
-  if (!results) return sent;
-
-  for (let i = 0; i < results.length; i++) {
-    const [err, val] = results[i];
-    if (!err && val) {
-      sent.add(keys[i]);
-    }
-  }
-  return sent;
-}
-
-/**
- * Mark dedup keys as sent using a single Redis pipeline.
- */
-async function batchMarkAsSent(keys: string[]): Promise<void> {
-  if (keys.length === 0) return;
-  const redis = getRedisClient();
-  const pipeline = redis.pipeline();
-  for (const key of keys) {
-    pipeline.setex(key, DEDUP_TTL_S, "1");
-  }
-  await pipeline.exec();
-}
 
 // ─── DB cursor pagination ─────────────────────────────────────────────────────
 
@@ -153,22 +116,13 @@ async function getRecipients(
 
 // ─── Build pending notifications for one task ─────────────────────────────────
 
-interface PendingNotif {
-  dedupKey:  string;
-  userId:    string;
-  type:      "TASK_DUE_SOON" | "TASK_OVERDUE";
-  title:     string;
-  message:   string;
-  actionUrl: string;
-}
-
 function buildPendingNotifs(
   task: { id: string; title: string; dueDate: Date | null },
   recipients: { userId: string; notifications: boolean }[],
   now: number,
-): PendingNotif[] {
+): PendingNotification[] {
   const due = new Date(task.dueDate!).getTime();
-  const pending: PendingNotif[] = [];
+  const pending: PendingNotification[] = [];
 
   // Due-soon reminders
   for (const r of REMINDERS) {
@@ -209,51 +163,6 @@ function buildPendingNotifs(
   return pending;
 }
 
-// ─── Dispatch pending notifications via BullMQ ───────────────────────────────
-
-async function processPendingNotifs(pending: PendingNotif[]): Promise<number> {
-  if (pending.length === 0) return 0;
-
-  // Batch dedup check via single Redis pipeline
-  const dedupKeys = pending.map((n) => n.dedupKey);
-  const alreadySent = await batchWasAlreadySent(dedupKeys);
-  const toSend = pending.filter((n) => !alreadySent.has(n.dedupKey));
-  if (toSend.length === 0) return 0;
-
-  // Dispatch through BullMQ for reliable delivery with retry
-  const results = await Promise.allSettled(
-    toSend.map((n) =>
-      addSendNotificationJob({
-        userId:    n.userId,
-        type:      n.type,
-        title:     n.title,
-        message:   n.message,
-        actionUrl: n.actionUrl,
-      }),
-    ),
-  );
-
-  // Batch mark successfully queued jobs as sent via single Redis pipeline
-  const succeededKeys: string[] = [];
-  for (let i = 0; i < results.length; i++) {
-    if (results[i].status === "fulfilled") {
-      succeededKeys.push(toSend[i].dedupKey);
-    }
-  }
-  await batchMarkAsSent(succeededKeys);
-
-  const failed = results.filter((r) => r.status === "rejected");
-  if (failed.length > 0) {
-    failed.forEach((r) => {
-      if (r.status === "rejected") {
-        console.error("  ⚠️  BullMQ notification job failed:", r.reason);
-      }
-    });
-  }
-
-  return succeededKeys.length;
-}
-
 // ─── Main cron logic ──────────────────────────────────────────────────────────
 
 async function runTaskReminderCron(): Promise<void> {
@@ -268,7 +177,7 @@ async function runTaskReminderCron(): Promise<void> {
 
     total += tasks.length;
 
-    const pending: PendingNotif[] = [];
+    const pending: PendingNotification[] = [];
     for (const task of tasks) {
       if (!task.assignees.length) continue;
 
@@ -277,7 +186,7 @@ async function runTaskReminderCron(): Promise<void> {
       pending.push(...buildPendingNotifs(task, recipients, now));
     }
 
-    sent += await processPendingNotifs(pending);
+    sent += await processPendingNotifications(pending);
 
     if (tasks.length < BATCH_SIZE) break;
     cursor = tasks[tasks.length - 1].id;
@@ -317,4 +226,6 @@ export function startNotificationCleanupCron(): void {
 export function initNotificationCrons(): void {
   startTaskReminderCron();
   startNotificationCleanupCron();
+  startProjectReminderCron();
+  startProjectAutoArchiveCron();
 }
