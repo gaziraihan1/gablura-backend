@@ -41,6 +41,7 @@ import { adminResourceRouter, publicResourceRouter } from "./modules/resource/in
 import { securityHeaders } from "./middleware/securityHeaders.js";
 import { requireFocuraAdmin } from "./middleware/focuraAdmin.js";
 import apiKeyRouter from "./modules/apikey/apikey.routes.js";
+import { integrationRouter, workspaceIntegrationRouter, integrationWebhookRouter } from "./modules/integration/index.js";
 
 const isProd = process.env.NODE_ENV === "production";
 
@@ -77,6 +78,9 @@ app.use((err: any, req: Request, res: Response, next: NextFunction) => {
   }
   next(err);
 });
+
+// ── Integration webhooks (after body parsing) ───────────────
+app.use(integrationWebhookRouter);
 
 // ── CORS (match index.ts) ──────────────────────────────────
 app.use(
@@ -200,6 +204,8 @@ app.use(
 app.use("/api/v1/admin/resources", authenticate, requireCsrfToken(),adminResourceRouter ); // Admin routes for resources
 app.use("/api/v1/resources", publicResourceRouter ); // Public routes for resources (if any)
 app.use("/api/v1/projects", authenticate, requireCsrfToken(), projectRouter);
+app.use("/api/v1/user/integrations", authenticate, requireCsrfToken(), integrationRouter);
+app.use("/api/v1/workspace-integrations", authenticate, requireCsrfToken(), workspaceIntegrationRouter);
 app.use("/api/v1/tasks", authenticate, requireCsrfToken(), taskRouter);
 app.use("/api/v1/daily-tasks", authenticate, requireCsrfToken(), dailyTaskRouter);
 app.use("/api/v1/activities", authenticate, requireCsrfToken(), activityRouter);

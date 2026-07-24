@@ -264,6 +264,8 @@ model User {
   popularResourcesCreated PopularResource[] @relation("PopularResourceCreatedBy")
   productUpdatesCreated   ProductUpdate[]   @relation("ProductUpdateCreatedBy")
   apiKeys                 ApiKey[]
+  integrations            Integration[]
+  connectedIntegrations   Integration[]          @relation("IntegrationConnectedBy")
 
   @@index([stripeCustomerId])
 }
@@ -318,6 +320,7 @@ model Workspace {
   owner           User                  @relation("WorkspaceOwner", fields: [ownerId], references: [id], onDelete: Cascade)
   invitations     WorkspaceInvitation[]
   members         WorkspaceMember[]
+  integrations    Integration[]
 
   @@unique([id, slug])
 
@@ -1030,19 +1033,33 @@ model Notification {
 }
 
 model Integration {
-  id           String   @id @default(cuid())
-  name         String
-  provider     String
-  accessToken  String?
-  refreshToken String?
-  config       Json?
-  active       Boolean  @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  workspaceId  String?
+  id              String    @id @default(cuid())
+  name            String
+  provider        String    // github, slack, google-calendar, trello
+  accessToken     String?
+  refreshToken    String?
+  expiresAt       DateTime?
+  config          Json?     // IntegrationConfig (syncDirection, autoSync, etc.)
+  webhookUrl      String?   // For receiving webhook events from provider
+  webhookSecret   String?   // Secret to verify webhook signatures
+  syncStatus      Json?     // SyncStatus (lastSyncAt, lastSyncStatus, syncCount, error)
+  active          Boolean   @default(true)
+  connectedAt     DateTime  @default(now())
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  workspaceId     String?
+  userId          String?
+  connectedById   String?   // User who connected this integration
+
+  // Relationships
+  workspace       Workspace?      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user            User?           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  connectedBy     User?           @relation("IntegrationConnectedBy", fields: [connectedById], references: [id])
 
   @@index([workspaceId])
+  @@index([userId])
   @@index([provider])
+  @@index([connectedById])
 }
 
 model FeatureRequest {
