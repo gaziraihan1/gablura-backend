@@ -103,4 +103,21 @@ describe("CSRF Protection", () => {
     expect(response.status).toBe(403);
     expect(response.body.code).toBe("CSRF_VALIDATION_FAILED");
   });
+
+  it("should skip CSRF validation for /integrations/callback (OAuth callback)", async () => {
+    // The callback endpoint uses its own OAuth state-based CSRF token,
+    // so the middleware CSRF check must be skipped.
+    // We send an intentionally missing/wrong CSRF token — if CSRF were enforced,
+    // this would return 403. Instead it should pass through to the route handler
+    // (which will fail with a validation error about missing params, NOT 403).
+    const response = await request(app)
+      .post("/api/v1/user/integrations/callback")
+      .set("Authorization", `Bearer ${authToken}`)
+      .send({ code: "fake-code", state: "fake-state" });
+
+    // Should NOT be 403 CSRF — it passes CSRF and reaches the route handler,
+    // which returns a validation error (400) because the state/code are invalid.
+    expect(response.status).not.toBe(403);
+    expect(response.body.code).not.toBe("CSRF_VALIDATION_FAILED");
+  });
 });

@@ -80,6 +80,11 @@ export const requireCsrfToken = () => {
       return next();
     }
 
+    // Integration OAuth callback is protected by its own CSRF token in the state parameter
+    if (req.path.includes("/callback")) {
+      return next();
+    }
+
     const csrfToken = req.headers["x-csrf-token"] as string;
     const user = req.user;
 

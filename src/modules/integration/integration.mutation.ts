@@ -56,15 +56,33 @@ export class IntegrationMutation {
     }
 
     const frontendUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'http://localhost:3000';
-    const redirectUri = `${frontendUrl}/integrations/callback`;
+    const redirectUri = `${frontendUrl}/dashboard/integrations/callback`;
 
     // Generate CSRF token
     const csrfToken = crypto.randomBytes(32).toString('hex');
     
     // Store CSRF token in Redis (with 10 min expiry)
     const redis = getRedisClient();
-    await redis.setex(`integration_csrf:${userId}:${csrfToken}`, 600, csrfToken);
+    const redisKey = `integration_csrf:${userId}:${csrfToken}`;
     
+    try {
+      await redis.setex(redisKey, 600, csrfToken);
+      // Verify the token was actually stored
+      const verifyToken = await redis.get(redisKey);
+      if (!verifyToken) {
+        console.error('CSRF token storage verification failed - token not found after setex');
+        throw new Error('Failed to create integration session. Please try again.');
+      }
+      console.log('Integration CSRF token stored successfully:', {
+        userId,
+        redisKey,
+        csrfTokenLength: csrfToken.length,
+      });
+    } catch (redisError) {
+      console.error('Failed to store integration CSRF token in Redis:', redisError);
+      throw new Error('Failed to create integration session. Please try again.');
+    }
+
     const state = JSON.stringify({
       provider,
       userId,
@@ -112,6 +130,15 @@ export class IntegrationMutation {
 
     const { provider, workspaceId, timestamp, csrfToken } = stateData;
 
+    console.log('OAuth callback state parsed:', {
+      provider,
+      hasWorkspaceId: !!workspaceId,
+      hasCsrfToken: !!csrfToken,
+      stateUserId: stateData.userId,
+      requestUserId: userId,
+      timestampAge: Date.now() - timestamp,
+    });
+
     // Validate state freshness (10 min max)
     if (Date.now() - timestamp > 10 * 60 * 1000) {
       throw new ValidationError('OAuth state has expired. Please try again.');
@@ -119,18 +146,41 @@ export class IntegrationMutation {
 
     // Verify user matches
     if (stateData.userId !== userId) {
+      console.error('OAuth callback user mismatch:', {
+        stateUserId: stateData.userId,
+        requestUserId: userId,
+      });
       throw new ValidationError('User mismatch in OAuth state');
     }
 
     // Verify CSRF token from Redis
     if (csrfToken) {
       const redis = getRedisClient();
-      const storedToken = await redis.get(`integration_csrf:${userId}:${csrfToken}`);
-      if (!storedToken) {
-        throw new ValidationError('Invalid CSRF token. Please try again.');
+      const redisKey = `integration_csrf:${userId}:${csrfToken}`;
+      
+      try {
+        const storedToken = await redis.get(redisKey);
+        if (!storedToken) {
+          // Check if Redis is connected
+          const isConnected = redis.status === 'ready';
+          console.error('Integration CSRF token not found in Redis:', {
+            userId,
+            redisKey,
+            csrfTokenLength: csrfToken.length,
+            redisConnected: isConnected,
+            redisStatus: redis.status,
+          });
+          throw new ValidationError('Invalid CSRF token. Please try again.');
+        }
+        // Delete the token (one-time use)
+        await redis.del(redisKey);
+      } catch (error) {
+        if (error instanceof ValidationError) {
+          throw error;
+        }
+        console.error('Redis error during CSRF validation:', error);
+        throw new ValidationError('Failed to validate integration. Please try again.');
       }
-      // Delete the token (one-time use)
-      await redis.del(`integration_csrf:${userId}:${csrfToken}`);
     }
 
     // Exchange code for tokens
@@ -212,7 +262,7 @@ export class IntegrationMutation {
     }
 
     const frontendUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'http://localhost:3000';
-    const redirectUri = `${frontendUrl}/integrations/callback`;
+    const redirectUri = `${frontendUrl}/dashboard/integrations/callback`;
 
     // Different token exchange flows per provider
     switch (provider) {
