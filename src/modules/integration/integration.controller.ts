@@ -1,6 +1,7 @@
 import type { Response } from 'express';
 import type { AuthRequest } from '../../middleware/auth.js';
 import { asyncHandler, ValidationError } from '../../errors/index.js';
+import { prisma } from '../../lib/prisma.js';
 import { IntegrationQuery } from './integration.query.js';
 import { IntegrationMutation } from './integration.mutation.js';
 import { IntegrationAccess } from './integration.access.js';
@@ -52,7 +53,7 @@ export const initiateOAuth = asyncHandler(async (req: AuthRequest, res: Response
 
 /**
  * POST /api/v1/user/integrations
- * Connect a provider (direct POST fallback for backward compatibility)
+ * Connect a provider (fallback for backward compatibility)
  */
 export const connectIntegration = asyncHandler(async (req: AuthRequest, res: Response) => {
   const parsed = createIntegrationSchema.safeParse(req.body);
@@ -173,8 +174,6 @@ export const getWorkspaceIntegrations = asyncHandler(async (req: AuthRequest, re
     throw new ValidationError('Validation error', paramsParsed.error.issues);
   }
 
-  // Find workspace by slug
-  const { prisma } = await import('../../lib/prisma.js');
   const workspace = await prisma.workspace.findUnique({
     where: { slug: paramsParsed.data.slug },
     select: { id: true },
@@ -203,8 +202,6 @@ export const initiateWorkspaceOAuth = asyncHandler(async (req: AuthRequest, res:
     throw new ValidationError('Validation error', bodyParsed.error.issues);
   }
 
-  // Find workspace by slug
-  const { prisma } = await import('../../lib/prisma.js');
   const workspace = await prisma.workspace.findUnique({
     where: { slug: paramsParsed.data.slug },
     select: { id: true },
@@ -241,8 +238,6 @@ export const connectWorkspaceIntegration = asyncHandler(async (req: AuthRequest,
     throw new ValidationError('Validation error', bodyParsed.error.issues);
   }
 
-  // Find workspace by slug
-  const { prisma } = await import('../../lib/prisma.js');
   const workspace = await prisma.workspace.findUnique({
     where: { slug: paramsParsed.data.slug },
     select: { id: true },

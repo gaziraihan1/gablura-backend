@@ -3,12 +3,14 @@ import { notificationQueue } from "./queues/notification.queue.js";
 import { activityQueue } from "./queues/activity.queue.js";
 import { calendarQueue } from "./queues/calendar.queue.js";
 import { analyticsQueue } from "./queues/analytics.queue.js";
+import { integrationQueue } from "./queues/integration.queue.js";
 
 import { createEmailWorker } from "./workers/email.worker.js";
 import { createNotificationWorker } from "./workers/notification.worker.js";
 import { createActivityWorker } from "./workers/activity.worker.js";
 import { createCalendarWorker } from "./workers/calendar.worker.js";
 import { createAnalyticsWorker } from "./workers/analytics.worker.js";
+import { createIntegrationWorker } from "./workers/integration.worker.js";
 
 import type { Worker } from "bullmq";
 
@@ -22,8 +24,9 @@ export async function initQueueWorkers() {
   const activityWorker = createActivityWorker();
   const calendarWorker = createCalendarWorker();
   const analyticsWorker = createAnalyticsWorker();
+  const integrationWorker = createIntegrationWorker();
 
-  workers = [emailWorker, notificationWorker, activityWorker, calendarWorker, analyticsWorker];
+  workers = [emailWorker, notificationWorker, activityWorker, calendarWorker, analyticsWorker, integrationWorker];
 
   console.log("[Queue] All queue workers started");
 }
@@ -41,6 +44,7 @@ export async function closeQueueWorkers() {
     activityQueue.close(),
     calendarQueue.close(),
     analyticsQueue.close(),
+    integrationQueue.close(),
   ]);
 
   console.log("[Queue] All queue workers closed");
@@ -52,6 +56,7 @@ export {
   activityQueue,
   calendarQueue,
   analyticsQueue,
+  integrationQueue,
 };
 
 export {
@@ -80,3 +85,8 @@ export {
   addPreComputeAnalyticsJob,
   addComputeFocusStreakJob,
 } from "./queues/analytics.queue.js";
+
+export {
+  addSyncIntegrationJob,
+  addProcessWebhookJob,
+} from "./queues/integration.queue.js";

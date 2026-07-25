@@ -31,7 +31,7 @@ router.get('/stats', getIntegrationStats);
 // POST /api/v1/user/integrations/auth - Generate OAuth URL
 router.post('/auth', initiateOAuth);
 
-// POST /api/v1/user/integrations - Connect integration (fallback)
+// POST /api/v1/user/integrations - Connect integration (fallback for backward compatibility)
 router.post('/', connectIntegration);
 
 // POST /api/v1/user/integrations/callback - Handle OAuth callback

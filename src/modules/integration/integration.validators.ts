@@ -40,15 +40,6 @@ export const updateIntegrationConfigSchema = z.object({
 
 // ─── Query Schemas ────────────────────────────────────────────────────────────
 
-export const getIntegrationsQuerySchema = z.object({
-  workspaceId: z.string().optional(),
-  provider: providerEnum.optional(),
-  active: z
-    .string()
-    .transform((val) => val === 'true')
-    .optional(),
-});
-
 export const getIntegrationParamsSchema = z.object({
   id: z.string().min(1, 'Integration ID is required'),
 });
@@ -66,4 +57,3 @@ export const workspaceIntegrationBodySchema = z.object({
 export type CreateIntegrationInput = z.infer<typeof createIntegrationSchema>;
 export type OAuthCallbackInput = z.infer<typeof oauthCallbackSchema>;
 export type UpdateIntegrationConfigInput = z.infer<typeof updateIntegrationConfigSchema>;
-export type GetIntegrationsQuery = z.infer<typeof getIntegrationsQuerySchema>;
