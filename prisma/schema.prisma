@@ -549,6 +549,37 @@ model Task {
   parentId        String?
   workspaceId     String?
   depth           Int              @default(0)
+  githubPrUrl     String?
+  githubPrNumber  Int?
+  githubPrStatus  String?
+  githubPrChecks  Json?
+  githubIssueUrl  String?
+  githubIssueNumber  Int?
+  githubIssueState   String?
+  githubBranchName   String?
+  githubBranchUrl    String?
+  githubBranchProtected  Boolean?
+  githubCommitSha    String?
+  githubCommitUrl    String?
+  githubCommitMessage  String?
+  githubCommitAuthor  String?
+  githubWorkflowStatus  String?
+  githubWorkflowName  String?
+  githubWorkflowUrl  String?
+  githubWorkflowRunId  String?
+  githubReleaseName  String?
+  githubReleaseUrl  String?
+  githubReleaseTagName  String?
+  githubMilestoneTitle  String?
+  githubMilestoneUrl  String?
+  githubMilestoneState  String?
+  githubProjectNumber  Int?
+  githubProjectUrl  String?
+  githubProjectTitle  String?
+  githubDiscussionNumber  Int?
+  githubDiscussionUrl  String?
+  githubDiscussionCategory  String?
+  githubLabels  Json?
   activities      Activity[]
   comments        Comment[]
   dailyTasks      DailyTask[]

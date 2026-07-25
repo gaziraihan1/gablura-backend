@@ -6,49 +6,54 @@ vi.mock('../../../queue/index.js', () => ({
   addProcessWebhookJob: vi.fn().mockResolvedValue({ id: 'job-2' }),
 }));
 
+vi.mock('../../../queue/queues/integration.queue.js', () => ({
+  addSyncIntegrationJob: vi.fn().mockResolvedValue({ id: 'job-1' }),
+  addProcessWebhookJob: vi.fn().mockResolvedValue({ id: 'job-2' }),
+}));
+
 // ── Mock Prisma ──────────────────────────────────────────────────────────────
-const mockIntegration = {
-  id: 'int-1',
-  name: 'GitHub',
-  provider: 'github',
-  accessToken: 'ghp_test_token',
-  refreshToken: null,
-  expiresAt: null,
-  config: {
-    syncDirection: 'one-way',
-    autoSync: true,
-    syncInterval: 300,
-    notifications: true,
-    selectedRepos: ['owner/repo'],
+const { mockIntegration, mockWorkspace, mockTask } = vi.hoisted(() => ({
+  mockIntegration: {
+    id: 'int-1',
+    name: 'GitHub',
+    provider: 'github',
+    accessToken: 'ghp_test_token',
+    refreshToken: null,
+    expiresAt: null,
+    config: {
+      syncDirection: 'one-way',
+      autoSync: true,
+      syncInterval: 300,
+      notifications: true,
+      selectedRepos: ['owner/repo'],
+    },
+    webhookUrl: null,
+    webhookSecret: 'webhook_secret_123',
+    syncStatus: {
+      lastSyncAt: null,
+      lastSyncStatus: 'pending',
+      syncCount: 0,
+    },
+    active: true,
+    connectedAt: new Date(),
+    userId: 'user-1',
+    workspaceId: null,
+    connectedById: 'user-1',
   },
-  webhookUrl: null,
-  webhookSecret: 'webhook_secret_123',
-  syncStatus: {
-    lastSyncAt: null,
-    lastSyncStatus: 'pending',
-    syncCount: 0,
+  mockWorkspace: {
+    id: 'ws-1',
+    name: 'Test Workspace',
+    slug: 'test-workspace',
   },
-  active: true,
-  connectedAt: new Date(),
-  userId: 'user-1',
-  workspaceId: null,
-  connectedById: 'user-1',
-};
-
-const mockWorkspace = {
-  id: 'ws-1',
-  name: 'Test Workspace',
-  slug: 'test-workspace',
-};
-
-const mockTask = {
-  id: 'task-1',
-  title: 'Test Task',
-  description: '',
-  status: 'TODO',
-  workspaceId: 'ws-1',
-  createdById: 'user-1',
-};
+  mockTask: {
+    id: 'task-1',
+    title: 'Test Task',
+    description: '',
+    status: 'TODO',
+    workspaceId: 'ws-1',
+    createdById: 'user-1',
+  },
+}));
 
 vi.mock('../../../lib/prisma.js', () => ({
   prisma: {
@@ -125,7 +130,7 @@ vi.stubGlobal('fetch', mockFetch);
 import { IntegrationMutation } from '../../../modules/integration/integration.mutation.js';
 import { IntegrationAccess } from '../../../modules/integration/integration.access.js';
 import { refreshToken } from '../../../modules/integration/integration.oauth.js';
-import { addSyncIntegrationJob } from '../../../queue/index.js';
+import { addSyncIntegrationJob } from '../../../queue/queues/integration.queue.js';
 
 describe('Integration Module - Complete Tests', () => {
   beforeEach(() => {
@@ -133,7 +138,7 @@ describe('Integration Module - Complete Tests', () => {
   });
 
   afterEach(() => {
-    vi.restoreAllMocks();
+    vi.clearAllMocks();
   });
 
   // ─── Access Control Tests ──────────────────────────────────────────────────
@@ -319,7 +324,7 @@ describe('Integration Module - Complete Tests', () => {
       expect(prisma.task.update).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { id: 'task-1' },
-          data: { status: 'DONE' },
+          data: expect.objectContaining({ status: 'COMPLETED' }),
         })
       );
     });
@@ -426,6 +431,9 @@ describe('Integration Module - Complete Tests', () => {
 
   describe('IntegrationMutation.refreshToken', () => {
     it('should refresh Google token', async () => {
+      process.env.GOOGLE_CALENDAR_CLIENT_ID = 'test-client-id';
+      process.env.GOOGLE_CALENDAR_CLIENT_SECRET = 'test-client-secret';
+
       mockFetch.mockResolvedValueOnce({
         ok: true,
         json: () => Promise.resolve({
@@ -447,6 +455,9 @@ describe('Integration Module - Complete Tests', () => {
 
       expect(token).toBe('new_access_token');
       expect(prisma.integration.update).toHaveBeenCalled();
+
+      delete process.env.GOOGLE_CALENDAR_CLIENT_ID;
+      delete process.env.GOOGLE_CALENDAR_CLIENT_SECRET;
     });
 
     it('should return existing token if not expired', async () => {
@@ -454,6 +465,7 @@ describe('Integration Module - Complete Tests', () => {
       (prisma.integration.findUnique as any).mockResolvedValue({
         ...mockIntegration,
         provider: 'github',
+        refreshToken: 'some_refresh_token',
         expiresAt: new Date(Date.now() + 3600000), // not expired
       });
 
