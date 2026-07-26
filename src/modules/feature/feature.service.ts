@@ -48,7 +48,8 @@ export const FeatureService = {
     if (!feature) throw new NotFoundError('Feature request');
 
     const action  = await FeatureRepository.vote(id, userId, type);
-    const updated = await FeatureRepository.findById(id, userId);
+    // Bypass cache to get fresh data after vote change
+    const updated = await FeatureRepository.findByIdUncached(id, userId);
     return { action, feature: updated };
   },
 

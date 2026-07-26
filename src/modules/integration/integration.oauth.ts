@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import { prisma } from '../../lib/prisma.js';
 import { getRedisClient } from '../../redis/redis.client.js';
 import { ValidationError } from '../../errors/index.js';
+import { encryptToken, decryptToken } from '../../utils/tokenEncryption.js';
 import type { IntegrationProvider, OAuthTokens } from './integration.types.js';
 
 // ─── Internal Types ───────────────────────────────────────────────────────────
@@ -224,12 +225,12 @@ export async function handleOAuthCallback(
       });
 
   if (existingIntegration) {
-    // Update existing integration
+    // Update existing integration (encrypt tokens at rest)
     const updated = await prisma.integration.update({
       where: { id: existingIntegration.id },
       data: {
-        accessToken: tokens.accessToken,
-        refreshToken: tokens.refreshToken,
+        accessToken: encryptToken(tokens.accessToken),
+        refreshToken: encryptToken(tokens.refreshToken),
         expiresAt: tokens.expiresAt,
         active: true,
         connectedAt: new Date(),
@@ -245,13 +246,13 @@ export async function handleOAuthCallback(
     return updated;
   }
 
-  // Create new integration
+  // Create new integration (encrypt tokens at rest)
   const integration = await prisma.integration.create({
     data: {
       name: providerName,
       provider,
-      accessToken: tokens.accessToken,
-      refreshToken: tokens.refreshToken,
+      accessToken: encryptToken(tokens.accessToken),
+      refreshToken: encryptToken(tokens.refreshToken),
       expiresAt: tokens.expiresAt,
       active: true,
       connectedAt: new Date(),
@@ -523,6 +524,9 @@ async function exchangeTrelloCode(
 export async function revokeProviderTokens(provider: string, accessToken: string | null) {
   if (!accessToken) return;
 
+  // Decrypt the token before revoking with the provider
+  const decryptedToken = decryptToken(accessToken);
+
   switch (provider) {
     case 'github':
       await fetch(`https://api.github.com/applications/${process.env.GITHUB_CLIENT_ID}/token`, {
@@ -531,7 +535,7 @@ export async function revokeProviderTokens(provider: string, accessToken: string
           'Authorization': `Basic ${Buffer.from(`${process.env.GITHUB_CLIENT_ID}:${process.env.GITHUB_CLIENT_SECRET}`).toString('base64')}`,
           'Accept': 'application/vnd.github+json',
         },
-        body: JSON.stringify({ access_token: accessToken }),
+        body: JSON.stringify({ access_token: decryptedToken }),
       });
       break;
     case 'slack':
@@ -540,7 +544,7 @@ export async function revokeProviderTokens(provider: string, accessToken: string
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams({
-          token: accessToken,
+          token: decryptedToken,
         }).toString(),
       });
       break;
@@ -560,9 +564,13 @@ export async function refreshToken(integrationId: string): Promise<string | null
     return null;
   }
 
+  // Decrypt stored tokens
+  const decryptedRefreshToken = decryptToken(integration.refreshToken);
+  const decryptedAccessToken = decryptToken(integration.accessToken);
+
   // Check if token is still valid
   if (integration.expiresAt && integration.expiresAt > new Date()) {
-    return integration.accessToken;
+    return decryptedAccessToken;
   }
 
   try {
@@ -578,27 +586,29 @@ export async function refreshToken(integrationId: string): Promise<string | null
     switch (integration.provider) {
       case 'github':
         // GitHub tokens don't expire, but we refresh if needed
-        newTokens = await refreshGithubToken(integration.refreshToken, clientId, clientSecret);
+        newTokens = await refreshGithubToken(decryptedRefreshToken!, clientId, clientSecret);
         break;
       case 'google-calendar':
-        newTokens = await refreshGoogleToken(integration.refreshToken, clientId, clientSecret);
+        newTokens = await refreshGoogleToken(decryptedRefreshToken!, clientId, clientSecret);
         break;
       // Slack and Trello tokens don't refresh
     }
 
     if (newTokens) {
+      // Encrypt new tokens before storing, implement refresh token rotation
+      const newRefreshToken = newTokens.refreshToken || decryptedRefreshToken;
       await prisma.integration.update({
         where: { id: integrationId },
         data: {
-          accessToken: newTokens.accessToken,
-          refreshToken: newTokens.refreshToken || integration.refreshToken,
+          accessToken: encryptToken(newTokens.accessToken),
+          refreshToken: encryptToken(newRefreshToken),
           expiresAt: newTokens.expiresAt,
         },
       });
       return newTokens.accessToken;
     }
 
-    return integration.accessToken;
+    return decryptedAccessToken;
   } catch (error) {
     console.error(`Failed to refresh token for integration ${integrationId}:`, error);
     return null;
@@ -687,5 +697,6 @@ export async function getValidAccessToken(integrationId: string): Promise<string
     return refreshToken(integrationId);
   }
 
-  return integration.accessToken;
+  // Decrypt the stored token before returning
+  return decryptToken(integration.accessToken);
 }

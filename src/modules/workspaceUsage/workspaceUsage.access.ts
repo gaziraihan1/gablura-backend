@@ -1,4 +1,5 @@
 import { prisma } from "../../lib/prisma.js";
+import { ForbiddenError } from "../../errors/index.js";
 
 export const WorkspaceUsageAccess = {
   async assertWorkspaceMember(userId: string, workspaceId: string) {
@@ -6,7 +7,7 @@ export const WorkspaceUsageAccess = {
       where: { userId_workspaceId: { userId, workspaceId } },
       select: { role: true },
     });
-    if (!member) throw new Error("You do not have access to this workspace");
+    if (!member) throw new ForbiddenError("You do not have access to this workspace");
     return member;
   },
 

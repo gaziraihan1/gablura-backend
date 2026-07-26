@@ -159,6 +159,7 @@ describe("WorkspaceUsage integration", () => {
       expect(res.body).toEqual({
         success: false,
         message: "Upgrade workspace plan to access usage analytics",
+        code: "FORBIDDEN",
       });
     });
 
@@ -174,6 +175,7 @@ describe("WorkspaceUsage integration", () => {
       expect(res.body).toEqual({
         success: false,
         message: "You do not have access to this workspace",
+        code: "FORBIDDEN",
       });
     });
 
@@ -185,7 +187,11 @@ describe("WorkspaceUsage integration", () => {
         .set(authHeaders(user));
 
       expect(res.status).toBe(404);
-      expect(res.body).toEqual({ success: false, message: "Workspace not found" });
+      expect(res.body).toEqual({ 
+        success: false, 
+        message: "Workspace not found",
+        code: "NOT_FOUND",
+      });
     });
 
     it("401 — unauthenticated requests are rejected", async () => {

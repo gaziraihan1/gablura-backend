@@ -133,6 +133,17 @@ export const FeatureRepository = {
     );
   },
 
+  async findByIdUncached(id: string, userId: string | null): Promise<FeatureRequestResult | null> {
+    const raw = await prisma.featureRequest.findUnique({
+      where:   { id },
+      include: {
+        createdBy: createdBySelect,
+        votes:     { select: { userId: true, type: true } },
+      },
+    });
+    return raw ? mapFeature(raw, userId) : null;
+  },
+
   async updateStatus(id: string, input: UpdateFeatureStatusInput): Promise<FeatureRequestResult> {
     const raw = await prisma.featureRequest.update({
       where: { id },

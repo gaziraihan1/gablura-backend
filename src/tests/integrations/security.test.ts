@@ -187,7 +187,7 @@ describe('🔐 Security Tests', () => {
           .send({ email: 'rate-limit-test@example.com' });
         
         expect(res.status).toBe(429);
-        expect(res.body.error).toBe('Too many requests');
+        expect(res.body.message).toBe('Too many requests');
 
         spy.mockRestore();
       });

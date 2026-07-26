@@ -107,7 +107,7 @@ describe("Templates Module Integration Tests", () => {
           .send({ email: `overflow-${emailBase}` });
 
         expect(res.status).toBe(429);
-        expect(res.body.error).toBe("Too many requests");
+        expect(res.body.message).toBe("Too many requests");
       } finally {
         pipelineSpy.mockRestore();
       }
