@@ -91,8 +91,8 @@ export const FocusSessionMutation = {
     await prisma.focusSession.delete({ where: { id: input.sessionId } });
 
     // Invalidate caches
-    FocusSessionCache.invalidateActiveSession(input.userId).catch(() => {});
-    FocusSessionCache.invalidateHistory(input.userId).catch(() => {});
+    FocusSessionCache.invalidateActiveSession(input.userId).catch((err) => console.error('[FocusSession] Failed to invalidate active session cache:', err));
+    FocusSessionCache.invalidateHistory(input.userId).catch((err) => console.error('[FocusSession] Failed to invalidate history cache:', err));
 
     return session;
   },

@@ -136,6 +136,7 @@ async function syncGithubData(integration: { id: string; config: unknown }, acce
           'Authorization': `Bearer ${accessToken}`,
           'Accept': 'application/vnd.github+json',
         },
+        signal: AbortSignal.timeout(15_000),
       }
     );
 
@@ -174,6 +175,7 @@ async function syncSlackData(integration: { id: string; config: unknown }, acces
         headers: {
           'Authorization': `Bearer ${accessToken}`,
         },
+        signal: AbortSignal.timeout(15_000),
       }
     );
 
@@ -209,6 +211,7 @@ async function syncGoogleCalendarData(integration: { id: string }, accessToken: 
       headers: {
         'Authorization': `Bearer ${accessToken}`,
       },
+      signal: AbortSignal.timeout(15_000),
     }
   );
 
@@ -234,6 +237,7 @@ async function syncTrelloData(integration: { id: string }, accessToken: string) 
   // Fetch user's boards
   const boardsResponse = await fetch(
     `https://api.trello.com/1/members/me/boards?key=${process.env.TRELLO_CLIENT_ID}&token=${accessToken}&fields=name,url`,
+    { signal: AbortSignal.timeout(15_000) },
   );
 
   if (boardsResponse.ok) {

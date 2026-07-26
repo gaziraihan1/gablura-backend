@@ -549,6 +549,7 @@ model Task {
   parentId        String?
   workspaceId     String?
   depth           Int              @default(0)
+  githubRepo      String?
   githubPrUrl     String?
   githubPrNumber  Int?
   githubPrStatus  String?

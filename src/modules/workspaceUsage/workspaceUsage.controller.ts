@@ -3,6 +3,7 @@ import { AuthRequest } from '../../middleware/auth.js';
 import { WorkspaceUsageQuery } from './workspaceUsage.query.js';
 import { prisma } from '../../lib/prisma.js';
 import { WorkspaceUsageAccess } from './workspaceUsage.access.js';
+import { NotFoundError, ForbiddenError } from '../../errors/index.js';
 
 async function assertWorkspaceUsageAccess(
   workspaceId: string,
@@ -14,11 +15,11 @@ async function assertWorkspaceUsageAccess(
   });
 
   if (!workspace) {
-    throw new Error("Workspace not found");
+    throw new NotFoundError('Workspace');
   }
 
   if (workspace.plan === "FREE") {
-    throw new Error("Upgrade workspace plan to access usage analytics");
+    throw new ForbiddenError("Upgrade workspace plan to access usage analytics");
   }
 
   await WorkspaceUsageAccess.assertWorkspaceMember(userId, workspaceId);
@@ -50,30 +51,26 @@ export class WorkspaceUsageController {
     } catch (error: any) {
       console.error('Workspace usage error:', error);
 
-      if (error.message.includes('Upgrade workspace plan')) {
+      if (error instanceof ForbiddenError) {
         return res.status(403).json({
           success: false,
           message: error.message,
+          code: error.code,
         });
       }
 
-      if (error.message.toLowerCase().includes('access')) {
-        return res.status(403).json({
-          success: false,
-          message: error.message,
-        });
-      }
-
-      if (error.message === "Workspace not found") {
+      if (error instanceof NotFoundError) {
         return res.status(404).json({
           success: false,
           message: error.message,
+          code: error.code,
         });
       }
 
       return res.status(500).json({
         success: false,
         message: 'Failed to fetch workspace usage data',
+        code: 'INTERNAL_ERROR',
       });
     }
   }

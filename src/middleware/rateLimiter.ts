@@ -28,14 +28,14 @@ export const rateLimitMiddleware = (max = 100, windowSeconds = 60) => {
       const count = typeof zcardResult === "number" ? zcardResult : 0;
 
       if (count > max) {
-        return res.status(429).json({ error: "Too many requests", retryAfter: windowSeconds });
+        return res.status(429).json({ success: false, message: "Too many requests", code: "RATE_LIMIT_EXCEEDED", retryAfter: windowSeconds });
       }
 
       next();
     } catch (error) {
       console.error("Rate limit error:", error);
       // Fail closed: reject when rate limiting can't be verified
-      return res.status(429).json({ error: "Rate limit service unavailable", retryAfter: windowSeconds });
+      return res.status(429).json({ success: false, message: "Rate limit service unavailable", code: "RATE_LIMIT_SERVICE_UNAVAILABLE", retryAfter: windowSeconds });
     }
   };
 };

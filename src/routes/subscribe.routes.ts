@@ -1,11 +1,12 @@
 import { Router } from "express";
 import { prisma } from "../lib/prisma.js";
 import { ratelimit } from "../lib/rateLimit.js";
+import { asyncHandler } from "../errors/index.js";
 
 
 const router = Router();
 
-router.post("/", async (req, res) => {
+router.post("/", asyncHandler(async (req, res) => {
   const identifier = req.ip ?? "anonymous";
 
   const { success } = await ratelimit.limit(identifier);
@@ -54,4 +55,4 @@ router.post("/", async (req, res) => {
     success: true,
     message: `Template sent to ${email}`,
   });
-});
+}));

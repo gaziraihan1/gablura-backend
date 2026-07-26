@@ -251,12 +251,9 @@ async function handleSubscriptionUpserted(event: NormalisedSubscriptionEvent) {
   console.log("[Webhook] Provider subscription ID:", event.providerSubscriptionId);
   console.log("[Webhook] Subscription upsert payload:", JSON.stringify({
     workspaceId,
-    ownerId,
     planName:               event.planName,
     providerSubscriptionId: event.providerSubscriptionId,
-    providerCustomerId:     event.providerCustomerId,
     status:                 event.status,
-    allMetadata:            event.metadata,
   }, null, 2));
 
   if (!workspaceId) {
@@ -486,8 +483,6 @@ async function upsertInvoice(event: NormalisedInvoiceEvent) {
   console.log("[Webhook] Invoice upsert payload:", JSON.stringify({
     providerInvoiceId: event.providerInvoiceId,
     providerSubscriptionId: event.providerSubscriptionId,
-    providerCustomerId: event.providerCustomerId,
-    metadata: event.metadata,
     status: event.status,
   }, null, 2));
 

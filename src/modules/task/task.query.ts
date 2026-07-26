@@ -36,6 +36,7 @@ async function countOverdueTasks(baseWhere: Record<string, unknown>, now: Date):
       dueDate:        true,
       createdAt:      true,
     },
+    take: 500,
   });
 
   let count = 0;

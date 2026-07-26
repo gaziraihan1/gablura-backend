@@ -3,6 +3,7 @@ import type { CreateCommentInput, UpdateCommentInput } from './comment.types.js'
 import { commentSimpleInclude } from './comment.selects.js';
 import { CommentAccess } from './comment.access.js';
 import { extractMentionedUserIds } from './mention/mention.utils.js';
+import { BadRequestError } from '../../errors/index.js';
 
 type OnCommentCreated = (data: {
   commentId:    string;
@@ -34,7 +35,7 @@ export const CommentMutation = {
     let resolvedParentId = input.parentId ?? null;
     if (parentComment) {
       if (parentComment.taskId !== input.taskId) {
-        throw new Error('BAD_REQUEST: Invalid parent comment');
+        throw new BadRequestError('Invalid parent comment');
       }
       resolvedParentId = parentComment.parentId ?? input.parentId ?? null;
     }

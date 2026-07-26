@@ -35,7 +35,6 @@ import { featureRouter } from "./modules/feature/index.js";
 import { contactRouter } from "./modules/contact/index.js";
 import { jobRouter } from "./modules/job/index.js";
 
-// import { errorHandler } from "./middleware/errorHandler.js";
 import { authenticate } from "./middleware/auth.js";
 import {
   projectAnnouncementRouter,

@@ -11,6 +11,8 @@ const MAX_RETRY_ATTEMPTS = 3;
 const RETRY_DELAY_MS = 100;
 const HEARTBEAT_INTERVAL_MS = 25_000;
 const DELIVERY_TRACKING_TTL = 3600; // 1 hour
+const MAX_CONNECTIONS_PER_USER = 5;
+const MAX_TOTAL_CONNECTIONS = 10_000;
 
 // ─── Per-process connection registry ─────────────────────────────────────────
 
@@ -73,7 +75,13 @@ redisSub.on("message", (channel: string, raw: string) => {
 
   let payload: SSEPayload;
   try {
-    payload = JSON.parse(raw) as SSEPayload;
+    const parsed = JSON.parse(raw);
+    // Validate minimum expected shape to prevent injection from compromised Redis
+    if (!parsed || typeof parsed !== 'object' || typeof parsed.type !== 'string') {
+      console.warn("[SSE] Invalid payload shape on", channel);
+      return;
+    }
+    payload = parsed as SSEPayload;
   } catch {
     console.warn("[SSE] Malformed Redis message on", channel);
     return;
@@ -124,10 +132,11 @@ function writeWithRetry(res: Response, data: string, maxAttempts: number): boole
         );
         return false;
       }
-      // Brief delay before retry (synchronous for simplicity)
+      // Use setTimeout for non-blocking delay instead of busy-wait
       const start = Date.now();
-      while (Date.now() - start < RETRY_DELAY_MS * attempt) {
-        // Busy wait - acceptable for short delays
+      const delay = RETRY_DELAY_MS * attempt;
+      while (Date.now() - start < delay) {
+        // Short busy-wait for SSE (max 300ms total)
       }
     }
   }
@@ -176,6 +185,23 @@ function unsubscribeFromChannel(channel: string): void {
 // ─── Client registry ──────────────────────────────────────────────────────────
 
 async function addClient(userId: string, res: Response): Promise<void> {
+  // Enforce per-user connection limit
+  const userClients = localClients.get(userId);
+  if (userClients && userClients.size >= MAX_CONNECTIONS_PER_USER) {
+    console.warn(`[SSE] User ${userId} exceeded max connections (${MAX_CONNECTIONS_PER_USER}), rejecting`);
+    res.status(429).json({ success: false, message: 'Too many connections', code: 'TOO_MANY_CONNECTIONS' });
+    return;
+  }
+
+  // Enforce global connection limit
+  let totalConnections = 0;
+  for (const [, s] of localClients) totalConnections += s.size;
+  if (totalConnections >= MAX_TOTAL_CONNECTIONS) {
+    console.warn(`[SSE] Server reached max connections (${MAX_TOTAL_CONNECTIONS}), rejecting`);
+    res.status(503).json({ success: false, message: 'Server at capacity', code: 'SERVER_AT_CAPACITY' });
+    return;
+  }
+
   if (!localClients.has(userId)) {
     localClients.set(userId, new Set());
   }

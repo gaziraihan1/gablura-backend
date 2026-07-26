@@ -16,6 +16,7 @@ export const requireFocuraAdmin = (
     return res.status(401).json({
       success: false,
       message: 'Unauthorized',
+      code: 'NOT_AUTHENTICATED',
     });
   }
 
@@ -24,6 +25,7 @@ export const requireFocuraAdmin = (
     return res.status(403).json({
       success: false,
       message: 'Forbidden: Admin access required',
+      code: 'FORBIDDEN',
     });
   }
 

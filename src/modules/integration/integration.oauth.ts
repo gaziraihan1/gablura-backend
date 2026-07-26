@@ -131,7 +131,18 @@ export async function handleOAuthCallback(
   // Parse state
   let stateData: OAuthStateData;
   try {
-    stateData = JSON.parse(Buffer.from(state, 'base64').toString());
+    const parsed = JSON.parse(Buffer.from(state, 'base64').toString());
+    // Validate required fields before destructuring
+    if (
+      !parsed ||
+      typeof parsed !== 'object' ||
+      typeof parsed.provider !== 'string' ||
+      typeof parsed.userId !== 'string' ||
+      typeof parsed.timestamp !== 'number'
+    ) {
+      throw new ValidationError('Invalid OAuth state: missing required fields');
+    }
+    stateData = parsed as OAuthStateData;
   } catch {
     throw new ValidationError('Invalid state parameter');
   }
@@ -142,8 +153,6 @@ export async function handleOAuthCallback(
     provider,
     hasWorkspaceId: !!workspaceId,
     hasCsrfToken: !!csrfToken,
-    stateUserId: stateData.userId,
-    requestUserId: userId,
     timestampAge: Date.now() - timestamp,
   });
 
@@ -216,7 +225,7 @@ export async function handleOAuthCallback(
 
   if (existingIntegration) {
     // Update existing integration
-    return prisma.integration.update({
+    const updated = await prisma.integration.update({
       where: { id: existingIntegration.id },
       data: {
         accessToken: tokens.accessToken,
@@ -227,10 +236,17 @@ export async function handleOAuthCallback(
         syncStatus: { lastSyncAt: null, lastSyncStatus: 'pending', syncCount: 0 },
       },
     });
+
+    // Auto-create webhooks for GitHub if workspace integration
+    if (provider === 'github' && workspaceId) {
+      await createGitHubWebhooks(updated.id, tokens.accessToken, workspaceId);
+    }
+
+    return updated;
   }
 
   // Create new integration
-  return prisma.integration.create({
+  const integration = await prisma.integration.create({
     data: {
       name: providerName,
       provider,
@@ -251,6 +267,92 @@ export async function handleOAuthCallback(
       syncStatus: { lastSyncAt: null, lastSyncStatus: 'pending', syncCount: 0 },
     },
   });
+
+  // Auto-create webhooks for GitHub if workspace integration
+  if (provider === 'github' && workspaceId) {
+    await createGitHubWebhooks(integration.id, tokens.accessToken, workspaceId);
+  }
+
+  return integration;
+}
+
+/**
+ * Create webhooks for GitHub repositories
+ */
+async function createGitHubWebhooks(
+  integrationId: string,
+  accessToken: string,
+  workspaceId: string,
+) {
+  try {
+    // Fetch user's repositories
+    const reposResponse = await fetch('https://api.github.com/user/repos?per_page=100&sort=updated', {
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Accept': 'application/vnd.github+json',
+      },
+      signal: AbortSignal.timeout(15_000),
+    });
+
+    if (!reposResponse.ok) {
+      console.error('Failed to fetch GitHub repositories');
+      return;
+    }
+
+    const repos = await reposResponse.json() as Array<{ id: number; full_name: string; hooks_url: string }>;
+
+    // Get the frontend URL for webhook callback
+    const frontendUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'http://localhost:3000';
+    const webhookSecret = crypto.randomBytes(32).toString('hex');
+
+    // Create webhooks for user's repositories (limit to first 10 for performance)
+    const reposToHook = repos.slice(0, 10);
+
+    for (const repo of reposToHook) {
+      try {
+        const hookResponse = await fetch(repo.hooks_url, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Accept': 'application/vnd.github+json',
+            'Content-Type': 'application/json',
+          },
+          signal: AbortSignal.timeout(15_000),
+          body: JSON.stringify({
+            name: 'web',
+            active: true,
+            events: ['push', 'pull_request', 'issues', 'workflow_run', 'release', 'milestone'],
+            config: {
+              url: `${process.env.BACKEND_URL || 'http://localhost:5000'}/api/v1/webhooks/github`,
+              content_type: 'json',
+              secret: webhookSecret,
+            },
+          }),
+        });
+
+        if (hookResponse.ok) {
+          console.log(`Created webhook for ${repo.full_name}`);
+        }
+      } catch (error) {
+        console.error(`Failed to create webhook for ${repo.full_name}:`, error);
+      }
+    }
+
+    // Update integration with webhook secret and selected repos
+    await prisma.integration.update({
+      where: { id: integrationId },
+      data: {
+        webhookSecret,
+        config: {
+          selectedRepos: reposToHook.map((r) => r.full_name),
+        },
+      },
+    });
+
+    console.log(`Created webhooks for ${reposToHook.length} repositories`);
+  } catch (error) {
+    console.error('Failed to create GitHub webhooks:', error);
+  }
 }
 
 /**

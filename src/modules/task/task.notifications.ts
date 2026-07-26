@@ -82,7 +82,7 @@ export const TaskNotifications = {
         title:         'Task Completed',
         message:       `Task "${params.taskTitle}" was completed`,
         excludeUserId: params.userId,
-      }).catch(() => {});
+      }).catch((err) => console.error('[TaskNotifications] Failed to notify task completion:', err));
     } catch (error) {
       console.error('Failed to notify task completion:', error);
     }
@@ -102,7 +102,7 @@ export const TaskNotifications = {
         title:         'New Comment',
         message:       `${params.commenterName} commented on "${params.taskTitle}"`,
         excludeUserId: params.commenterId,
-      }).catch(() => {});
+      }).catch((err) => console.error('[TaskNotifications] Failed to notify new comment:', err));
     } catch (error) {
       console.error('Failed to notify new comment:', error);
     }
@@ -124,7 +124,7 @@ export const TaskNotifications = {
         senderName:  params.senderName,
         context:     `task "${params.taskTitle}"`,
         actionUrl:   `/dashboard/tasks/${params.taskId}`,
-      }).catch(() => {});
+      }).catch((err) => console.error('[TaskNotifications] Failed to notify comment mentions:', err));
     } catch (error) {
       console.error('Failed to notify comment mentions:', error);
     }

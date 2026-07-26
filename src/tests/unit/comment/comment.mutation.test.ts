@@ -96,7 +96,7 @@ describe('CommentMutation.createComment', () => {
 
     await expect(
       CommentMutation.createComment({ ...BASE_INPUT, parentId: 'p1' }),
-    ).rejects.toThrow('BAD_REQUEST');
+    ).rejects.toThrow('Invalid parent comment');
   });
 
   it('flattens a grandchild reply to grandparent level (max 1 level deep)', async () => {

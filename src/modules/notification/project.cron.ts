@@ -193,6 +193,7 @@ async function runProjectReminderCron(): Promise<void> {
         select: { slug: true },
       },
     },
+    take: 100,
   });
 
   let sent = 0;
@@ -237,6 +238,7 @@ async function runProjectAutoArchiveCron(): Promise<void> {
         select: { slug: true },
       },
     },
+    take: 100,
   });
 
   let archived = 0;

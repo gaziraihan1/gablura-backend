@@ -13,8 +13,6 @@ export const getUserProfile = async (req: AuthRequest, res: Response): Promise<v
       });
       return;
     }
-    console.time("profile");
-
 
     const user = await prisma.user.findUnique({
       where: { id: req.user.id },
@@ -39,7 +37,6 @@ export const getUserProfile = async (req: AuthRequest, res: Response): Promise<v
         },
       },
     });
-    console.timeEnd("profile");
 
     if (!user) {
       res.status(404).json({

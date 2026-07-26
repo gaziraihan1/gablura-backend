@@ -23,6 +23,7 @@ interface GitHubWorkflowRun {
   html_url: string;
   head_branch?: string;
   head_sha?: string;
+  run_number?: number;
 }
 
 interface GitHubRelease {
@@ -240,26 +241,39 @@ async function processGithubWebhook(
         prStatus = 'open';
       }
 
-      console.log(`PR ${prStatus}: ${pr.title} (#${prNumber})`);
+      console.log(`PR ${prStatus}: ${pr.title} (#${prNumber}) in ${repoFullName}`);
+      console.log(`Looking for tasks with: workspaceId=${workspaceId}, prNumber=${prNumber}, repo=${repoFullName}, branchName=${branchName}`);
 
-      // Find tasks linked to this PR by PR number in title or description
+      // Find tasks linked to this PR by:
+      // 1. PR number + repo name (exact match)
+      // 2. PR number in title/description (fuzzy match for existing tasks)
+      // 3. Branch name match
       const linkedTasks = await prisma.task.findMany({
         where: {
           workspaceId,
           OR: [
+            // Exact match: PR number + repo
+            { AND: [{ githubPrNumber: prNumber }, { githubRepo: repoFullName }] },
+            // Fuzzy match: PR number in title or description
             { title: { contains: `#${prNumber}` } },
             { description: { contains: `#${prNumber}` } },
-            { title: { contains: repoFullName } },
+            // Branch name match
+            { githubBranchName: branchName },
           ],
         },
+        take: 100,
       });
 
-      // Update linked tasks with PR data and branch data
+      console.log(`Found ${linkedTasks.length} linked tasks`);
+
+      // Update linked tasks with PR data, branch data, and repo name
       for (const task of linkedTasks) {
         const updateData: Record<string, unknown> = {
           githubPrUrl: prUrl,
           githubPrNumber: prNumber,
           githubPrStatus: prStatus,
+          githubRepo: repoFullName,
+          githubPrChecks: { totalChecks: 0, passingChecks: 0 },
         };
 
         // Add branch data if available
@@ -298,6 +312,7 @@ async function processGithubWebhook(
         workspaceId,
         githubBranchName: branchName,
       },
+      take: 100,
     });
 
     // Get latest commit data if available
@@ -351,6 +366,7 @@ async function processGithubWebhook(
           { githubCommitSha: commitSha },
         ],
       },
+      take: 100,
     });
 
     // Update tasks with workflow data
@@ -381,6 +397,7 @@ async function processGithubWebhook(
         workspaceId,
         githubBranchName: release.target_commitish,
       },
+      take: 100,
     });
 
     // Update tasks with release data
@@ -607,6 +624,7 @@ async function processGoogleCalendarWebhook(
         headers: {
           'Authorization': `Bearer ${accessToken}`,
         },
+        signal: AbortSignal.timeout(15_000),
       }
     );
 

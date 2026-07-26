@@ -18,6 +18,7 @@ import {
   updateTaskStatusSchema,
 } from './task.validators.js';
 import { prisma } from '../../lib/prisma.js';
+import { Prisma } from '@prisma/client';
 
 export const getTasks = asyncHandler(async (req: AuthRequest, res: Response) => {
   const parsed = getTasksQuerySchema.safeParse(req.query);
@@ -175,4 +176,292 @@ export const getPersonalQuota = asyncHandler(async (req: AuthRequest, res: Respo
 export const getWorkspaceQuota = asyncHandler(async (req: AuthRequest, res: Response) => {
   const info = await getWorkspaceQuotaInfo(req.params.workspaceId, req.user!.id);
   res.json({ success: true, data: info });
+});
+
+// ─── Input Sanitization ──────────────────────────────────────────────────────
+
+function sanitizeString(input: string | undefined | null, maxLength = 500): string | undefined {
+  if (!input) return undefined;
+  // Remove HTML tags and limit length
+  return input.replace(/[<>]/g, '').substring(0, maxLength);
+}
+
+function sanitizeNumber(input: number | undefined | null): number | undefined {
+  if (input === undefined || input === null) return undefined;
+  const num = Number(input);
+  return isNaN(num) ? undefined : num;
+}
+
+function isValidGitHubUrl(url: string): boolean {
+  return /^https:\/\/github\.com\/[^/]+\/[^/]+\/(pull|issues|tree|commit)\/.+$/.test(url);
+}
+
+export const linkGitHubEntity = asyncHandler(async (req: AuthRequest, res: Response) => {
+  const { id } = req.params;
+  const { type, url, number, sha, name } = req.body;
+  const userId = req.user!.id;
+
+  // Validate link type
+  const validTypes = ['pr', 'issue', 'branch', 'commit'];
+  if (!validTypes.includes(type)) {
+    throw new ValidationError('Invalid link type');
+  }
+
+  // Sanitize inputs
+  const sanitizedUrl = sanitizeString(url, 500);
+  const sanitizedName = sanitizeString(name, 200);
+  const sanitizedSha = sanitizeString(sha, 40);
+  const sanitizedNumber = sanitizeNumber(number);
+
+  // Validate URL format if provided
+  if (sanitizedUrl && !isValidGitHubUrl(sanitizedUrl)) {
+    throw new ValidationError('Invalid GitHub URL format');
+  }
+
+  // Validate required fields based on type
+  if (type === 'pr' && !sanitizedNumber && !sanitizedUrl) {
+    throw new ValidationError('PR number or URL is required');
+  }
+  if (type === 'issue' && !sanitizedNumber && !sanitizedUrl) {
+    throw new ValidationError('Issue number or URL is required');
+  }
+  if (type === 'branch' && !sanitizedName && !sanitizedUrl) {
+    throw new ValidationError('Branch name or URL is required');
+  }
+  if (type === 'commit' && !sanitizedSha && !sanitizedUrl) {
+    throw new ValidationError('Commit SHA or URL is required');
+  }
+
+  // Find the task with workspace/project info
+  const task = await prisma.task.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      createdById: true,
+      workspaceId: true,
+      projectId: true,
+    },
+  });
+
+  if (!task) {
+    throw new ValidationError('Task not found');
+  }
+
+  // Check access: user must be task creator, workspace member, or project member
+  let hasAccess = task.createdById === userId;
+
+  if (!hasAccess && task.workspaceId) {
+    // Check workspace membership
+    const membership = await prisma.workspaceMember.findFirst({
+      where: {
+        userId,
+        workspaceId: task.workspaceId,
+      },
+    });
+    hasAccess = !!membership;
+  }
+
+  if (!hasAccess && task.projectId) {
+    // Check project membership (project members have access)
+    const project = await prisma.project.findUnique({
+      where: { id: task.projectId },
+      select: { workspaceId: true },
+    });
+    if (project?.workspaceId) {
+      const membership = await prisma.workspaceMember.findFirst({
+        where: {
+          userId,
+          workspaceId: project.workspaceId,
+        },
+      });
+      hasAccess = !!membership;
+    }
+  }
+
+  if (!hasAccess) {
+    throw new ValidationError('You do not have permission to link GitHub entities to this task');
+  }
+
+  // Extract repository name from URL if provided
+  let repoName: string | undefined;
+  if (sanitizedUrl) {
+    const repoMatch = sanitizedUrl.match(/github\.com\/([^/]+\/[^/]+)/);
+    if (repoMatch) {
+      repoName = repoMatch[1];
+    }
+  }
+
+  // Build update data based on link type
+  const updateData: Record<string, unknown> = {};
+
+  // Always store repository name if available
+  if (repoName) {
+    updateData.githubRepo = repoName;
+  }
+
+  // Try to fetch actual PR/issue status from GitHub if we have an access token
+  let prStatus = 'open';
+  let issueState = 'open';
+
+  if (type === 'pr' || type === 'issue') {
+    const integration = await prisma.integration.findFirst({
+      where: {
+        userId,
+        provider: 'github',
+        active: true,
+      },
+    });
+
+    if (integration?.accessToken && sanitizedUrl) {
+      try {
+        const response = await fetch(sanitizedUrl, {
+          headers: {
+            'Authorization': `Bearer ${integration.accessToken}`,
+            'Accept': 'application/vnd.github+json',
+          },
+        });
+
+        if (response.ok) {
+          const data = await response.json() as Record<string, unknown>;
+          if (type === 'pr') {
+            prStatus = (data.merged ? 'merged' : data.state === 'closed' ? 'closed' : 'open') as string;
+          } else {
+            issueState = (data.state === 'closed' ? 'closed' : 'open') as string;
+          }
+        }
+      } catch {
+        // If we can't fetch, use defaults
+        console.log('Could not fetch PR/issue status from GitHub');
+      }
+    }
+  }
+
+  switch (type) {
+    case 'pr':
+      updateData.githubPrUrl = sanitizedUrl;
+      updateData.githubPrNumber = sanitizedNumber;
+      updateData.githubPrStatus = prStatus;
+      // Auto-complete task if PR is already merged
+      if (prStatus === 'merged') {
+        updateData.status = 'COMPLETED';
+      }
+      break;
+    case 'issue':
+      updateData.githubIssueUrl = sanitizedUrl;
+      updateData.githubIssueNumber = sanitizedNumber;
+      updateData.githubIssueState = issueState;
+      break;
+    case 'branch':
+      updateData.githubBranchName = sanitizedName;
+      updateData.githubBranchUrl = sanitizedUrl;
+      break;
+    case 'commit':
+      updateData.githubCommitSha = sanitizedSha;
+      updateData.githubCommitUrl = sanitizedUrl;
+      break;
+  }
+
+  // Update the task
+  const updatedTask = await prisma.task.update({
+    where: { id },
+    data: updateData,
+  });
+
+  res.json({ success: true, data: updatedTask });
+});
+
+export const unlinkGitHubEntity = asyncHandler(async (req: AuthRequest, res: Response) => {
+  const { id } = req.params;
+  const userId = req.user!.id;
+
+  // Find the task
+  const task = await prisma.task.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      createdById: true,
+      workspaceId: true,
+      projectId: true,
+    },
+  });
+
+  if (!task) {
+    throw new ValidationError('Task not found');
+  }
+
+  // Check access
+  let hasAccess = task.createdById === userId;
+
+  if (!hasAccess && task.workspaceId) {
+    const membership = await prisma.workspaceMember.findFirst({
+      where: {
+        userId,
+        workspaceId: task.workspaceId,
+      },
+    });
+    hasAccess = !!membership;
+  }
+
+  if (!hasAccess && task.projectId) {
+    const project = await prisma.project.findUnique({
+      where: { id: task.projectId },
+      select: { workspaceId: true },
+    });
+    if (project?.workspaceId) {
+      const membership = await prisma.workspaceMember.findFirst({
+        where: {
+          userId,
+          workspaceId: project.workspaceId,
+        },
+      });
+      hasAccess = !!membership;
+    }
+  }
+
+  if (!hasAccess) {
+    throw new ValidationError('You do not have permission to unlink GitHub from this task');
+  }
+
+  // Clear all GitHub fields using SQL for better performance
+  await prisma.$executeRaw`
+    UPDATE "Task" SET
+      "githubRepo" = NULL,
+      "githubPrUrl" = NULL,
+      "githubPrNumber" = NULL,
+      "githubPrStatus" = NULL,
+      "githubPrChecks" = NULL,
+      "githubIssueUrl" = NULL,
+      "githubIssueNumber" = NULL,
+      "githubIssueState" = NULL,
+      "githubBranchName" = NULL,
+      "githubBranchUrl" = NULL,
+      "githubBranchProtected" = NULL,
+      "githubCommitSha" = NULL,
+      "githubCommitUrl" = NULL,
+      "githubCommitMessage" = NULL,
+      "githubCommitAuthor" = NULL,
+      "githubWorkflowStatus" = NULL,
+      "githubWorkflowName" = NULL,
+      "githubWorkflowUrl" = NULL,
+      "githubWorkflowRunId" = NULL,
+      "githubReleaseName" = NULL,
+      "githubReleaseUrl" = NULL,
+      "githubReleaseTagName" = NULL,
+      "githubMilestoneTitle" = NULL,
+      "githubMilestoneUrl" = NULL,
+      "githubMilestoneState" = NULL,
+      "githubProjectNumber" = NULL,
+      "githubProjectUrl" = NULL,
+      "githubProjectTitle" = NULL,
+      "githubDiscussionNumber" = NULL,
+      "githubDiscussionUrl" = NULL,
+      "githubDiscussionCategory" = NULL,
+      "githubLabels" = NULL
+    WHERE id = ${id}
+  `;
+
+  // Fetch and return the updated task
+  const updatedTask = await prisma.task.findUnique({ where: { id } });
+
+  res.json({ success: true, data: updatedTask });
 });

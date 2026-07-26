@@ -14,6 +14,7 @@ router.put('/password', authenticate, changePassword);
 
 router.get('/workspace-members', authenticate, async (req: AuthRequest, res: Response) => {
   try {
+    const limit = Math.min(Number(req.query.limit) || 100, 200);
     const members = await prisma.user.findMany({
       where: {
         workspaceMembers: {
@@ -36,6 +37,7 @@ router.get('/workspace-members', authenticate, async (req: AuthRequest, res: Res
         createdAt: true,
       },
       distinct: ['id'],
+      take: limit,
     });
 
     res.json({

@@ -30,7 +30,6 @@ export const initSentry = (): void => {
     // Filter out sensitive data
     beforeSend(event, hint) {
       // Remove sensitive headers and data
-      console.log("Sentry beforeSend event:", event, "hint:", hint);
       if (event.request) {
         if (event.request.headers) {
           delete event.request.headers.authorization;

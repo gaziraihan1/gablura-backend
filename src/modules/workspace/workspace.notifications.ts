@@ -18,7 +18,9 @@ export const WorkspaceNotifications = {
         message:   `${params.inviterName} invited you to join ${params.workspaceName}`,
         actionUrl: `/dashboard/workspaces/invitations/${params.token}`,
       });
-    } catch {}
+    } catch (err) {
+      console.error('[WorkspaceNotifications] Failed to send invite notification:', err);
+    }
   },
 
   async notifyAccepted(params: {
@@ -37,7 +39,9 @@ export const WorkspaceNotifications = {
         message:   `${params.userName} accepted your invitation to ${params.workspaceName}`,
         actionUrl: `/dashboard/workspaces/${params.workspaceSlug}`,
       });
-    } catch {}
+    } catch (err) {
+      console.error('[WorkspaceNotifications] Failed to send accepted notification:', err);
+    }
   },
 
   async notifyAdmins(params: {
@@ -73,7 +77,9 @@ export const WorkspaceNotifications = {
           actionUrl: `/dashboard/workspaces/${params.workspaceSlug}/members`,
         })),
       );
-    } catch {}
+    } catch (err) {
+      console.error('[WorkspaceNotifications] Failed to send admin notifications:', err);
+    }
   },
 
   async notifyRemoved(params: {
@@ -89,7 +95,9 @@ export const WorkspaceNotifications = {
         title:    'Removed from Workspace',
         message:  `You have been removed from ${params.workspaceName}`,
       });
-    } catch {}
+    } catch (err) {
+      console.error('[WorkspaceNotifications] Failed to send removal notification:', err);
+    }
   },
 
   async notifyRoleChanged(params: {
@@ -108,6 +116,8 @@ export const WorkspaceNotifications = {
         message:   `Your role in ${params.workspaceName} has been changed to ${params.role}`,
         actionUrl: `/dashboard/workspaces/${params.workspaceId}`,
       });
-    } catch {}
+    } catch (err) {
+      console.error('[WorkspaceNotifications] Failed to send role change notification:', err);
+    }
   },
 };

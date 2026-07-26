@@ -219,24 +219,29 @@ export const TaskMutation = {
     }
 
     let addedAssigneeIds: string[] = [];
-    if (data.assigneeIds !== undefined) {
-      const existingIds = existingTask.assignees.map((a: {userId: string}) => a.userId);
-      addedAssigneeIds  = data.assigneeIds.filter((uid) => !existingIds.includes(uid));
-      await prisma.taskAssignee.deleteMany({ where: { taskId } });
-      if (data.assigneeIds.length > 0) {
-        await prisma.taskAssignee.createMany({
-          data: data.assigneeIds.map((userId) => ({ taskId, userId })),
-        });
-      }
-    }
+    if (data.assigneeIds !== undefined || data.labelIds !== undefined) {
+      // Atomic replacement of assignees and labels within a transaction
+      await prisma.$transaction(async (tx) => {
+        if (data.assigneeIds !== undefined) {
+          const existingIds = existingTask.assignees.map((a: {userId: string}) => a.userId);
+          addedAssigneeIds  = data.assigneeIds.filter((uid) => !existingIds.includes(uid));
+          await tx.taskAssignee.deleteMany({ where: { taskId } });
+          if (data.assigneeIds.length > 0) {
+            await tx.taskAssignee.createMany({
+              data: data.assigneeIds.map((userId) => ({ taskId, userId })),
+            });
+          }
+        }
 
-    if (data.labelIds !== undefined) {
-      await prisma.taskLabel.deleteMany({ where: { taskId } });
-      if (data.labelIds.length > 0) {
-        await prisma.taskLabel.createMany({
-          data: data.labelIds.map((labelId) => ({ taskId, labelId })),
-        });
-      }
+        if (data.labelIds !== undefined) {
+          await tx.taskLabel.deleteMany({ where: { taskId } });
+          if (data.labelIds.length > 0) {
+            await tx.taskLabel.createMany({
+              data: data.labelIds.map((labelId) => ({ taskId, labelId })),
+            });
+          }
+        }
+      });
     }
 
     if (onUpdated) {

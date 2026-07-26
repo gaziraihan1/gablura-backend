@@ -128,7 +128,7 @@ export async function sendAdminContactNotification(
   ip: string
 ): Promise<void> {
   const supportEmail =
-    process.env.EMAIL_SERVER_USER ?? "focurabusiness@gmail.com";
+    process.env.SUPPORT_EMAIL ?? process.env.EMAIL_SERVER_USER ?? "support@focura.app";
 
   await sendMail({
     to: supportEmail,
@@ -190,7 +190,7 @@ function baseWrapper(content: string): string {
             <td style="padding:24px 0;text-align:center;">
               <p style="margin:0;font-size:12px;color:#a3a3a3;">
                 © ${new Date().getFullYear()} Focura ·
-                <a href="https://focura-client.vercel.app" style="color:#a3a3a3;">focura-client.vercel.app</a>
+                <a href="${process.env.CLIENT_URL || process.env.FRONTEND_URL || 'https://focura.app'}" style="color:#a3a3a3;">${process.env.CLIENT_URL || process.env.FRONTEND_URL || 'focura.app'}</a>
               </p>
             </td>
           </tr>
@@ -233,7 +233,7 @@ function buildAdminEmailHtml(
       <span style="font-size:11px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:${color};">${label}</span>
     </div>
     <h2 style="margin:0 0 4px;font-size:18px;font-weight:700;color:#0a0a0a;">New Contact Message</h2>
-    <p style="margin:0 0 24px;font-size:13px;color:#737373;">Submitted via focura-client.vercel.app/contact</p>
+    <p style="margin:0 0 24px;font-size:13px;color:#737373;">Submitted via ${process.env.CLIENT_URL || process.env.FRONTEND_URL || 'focura.app'}/contact</p>
 
     <table width="100%" cellpadding="0" cellspacing="0"
       style="border:1px solid #e5e5e5;border-radius:8px;overflow:hidden;margin-bottom:24px;">
@@ -283,7 +283,7 @@ function buildUserAutoReplyHtml(data: CreateContactMessageInput): string {
 
     <p style="margin:0 0 8px;font-size:13px;color:#737373;line-height:1.6;">
       If this is urgent, you can also reach us directly at
-      <a href="mailto:focurabusiness@gmail.com" style="color:#0a0a0a;font-weight:600;">focurabusiness@gmail.com</a>.
+      <a href="mailto:${supportEmail}" style="color:#0a0a0a;font-weight:600;">${supportEmail}</a>.
     </p>
     <p style="margin:0;font-size:13px;color:#737373;">— The Focura Team</p>
   `;

@@ -80,6 +80,7 @@ export const authenticate = async (
         issuer: "focura-app",
         audience: "focura-backend",
       }) as FocuraJwtPayload;
+      
  
       if (process.env.NODE_ENV !== "production") {
         console.log("✅ Token verified:", { userId: decoded.sub, jti: decoded.jti?.slice(0, 8) });

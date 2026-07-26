@@ -82,6 +82,15 @@ export const errorHandler = (
     return;
   }
 
+  if (prismaErr?.code === "P1017" || prismaErr?.code === "P1001") {
+    res.status(503).json({
+      success: false,
+      message: "Database temporarily unavailable",
+      code: "DATABASE_UNAVAILABLE",
+    });
+    return;
+  }
+
   // ─── 3. Unhandled / programmer errors ─────────────────────────────────────
   const isDev = process.env.NODE_ENV === "development";
 

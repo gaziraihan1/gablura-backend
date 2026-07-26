@@ -3,21 +3,35 @@ import { getRedisClient } from "../../redis/redis.client.js";
 const REFRESH_LOCK_TTL_SECONDS = 45;
 
 export async function acquireRefreshLock(sessionId: string): Promise<boolean> {
-  const result = await getRedisClient().set(
-    `focura:refresh:lock:${sessionId}`,
-    "1",
-    "EX",
-    REFRESH_LOCK_TTL_SECONDS,
-    "NX",
-  );
-  return result === "OK";
+  try {
+    const result = await getRedisClient().set(
+      `focura:refresh:lock:${sessionId}`,
+      "1",
+      "EX",
+      REFRESH_LOCK_TTL_SECONDS,
+      "NX",
+    );
+    return result === "OK";
+  } catch (err) {
+    console.error("[RefreshLock] Failed to acquire lock:", err);
+    return true; // Fail open: allow refresh if Redis is down
+  }
 }
 
 export async function releaseRefreshLock(sessionId: string): Promise<void> {
-  await getRedisClient().del(`focura:refresh:lock:${sessionId}`);
+  try {
+    await getRedisClient().del(`focura:refresh:lock:${sessionId}`);
+  } catch (err) {
+    console.error("[RefreshLock] Failed to release lock:", err);
+  }
 }
 
 export async function isRefreshLocked(sessionId: string): Promise<boolean> {
-  const val = await getRedisClient().get(`focura:refresh:lock:${sessionId}`);
-  return !!val;
+  try {
+    const val = await getRedisClient().get(`focura:refresh:lock:${sessionId}`);
+    return !!val;
+  } catch (err) {
+    console.error("[RefreshLock] Failed to check lock status:", err);
+    return false; // Fail open: treat as unlocked if Redis is down
+  }
 }

@@ -11,6 +11,8 @@ import {
   getPersonalQuota,
   getWorkspaceQuota,
   getTaskOverview,
+  linkGitHubEntity,
+  unlinkGitHubEntity,
 } from './task.controller.js';
 import { commentRouter } from '../comment/index.js';
 import {
@@ -34,6 +36,9 @@ router.get('/:id',          getTask);
 router.put('/:id',          updateTask);
 router.patch('/:id/status', updateTaskStatus);
 router.delete('/:id',       deleteTask);
+
+router.put('/:id/github-link', linkGitHubEntity);
+router.put('/:id/github-unlink', unlinkGitHubEntity);
 
 router.use('/:taskId/comments', commentRouter);
 

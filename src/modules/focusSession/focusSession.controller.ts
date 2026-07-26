@@ -39,7 +39,9 @@ export const completeSession = asyncHandler(async (req: AuthRequest, res: Respon
   const session = await FocusSessionMutation.completeSession(
     { sessionId: req.params.id, userId: req.user!.id },
     async ({ startedAt, workspaceId }) => {
-      await CalendarAggregation.recalculateDay(req.user!.id, workspaceId!, startedAt);
+      if (workspaceId) {
+        await CalendarAggregation.recalculateDay(req.user!.id, workspaceId, startedAt);
+      }
     },
   );
 

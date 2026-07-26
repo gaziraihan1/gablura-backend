@@ -34,6 +34,12 @@ try {
   }
 } catch (error) {
   console.error("❌ Failed to load JWT keys:", error);
+  throw new Error(
+    "Failed to load JWT signing keys. Server cannot start without valid keys. " +
+    "Set JWT_PRIVATE_KEY and JWT_PUBLIC_KEY env vars (base64-encoded) or place " +
+    "private.pem and public.pem in the keys/ directory.",
+    { cause: error },
+  );
 }
 
 export interface TokenPayload {

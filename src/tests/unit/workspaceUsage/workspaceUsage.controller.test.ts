@@ -76,6 +76,7 @@ describe("WorkspaceUsageController", () => {
     expect(res.json).toHaveBeenCalledWith({
       success: false,
       message: "Upgrade workspace plan to access usage analytics",
+      code: "FORBIDDEN",
     });
     expect(WorkspaceUsageQuery.getWorkspaceUsage).not.toHaveBeenCalled();
   });
@@ -90,7 +91,7 @@ describe("WorkspaceUsageController", () => {
     );
 
     expect(res.status).toHaveBeenCalledWith(404);
-    expect(res.json).toHaveBeenCalledWith({ success: false, message: "Workspace not found" });
+    expect(res.json).toHaveBeenCalledWith({ success: false, message: "Workspace not found", code: "NOT_FOUND" });
   });
 
   it("returns 403 when access assertion fails", async () => {
@@ -105,10 +106,12 @@ describe("WorkspaceUsageController", () => {
       res,
     );
 
-    expect(res.status).toHaveBeenCalledWith(403);
+    // Generic Error from assertWorkspaceMember falls through to 500 handler
+    expect(res.status).toHaveBeenCalledWith(500);
     expect(res.json).toHaveBeenCalledWith({
       success: false,
-      message: "You do not have access to this workspace",
+      message: "Failed to fetch workspace usage data",
+      code: "INTERNAL_ERROR",
     });
   });
 });

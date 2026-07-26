@@ -253,7 +253,13 @@ export const CacheClient = {
     try {
       const redis = getRedisClient();
       const raw = await redis.get(key);
-      return raw ? JSON.parse(raw) : null;
+      if (!raw) return null;
+      try {
+        return JSON.parse(raw) as T;
+      } catch {
+        console.error(`[Cache] Corrupted JSON in cache key "${key}", ignoring entry`);
+        return null;
+      }
     } catch (error) {
       console.error(`[Cache] Failed to get key "${key}":`, error);
       return null;
@@ -282,8 +288,15 @@ export const CacheClient = {
   async deletePattern(pattern: string): Promise<void> {
     try {
       const redis = getRedisClient();
-      const keys = await redis.keys(pattern);
-      if (keys.length > 0) await redis.del(...keys);
+      // Use SCAN instead of KEYS to avoid blocking Redis on large keyspaces
+      let cursor = '0';
+      const keysToDelete: string[] = [];
+      do {
+        const [nextCursor, keys] = await redis.scan(cursor, 'MATCH', pattern, 'COUNT', 100);
+        cursor = nextCursor;
+        keysToDelete.push(...keys);
+      } while (cursor !== '0');
+      if (keysToDelete.length > 0) await redis.del(...keysToDelete);
     } catch (error) {
       console.error(`[Cache] Failed to delete pattern "${pattern}":`, error);
     }

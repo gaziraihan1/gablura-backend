@@ -1,6 +1,7 @@
 
 import { Router, Request, Response, NextFunction } from "express";
 import { clearFailedAttempts, recordFailedAttempt } from "../lib/auth/accountLockout.js";
+import { asyncHandler } from "../errors/index.js";
 
 const router = Router();
 
@@ -14,18 +15,18 @@ function requireInternalSecret(req: Request, res: Response, next: NextFunction) 
 
 router.use(requireInternalSecret);
 
-router.post("/failed-attempt", async (req, res) => {
-  const { email, ip } = req.body;
-  if (!email) return res.status(400).json({ success: false });
+router.post("/failed-attempt", asyncHandler(async (req, res) => {
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ success: false, message: "Email is required" });
   await recordFailedAttempt(email);
   return res.json({ success: true });
-});
+}));
 
-router.post("/clear-attempts", async (req, res) => {
+router.post("/clear-attempts", asyncHandler(async (req, res) => {
   const { email } = req.body;
-  if (!email) return res.status(400).json({ success: false });
+  if (!email) return res.status(400).json({ success: false, message: "Email is required" });
   await clearFailedAttempts(email);
   return res.json({ success: true });
-});
+}));
 
 export default router;

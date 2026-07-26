@@ -151,7 +151,11 @@ export class StripeProvider implements IPaymentProvider {
       ...params.metadata,
     };
 
-    console.log("[StripeProvider] Creating checkout session with metadata:", JSON.stringify(sessionMetadata, null, 2));
+    console.log("[StripeProvider] Creating checkout session with metadata:", JSON.stringify({
+      workspaceId: params.workspaceId,
+      planName: params.planName,
+      billingCycle: params.billingCycle,
+    }, null, 2));
     console.log("[StripeProvider] Price ID:", priceId, "for plan:", params.planName, params.billingCycle);
 
     const session = await stripeClient.checkout.sessions.create({
@@ -168,8 +172,7 @@ export class StripeProvider implements IPaymentProvider {
       metadata: sessionMetadata,
     });
 
-    console.log("[StripeProvider] Checkout session created:", session.id, "URL:", session.url);
-    console.log("[StripeProvider] Session metadata set:", JSON.stringify(session.metadata, null, 2));
+    console.log("[StripeProvider] Checkout session created:", session.id);
     console.log("[StripeProvider] Subscription ID:", session.subscription);
 
     return { url: session.url! };
