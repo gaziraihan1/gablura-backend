@@ -156,7 +156,7 @@ async function syncGithubData(integration: { id: string; config: unknown }, acce
 }
 
 /**
- * Sync Slack data (channels, messages)
+ * Sync Slack data (channels, users, messages)
  */
 async function syncSlackData(integration: { id: string; config: unknown }, accessToken: string) {
   const config = integration.config as IntegrationConfig;
@@ -167,31 +167,88 @@ async function syncSlackData(integration: { id: string; config: unknown }, acces
     return;
   }
 
-  for (const channelId of selectedChannels) {
-    // Fetch recent messages
-    const messagesResponse = await fetch(
-      `https://slack.com/api/conversations.history?channel=${channelId}&limit=100`,
+  // 1. Sync users list for user resolution
+  try {
+    const usersResponse = await fetch(
+      'https://slack.com/api/users.list?limit=200',
       {
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-        },
+        headers: { 'Authorization': `Bearer ${accessToken}` },
         signal: AbortSignal.timeout(15_000),
       }
     );
 
-    if (messagesResponse.ok) {
-      const data = await messagesResponse.json() as any;
-      if (data.ok && data.messages) {
-        console.log(`Fetched ${data.messages.length} messages from channel ${channelId}`);
+    if (usersResponse.ok) {
+      const usersData = await usersResponse.json() as any;
+      if (usersData.ok && usersData.members) {
+        // Store user map for quick resolution (Slack user ID -> email)
+        const userMap = usersData.members.reduce((acc: Record<string, string>, u: any) => {
+          if (u.profile?.email) acc[u.id] = u.profile.email;
+          return acc;
+        }, {});
 
-        // Store messages for later processing
         const redis = getRedisClient();
         await redis.setex(
-          `integration:slack:${integration.id}:messages:${channelId}`,
+          `integration:slack:${integration.id}:users`,
           3600,
-          JSON.stringify(data.messages)
+          JSON.stringify(userMap)
         );
+        console.log(`Synced ${Object.keys(userMap).length} Slack users with emails`);
       }
+    }
+  } catch (error) {
+    console.error('Failed to sync Slack users:', error);
+  }
+
+  // 2. Sync channel info for each selected channel
+  for (const channelId of selectedChannels) {
+    try {
+      // Get channel info
+      const channelResponse = await fetch(
+        `https://slack.com/api/conversations.info?channel=${channelId}`,
+        {
+          headers: { 'Authorization': `Bearer ${accessToken}` },
+          signal: AbortSignal.timeout(15_000),
+        }
+      );
+
+      let channelName = channelId;
+      if (channelResponse.ok) {
+        const channelData = await channelResponse.json() as any;
+        if (channelData.ok && channelData.channel) {
+          channelName = channelData.channel.name || channelId;
+        }
+      }
+
+      // Fetch recent messages (last 100)
+      const messagesResponse = await fetch(
+        `https://slack.com/api/conversations.history?channel=${channelId}&limit=100`,
+        {
+          headers: { 'Authorization': `Bearer ${accessToken}` },
+          signal: AbortSignal.timeout(15_000),
+        }
+      );
+
+      if (messagesResponse.ok) {
+        const data = await messagesResponse.json() as any;
+        if (data.ok && data.messages) {
+          // Enrich messages with channel name for context
+          const enrichedMessages = data.messages.map((m: any) => ({
+            ...m,
+            channelName,
+            channelId,
+          }));
+
+          const redis = getRedisClient();
+          await redis.setex(
+            `integration:slack:${integration.id}:messages:${channelId}`,
+            3600,
+            JSON.stringify(enrichedMessages)
+          );
+          console.log(`Fetched ${enrichedMessages.length} messages from #${channelName}`);
+        }
+      }
+    } catch (error) {
+      console.error(`Failed to sync channel ${channelId}:`, error);
     }
   }
 }

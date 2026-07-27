@@ -89,8 +89,8 @@ export const requireCsrfToken = () => {
       return next();
     }
 
-    // GitHub link endpoint is safe (only updates task metadata)
-    if (req.path.includes("/github-link")) {
+    // GitHub/Slack link endpoints are safe (only updates task metadata)
+    if (req.path.includes("/github-link") || req.path.includes("/slack-link") || req.path.includes("/slack-unlink")) {
       return next();
     }
 

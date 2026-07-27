@@ -275,13 +275,15 @@ describe('Webhooks', () => {
       expect(res.body.success).toBe(true);
     });
 
-    it('should accept Slack webhook', async () => {
+    it('should accept Slack webhook url_verification', async () => {
       const res = await request(app)
         .post('/slack')
-        .send({ type: 'url_verification', challenge: 'test' });
+        .send({ type: 'url_verification', challenge: 'test_challenge' });
 
       expect(res.status).toBe(200);
-      expect(res.body.success).toBe(true);
+      // Slack url_verification returns the challenge directly
+      expect(res.body).toHaveProperty('challenge');
+      expect(res.body.challenge).toBe('test_challenge');
     });
 
     it('should accept Google Calendar webhook', async () => {

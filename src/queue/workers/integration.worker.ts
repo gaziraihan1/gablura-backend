@@ -25,6 +25,7 @@ export function createIntegrationWorker() {
             data.integrationId,
             data.payload,
             data.signature,
+            data.timestamp,
           );
           console.log(`[IntegrationWorker] Processed webhook for ${data.provider}`);
           break;

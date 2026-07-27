@@ -581,6 +581,15 @@ model Task {
   githubDiscussionUrl  String?
   githubDiscussionCategory  String?
   githubLabels  Json?
+
+  // Slack fields (linked messages/threads)
+  slackChannelId    String?   // Slack channel ID where task was created from
+  slackMessageTs    String?   // Slack message timestamp (unique ID for messages)
+  slackThreadTs     String?   // Slack thread timestamp (if message is part of a thread)
+  slackMessageUrl   String?   // URL to the Slack message
+  slackUserId       String?   // Slack user ID who created/triggered the task
+  slackUserDisplayName String? // Slack user display name
+
   activities      Activity[]
   comments        Comment[]
   dailyTasks      DailyTask[]

@@ -208,12 +208,13 @@ Frontend (useNotifications)       Backend
 ### Connection management
 
 ```ts
-const clients = new Map<string, Response>();
+const clients = new Map<string, Set<Response>>();
 ```
 
-- Heartbeat sent every 30s: `: heartbeat <timestamp>`
-- On `close` or `error`: heartbeat cleared, client removed from map
-- One connection per userId — new connection replaces the previous one
+- Heartbeat sent every 25s: `: heartbeat <timestamp>`
+- On `close` or `error`: heartbeat cleared, client removed from set
+- **5 connections per userId** — new connections replace oldest when limit exceeded
+- Each user gets a `Set<Response>` allowing multiple simultaneous connections (mobile + desktop + tabs)
 
 ### React integration
 
@@ -300,6 +301,121 @@ Authorization: Bearer <accessToken>   (optional — logout succeeds even if expi
 
 ---
 
+## Session Binding & Hijack Detection
+
+Each session is bound to the client's IP and User-Agent at login time. Every authenticated request checks these fingerprints — if either changes, the session is flagged and the user is forced to re-authenticate.
+
+**Redis key:** `focura:session:binding:<sessionId>`
+**TTL:** 7 days (matches refresh token lifetime)
+
+On login, the backend stores:
+```json
+{ "ip": "192.168.1.1", "userAgent": "Mozilla/5.0..." }
+```
+
+On each request, `sessionBinding.ts` middleware compares current IP/User-Agent with the stored values. A mismatch logs `SESSION_BINDING_MISMATCH` and clears the session.
+
+### Account Lockout
+
+After **10 failed login attempts** within 15 minutes, the account is locked for **15 minutes**.
+
+| Parameter | Value |
+|-----------|-------|
+| Max failed attempts | 10 |
+| Lockout window | 15 minutes |
+| Counter TTL | 15 minutes |
+
+**Redis keys:**
+- `focura:lockout:attempts:<email>` — incrementing counter
+- `focura:lockout:locked:<email>` — flag once locked
+
+### Concurrent Session Management
+
+Each user is limited to **5 active sessions**. On the 6th login, the oldest session is revoked.
+
+- Tracked via `focura:session:binding:<sessionId>` keys per user
+- Oldest session removed automatically when limit exceeded
+
+### Distributed Refresh Lock
+
+A Redis-based lock prevents duplicate refresh token rotation across multiple backend instances.
+
+**Redis key:** `focura:refresh:lock:<sessionId>`
+**TTL:** 10 seconds
+
+If a refresh request arrives while another is in-flight for the same session, the second request waits for the first to complete and reuses its result.
+
+---
+
+## CSRF Protection
+
+All state-changing requests (POST, PUT, PATCH, DELETE) require a CSRF token in the `X-CSRF-Token` header.
+
+```
+GET /api/v1/csrf-token → { csrfToken: "random-32-byte-hex" }
+```
+
+The token is generated per-session, stored in Redis (`focura:csrf:<sessionId>`, 30-min TTL), and verified via timing-safe comparison.
+
+---
+
+## Session Timeout
+
+Two timeout mechanisms enforced by `sessionTimeout.ts` middleware:
+
+| Type | Duration | Behavior |
+|------|----------|----------|
+| Inactivity timeout | 30 minutes | Clears session on idle |
+| Absolute timeout | 7 days | Forces re-login regardless of activity |
+
+**Redis key:** `focura:session:lastActivity:<sessionId>`
+
+Updated on each authenticated request. If the gap exceeds 30 minutes, the session is cleared and the user is redirected to login.
+
+---
+
+## Security Headers
+
+| Header | Value |
+|--------|-------|
+| `X-Content-Type-Options` | `nosniff` |
+| `X-Frame-Options` | `DENY` |
+| `X-XSS-Protection` | `0` (modern browsers rely on CSP) |
+| `Strict-Transport-Security` | `max-age=63072000; includeSubDomains; preload` |
+| `Content-Security-Policy` | `default-src 'self'; script-src 'self'; ...` |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` |
+| `Permissions-Policy` | `camera=(), microphone=(), geolocation=()` |
+| `X-DNS-Prefetch-Control` | `off` |
+
+---
+
+## RBAC (Role-Based Access Control)
+
+5 roles with 18 granular permissions:
+
+| Permission | OWNER | ADMIN | MANAGER | MEMBER | GUEST |
+|------------|:-----:|:-----:|:-------:|:------:|:-----:|
+| workspace.create | ✅ | | | | |
+| workspace.update | ✅ | ✅ | | | |
+| workspace.delete | ✅ | | | | |
+| member.invite | ✅ | ✅ | | | |
+| member.remove | ✅ | ✅ | | | |
+| member.role.update | ✅ | ✅ | | | |
+| project.create | ✅ | ✅ | ✅ | | |
+| project.update | ✅ | ✅ | ✅ | | |
+| project.delete | ✅ | ✅ | | | |
+| task.create | ✅ | ✅ | ✅ | ✅ | |
+| task.update | ✅ | ✅ | ✅ | ✅ | |
+| task.delete | ✅ | ✅ | ✅ | | |
+| comment.create | ✅ | ✅ | ✅ | ✅ | ✅ |
+| comment.delete | ✅ | ✅ | ✅ | ✅ | |
+| notification.manage | ✅ | ✅ | ✅ | ✅ | ✅ |
+| billing.manage | ✅ | | | | |
+| settings.manage | ✅ | ✅ | | | |
+| audit.view | ✅ | ✅ | | | |
+
+---
+
 ## Rate Limiting
 
 ### Login rate limiting (frontend)
@@ -368,6 +484,36 @@ Every security-relevant event is emitted as structured JSON to stdout.
 | `SSE_DISCONNECTED`       | info     |
 | `PERMISSION_DENIED`      | warn     |
 | `EMAIL_NOT_VERIFIED`     | warn     |
+| `SESSION_BINDING_MISMATCH` | critical |
+| `SESSION_EXPIRED_INACTIVITY` | info  |
+| `SESSION_EXPIRED_ABSOLUTE` | info    |
+| `ACCOUNT_LOCKED`         | warn     |
+| `ACCOUNT_LOCKOUT_CLEARED` | info    |
+| `CSRF_VALIDATION_FAILED` | warn     |
+| `RATE_LIMIT_EXCEEDED`    | warn     |
+| `Hijack_DETECTED`        | critical |
+| `SESSION_LIMIT_EXCEEDED` | warn     |
+| `WORKSPACE_CREATED`      | info     |
+| `WORKSPACE_UPDATED`      | info     |
+| `WORKSPACE_DELETED`      | info     |
+| `MEMBER_INVITED`         | info     |
+| `MEMBER_REMOVED`         | info     |
+| `MEMBER_ROLE_CHANGED`    | info     |
+| `TASK_CREATED`           | info     |
+| `TASK_UPDATED`           | info     |
+| `TASK_DELETED`           | info     |
+| `COMMENT_CREATED`        | info     |
+| `COMMENT_DELETED`        | info     |
+| `FILE_UPLOADED`          | info     |
+| `FILE_DELETED`           | info     |
+| `BILLING_SUBSCRIPTION_CREATED` | info |
+| `BILLING_SUBSCRIPTION_UPDATED` | info |
+| `BILLING_SUBSCRIPTION_CANCELLED` | info |
+| `BILLING_INVOICE_PAID`   | info     |
+| `AI_REQUEST`             | info     |
+| `EXPORT_REQUESTED`       | info     |
+| `PASSWORD_CHANGED`       | info     |
+| `PASSWORD_RESET_REQUESTED` | info   |
 
 In production, pipe stdout to your SIEM (Datadog, CloudWatch, Splunk).
 
@@ -383,7 +529,15 @@ All keys are prefixed with `focura:` to avoid collisions.
 | `focura:refresh:<userId>:<jti>`    | 7 days    | Valid refresh token JTIs       |
 | `focura:refresh:index:<userId>`    | no TTL*   | Set of refresh-token keys per user for fast revoke-all |
 | `focura:refresh:result:<userId>:<oldJti>` | 10s | Cached refresh response for idempotent duplicate refresh handling |
+| `focura:refresh:lock:<sessionId>`  | 10s       | Distributed lock for refresh rotation |
 | `focura:rl:<key>`                  | 60s       | Rate limiting sliding window   |
+| `focura:session:binding:<sessionId>` | 7 days  | IP + User-Agent fingerprint    |
+| `focura:session:lastActivity:<sessionId>` | 30 min | Inactivity tracking         |
+| `focura:lockout:attempts:<email>`  | 15 min    | Failed login attempt counter   |
+| `focura:lockout:locked:<email>`    | 15 min    | Account lockout flag           |
+| `focura:csrf:<sessionId>`          | 30 min    | CSRF token per session         |
+| `focura:sse:token:<userId>`        | 5 min     | SSE connection auth token      |
+| `focura:db:pool:metrics`           | 10s       | Database connection pool stats |
 
 \* Index members are updated on token store/rotate/revoke; key is removed on revoke-all.
 
@@ -498,4 +652,15 @@ To rotate RSA keys (e.g. every 90 days or after a breach):
 | API rate limiting               | Per-user, subscription tier aware           |
 | Audit trail                     | Structured JSON, severity-tagged            |
 | Session management              | HTTP-only cookie via NextAuth               |
-| SSE security                    | Token verified server-side, userId extracted from JWT   |
+| Session binding                 | IP + User-Agent fingerprint via Redis       |
+| Account lockout                 | 10 failed attempts → 15-min lock            |
+| Concurrent session limit        | 5 sessions per user, oldest revoked         |
+| Distributed refresh lock        | Redis lock prevents duplicate rotation      |
+| CSRF protection                 | Per-session token, timing-safe verification |
+| Security headers                | CSP, HSTS, X-Frame-Options, etc.            |
+| RBAC                            | 5 roles, 18 granular permissions            |
+| Session timeouts                | 30-min inactivity, 7-day absolute           |
+| SSE security                    | Token verified server-side, 5 conns/user max |
+
+---
+**Last Updated**: July 27, 2026

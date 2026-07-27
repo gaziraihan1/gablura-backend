@@ -20,6 +20,13 @@ import {
 import { prisma } from '../../lib/prisma.js';
 import { Prisma } from '@prisma/client';
 
+// ─── Slack URL Validation ─────────────────────────────────────────────────────
+
+function isValidSlackMessageUrl(url: string): boolean {
+  // Format: https://<workspace>.slack.com/archives/<channel>/p<timestamp>
+  return /^https:\/\/[^.]+\.slack\.com\/archives\/[A-Z0-9]+\/p\d+/.test(url);
+}
+
 export const getTasks = asyncHandler(async (req: AuthRequest, res: Response) => {
   const parsed = getTasksQuerySchema.safeParse(req.query);
   if (!parsed.success) throw new ValidationError('Validation error', parsed.error.issues);
@@ -367,6 +374,140 @@ export const linkGitHubEntity = asyncHandler(async (req: AuthRequest, res: Respo
     data: updateData,
   });
 
+  res.json({ success: true, data: updatedTask });
+});
+
+// ─── Slack Link/Unlink Handlers ───────────────────────────────────────────────
+
+/**
+ * Link a Slack message to a task
+ */
+export const linkSlackMessage = asyncHandler(async (req: AuthRequest, res: Response) => {
+  const { id } = req.params;
+  const { channelId, messageTs, messageUrl, threadTs } = req.body;
+  const userId = req.user!.id;
+
+  // Validate required fields
+  if (!channelId || !messageTs) {
+    throw new ValidationError('channelId and messageTs are required');
+  }
+
+  // Sanitize inputs
+  const sanitizedChannelId = String(channelId).replace(/[<>]/g, '').substring(0, 20);
+  const sanitizedMessageTs = String(messageTs).substring(0, 50);
+  const sanitizedMessageUrl = messageUrl ? String(messageUrl).substring(0, 500) : undefined;
+  const sanitizedThreadTs = threadTs ? String(threadTs).substring(0, 50) : undefined;
+
+  // Validate URL format if provided
+  if (sanitizedMessageUrl && !isValidSlackMessageUrl(sanitizedMessageUrl)) {
+    throw new ValidationError('Invalid Slack message URL format');
+  }
+
+  // Find the task and check access
+  const task = await prisma.task.findUnique({
+    where: { id },
+    select: { id: true, createdById: true, workspaceId: true, projectId: true },
+  });
+
+  if (!task) {
+    throw new ValidationError('Task not found');
+  }
+
+  // Check access: user must be task creator, workspace member, or project member
+  let hasAccess = task.createdById === userId;
+  if (!hasAccess && task.workspaceId) {
+    const membership = await prisma.workspaceMember.findFirst({
+      where: { userId, workspaceId: task.workspaceId },
+    });
+    hasAccess = !!membership;
+  }
+  if (!hasAccess && task.projectId) {
+    const project = await prisma.project.findUnique({
+      where: { id: task.projectId },
+      select: { workspaceId: true },
+    });
+    if (project?.workspaceId) {
+      const membership = await prisma.workspaceMember.findFirst({
+        where: { userId, workspaceId: project.workspaceId },
+      });
+      hasAccess = !!membership;
+    }
+  }
+
+  if (!hasAccess) {
+    throw new ValidationError('You do not have permission to link Slack messages to this task');
+  }
+
+  // Update the task with Slack link data
+  const updateData: Record<string, unknown> = {
+    slackChannelId: sanitizedChannelId,
+    slackMessageTs: sanitizedMessageTs,
+  };
+  if (sanitizedMessageUrl) updateData.slackMessageUrl = sanitizedMessageUrl;
+  if (sanitizedThreadTs) updateData.slackThreadTs = sanitizedThreadTs;
+
+  const updatedTask = await prisma.task.update({
+    where: { id },
+    data: updateData,
+  });
+
+  res.json({ success: true, data: updatedTask });
+});
+
+/**
+ * Unlink Slack message from a task
+ */
+export const unlinkSlackMessage = asyncHandler(async (req: AuthRequest, res: Response) => {
+  const { id } = req.params;
+  const userId = req.user!.id;
+
+  // Find the task and check access
+  const task = await prisma.task.findUnique({
+    where: { id },
+    select: { id: true, createdById: true, workspaceId: true, projectId: true },
+  });
+
+  if (!task) {
+    throw new ValidationError('Task not found');
+  }
+
+  let hasAccess = task.createdById === userId;
+  if (!hasAccess && task.workspaceId) {
+    const membership = await prisma.workspaceMember.findFirst({
+      where: { userId, workspaceId: task.workspaceId },
+    });
+    hasAccess = !!membership;
+  }
+  if (!hasAccess && task.projectId) {
+    const project = await prisma.project.findUnique({
+      where: { id: task.projectId },
+      select: { workspaceId: true },
+    });
+    if (project?.workspaceId) {
+      const membership = await prisma.workspaceMember.findFirst({
+        where: { userId, workspaceId: project.workspaceId },
+      });
+      hasAccess = !!membership;
+    }
+  }
+
+  if (!hasAccess) {
+    throw new ValidationError('You do not have permission to unlink Slack from this task');
+  }
+
+  // Clear all Slack fields
+  await prisma.$executeRaw`
+    UPDATE "Task" SET
+      "slackChannelId" = NULL,
+      "slackMessageTs" = NULL,
+      "slackThreadTs" = NULL,
+      "slackMessageUrl" = NULL,
+      "slackUserId" = NULL,
+      "slackUserDisplayName" = NULL
+    WHERE id = ${id}
+  `;
+
+  const updatedTask = await prisma.task.findUnique({ where: { id } });
   res.json({ success: true, data: updatedTask });
 });
 

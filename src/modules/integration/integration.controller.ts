@@ -325,8 +325,15 @@ export const handleWebhook = asyncHandler(async (req: AuthRequest, res: Response
   const signature = req.headers['x-hub-signature-256'] as string ||
                     req.headers['x-slack-signature'] as string ||
                     req.headers['x-goog-signature'] as string;
+  const slackTimestamp = req.headers['x-slack-request-timestamp'] as string | undefined;
 
-  await IntegrationMutation.handleWebhook(provider, req.body, signature);
+  const result = await IntegrationMutation.handleWebhook(provider, req.body, signature, slackTimestamp);
+
+  // Slack URL verification requires the challenge back
+  if (provider === 'slack' && result && typeof result === 'object' && 'challenge' in result) {
+    res.json({ challenge: result.challenge });
+    return;
+  }
 
   res.json({ success: true });
 });

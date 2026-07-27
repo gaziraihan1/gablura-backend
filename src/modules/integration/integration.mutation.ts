@@ -95,8 +95,8 @@ export class IntegrationMutation {
 
   // ─── Webhooks ─────────────────────────────────────────────────────────────
 
-  static async handleWebhook(provider: string, payload: Record<string, unknown>, signature?: string) {
-    return Webhook.handleWebhook(provider, payload, signature);
+  static async handleWebhook(provider: string, payload: Record<string, unknown>, signature?: string, slackTimestamp?: string) {
+    return Webhook.handleWebhook(provider, payload, signature, slackTimestamp);
   }
 
   static async processWebhookEvent(
@@ -104,7 +104,8 @@ export class IntegrationMutation {
     integrationId: string,
     payload: Record<string, unknown>,
     signature?: string,
+    timestamp?: string,
   ) {
-    return Webhook.processWebhookEvent(provider, integrationId, payload, signature);
+    return Webhook.processWebhookEvent(provider, integrationId, payload, signature, timestamp);
   }
 }

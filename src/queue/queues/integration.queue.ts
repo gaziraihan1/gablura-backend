@@ -31,6 +31,7 @@ export interface ProcessWebhookJobData {
   integrationId: string;
   payload: any;
   signature?: string;
+  timestamp?: string;
 }
 
 export async function addSyncIntegrationJob(jobData: SyncIntegrationJobData) {

@@ -28,7 +28,17 @@ export const PROVIDER_CONFIG: Record<IntegrationProvider, { name: string; authUr
     name: 'Slack',
     authUrl: 'https://slack.com/oauth/v2/authorize',
     tokenUrl: 'https://slack.com/api/oauth.v2.access',
-    scopes: ['channels:read', 'chat:write', 'commands'],
+    scopes: [
+      'channels:read',
+      'channels:history',
+      'chat:write',
+      'commands',
+      'users:read',
+      'users:read.email',
+      'reactions:read',
+      'reactions:write',
+      'team:read',
+    ],
   },
   'google-calendar': {
     name: 'Google Calendar',
@@ -112,7 +122,12 @@ export async function generateAuthUrl(
   if (provider === 'github') {
     params.set('allow_signup', 'true');
   } else if (provider === 'slack') {
-    params.set('user_scope', 'identity.basic');
+    const userScope = [
+      'identity.basic',
+      'identity.email',
+      'identity.team',
+    ].join(' ');
+    params.set('user_scope', userScope);
   } else if (provider === 'google-calendar') {
     params.set('access_type', 'offline');
     params.set('prompt', 'consent');
@@ -230,7 +245,7 @@ export async function handleOAuthCallback(
       where: { id: existingIntegration.id },
       data: {
         accessToken: encryptToken(tokens.accessToken),
-        refreshToken: encryptToken(tokens.refreshToken),
+        refreshToken: tokens.refreshToken ? encryptToken(tokens.refreshToken) : null,
         expiresAt: tokens.expiresAt,
         active: true,
         connectedAt: new Date(),
@@ -251,8 +266,8 @@ export async function handleOAuthCallback(
     data: {
       name: providerName,
       provider,
-      accessToken: encryptToken(tokens.accessToken),
-      refreshToken: encryptToken(tokens.refreshToken),
+    accessToken: encryptToken(tokens.accessToken),
+    refreshToken: tokens.refreshToken ? encryptToken(tokens.refreshToken) : null,
       expiresAt: tokens.expiresAt,
       active: true,
       connectedAt: new Date(),
@@ -544,7 +559,7 @@ export async function revokeProviderTokens(provider: string, accessToken: string
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams({
-          token: decryptedToken,
+          token: decryptedToken ?? '',
         }).toString(),
       });
       break;

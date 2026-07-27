@@ -13,6 +13,8 @@ import {
   getTaskOverview,
   linkGitHubEntity,
   unlinkGitHubEntity,
+  linkSlackMessage,
+  unlinkSlackMessage,
 } from './task.controller.js';
 import { commentRouter } from '../comment/index.js';
 import {
@@ -39,6 +41,9 @@ router.delete('/:id',       deleteTask);
 
 router.put('/:id/github-link', linkGitHubEntity);
 router.put('/:id/github-unlink', unlinkGitHubEntity);
+
+router.put('/:id/slack-link', linkSlackMessage);
+router.put('/:id/slack-unlink', unlinkSlackMessage);
 
 router.use('/:taskId/comments', commentRouter);
 

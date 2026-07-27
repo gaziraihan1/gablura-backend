@@ -107,6 +107,14 @@ export interface SlackChannel {
   isIM: boolean;
 }
 
+export interface SlackUserInfo {
+  id: string;
+  name?: string;
+  displayName?: string;
+  email?: string;
+  avatarUrl?: string;
+}
+
 export interface GoogleCalendarEvent {
   id: string;
   summary: string;
