@@ -10,8 +10,8 @@ import type {
   WorkspaceRole,
 } from "./workspace.types.js";
 import { WorkspaceCache, AccessControlCache } from "../../lib/redis/cache.client.js";
-import { ConflictError, BadRequestError, ForbiddenError, NotFoundError, PlanLimitError } from "../../errors/AppError.js";
-import { addInvalidateCacheJob, addSendEmailJob } from "../../queue/index.js";
+import { ConflictError, BadRequestError, ForbiddenError, NotFoundError } from "../../errors/AppError.js";
+import { addInvalidateCacheJob } from "../../queue/index.js";
 
 type OnWorkspaceCreated = (data: { workspace: any }) => Promise<void>;
 type OnWorkspaceUpdated = (data: { workspace: any }) => Promise<void>;
@@ -103,8 +103,7 @@ export const WorkspaceMutation = {
     email: string,
     role: WorkspaceRole,
     onInvited?: OnMemberInvited,
-  ) {
-    const inviter = await WorkspaceAccess.assertAdmin(workspaceId, inviterId); // already throws ForbiddenError
+  ) {      await WorkspaceAccess.assertAdmin(workspaceId, inviterId); // already throws ForbiddenError
 
     // Parallelize independent duplicate-check queries
     const [existing, member] = await Promise.all([

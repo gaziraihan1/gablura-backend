@@ -36,7 +36,6 @@ import {
   updateProjectViewSchema,
 } from "./project.view.validators.js";
 import {
-  createFavoriteSchema,
   updateFavoriteSchema,
 } from "./project.favorite.validators.js";
 

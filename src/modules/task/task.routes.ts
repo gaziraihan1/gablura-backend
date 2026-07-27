@@ -22,7 +22,6 @@ import {
   addAttachment,
   deleteAttachment,
 } from '../attachment/index.js';
-import { requireFileSizeLimit } from '../billing/index.js';
 import { subtaskRouter } from './subtask/index.js';
 
 const router = Router();

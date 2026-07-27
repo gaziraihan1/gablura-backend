@@ -2,7 +2,7 @@
 // Session Timeout Management Middleware
 // ═══════════════════════════════════════════════════════════════
 
-import { Request, Response, NextFunction } from 'express';
+import { Response, NextFunction } from 'express';
 import { getRedisClient } from '../redis/redis.client.js';
 import { AuthRequest } from './auth.js';
 

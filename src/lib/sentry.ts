@@ -28,7 +28,7 @@ export const initSentry = (): void => {
     // replaysOnErrorSampleRate: 1.0,
     
     // Filter out sensitive data
-    beforeSend(event, hint) {
+    beforeSend(event, _hint) {
       // Remove sensitive headers and data
       if (event.request) {
         if (event.request.headers) {

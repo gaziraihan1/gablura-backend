@@ -23,7 +23,7 @@ export const rateLimitMiddleware = (max = 100, windowSeconds = 60) => {
 
       // results is an array of [err, result] tuples for each command in the pipeline
       // zcard is the 3rd command (index 2)
-      const [err, zcardResult] = results?.[2] || [];
+      const [, zcardResult] = results?.[2] || [];
 
       const count = typeof zcardResult === "number" ? zcardResult : 0;
 

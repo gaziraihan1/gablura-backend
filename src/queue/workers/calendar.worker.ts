@@ -1,6 +1,5 @@
 import { Worker, Job } from "bullmq";
 import type { ComputeAggregatesJobData, ComputeInsightsJobData, PreComputeUserCalendarJobData } from "../queues/calendar.queue.js";
-import { CalendarCache } from "../../lib/redis/cache.client.js";
 import { CalendarAggregation } from "../../modules/calendar/calendar.aggregation.js";
 import { CalendarInsightsService } from "../../modules/calendar/calendar.insights.js";
 

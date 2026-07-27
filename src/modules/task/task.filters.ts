@@ -1,6 +1,6 @@
 import { prisma } from "../../lib/prisma.js";
 import type { TaskFilterParams } from "./task.types.js";
-import { CacheClient, CACHE_KEYS, CACHE_TTL } from "../../lib/redis/cache.client.js";
+import { CacheClient, CACHE_TTL } from "../../lib/redis/cache.client.js";
 
 export const TaskFilters = {
   buildProjectFilter(filters: TaskFilterParams): Record<string, unknown> {

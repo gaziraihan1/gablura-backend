@@ -4,7 +4,6 @@ import {
   minutesToHours,
   bytesToMB,
   getDayKey,
-  getWeekOfDay,
 } from "./analytics.utils.js";
 import type {
   ExecutiveKPIs,
@@ -26,7 +25,7 @@ import type {
   ProjectCompletionTrend,
   ProjectDeadlineRisk,
 } from "./analytics.types.js";
-import { CacheClient, CACHE_KEYS, CACHE_TTL, AnalyticsCache } from "../../lib/redis/cache.client.js";
+import { CacheClient, CACHE_KEYS, CACHE_TTL } from "../../lib/redis/cache.client.js";
 import { TaskStatus } from "@prisma/client";
 
 export const AnalyticsQuery = {

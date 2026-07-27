@@ -78,7 +78,7 @@ export const adminCreatePopularResource = asyncHandler<AuthRequest>(
     const data = parseBody(createPopularResourceSchema, req.body);
     const resource = await resourceMutations.createPopularResource(
       data,
-      req.user?.id!,
+      req.user!.id,
     );
     res
       .status(201)
@@ -142,7 +142,7 @@ export const adminCreateProductUpdate = asyncHandler<AuthRequest>(
     const data = parseBody(createProductUpdateSchema, req.body);
     const update = await resourceMutations.createProductUpdate(
       data,
-      req.user?.id!,
+      req.user!.id,
     );
     res
       .status(201)

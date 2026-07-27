@@ -1,7 +1,6 @@
 import { prisma }                              from '../../lib/prisma.js';
 import { NotFoundError, ForbiddenError }       from '../../errors/index.js';
 import type { EditPermissionResult }           from './task.types.js';
-import { taskPermissionInclude }               from './task.selects.js';
 import { CacheClient, CACHE_KEYS, CACHE_TTL } from '../../lib/redis/cache.client.js';
 
 export const TaskAccess = {

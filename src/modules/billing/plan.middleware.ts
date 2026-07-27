@@ -55,7 +55,7 @@ export const requireWorkspaceCreationSlot = planGuard(async (req) => {
   const userId = req.user?.id;
 
   const maxAllowed = await BillingService.getUserWorkspaceCreationLimit(
-    userId!!,
+    userId!,
   );
 
   // -1 = unlimited (BUSINESS plan)

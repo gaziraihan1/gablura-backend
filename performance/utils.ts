@@ -191,8 +191,6 @@ export function validateThresholds(
  */
 export function generateReport(results: TestResult[]): PerformanceReport {
   const passedScenarios = results.filter(r => r.passedThresholds).length;
-  const totalSuccessfulRequests = results.reduce((sum, r) => sum + r.requests.successful, 0);
-  const totalRequests = results.reduce((sum, r) => sum + r.requests.total, 0);
 
   return {
     timestamp: new Date().toISOString(),

@@ -1,8 +1,5 @@
 import { prisma } from "../../lib/prisma.js";
-import {
-  notifyUser,
-  notifyWorkspaceMembers,
-} from "../notification/notification.helpers.js";
+
 import type { MeetingPayload } from "./meeting.select.js";
 import { addSendNotificationJob, addNotifyWorkspaceMembersJob } from "../../queue/index.js";
 

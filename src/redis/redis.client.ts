@@ -195,7 +195,7 @@ export const BILLING_CACHE = {
     try {
       const redis = getRedisClient();
       await redis.ping();
-    } catch (error) {
+    } catch {
       errors.push('Redis connection failed');
     }
     return {

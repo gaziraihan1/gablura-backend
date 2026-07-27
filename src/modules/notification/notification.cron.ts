@@ -18,7 +18,6 @@ import cron from "node-cron";
 import { prisma } from "../../lib/prisma.js";
 import { NotificationMutation } from "./notification.mutation.js";
 import {
-  batchWasAlreadySent,
   processPendingNotifications,
   DEDUP_PREFIX,
   type PendingNotification,

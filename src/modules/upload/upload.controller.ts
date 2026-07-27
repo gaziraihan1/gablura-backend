@@ -139,7 +139,7 @@ async function handleWorkspaceFileUpload(req: AuthRequest, res: Response): Promi
       storageInfo,
       message: 'File uploaded successfully',
     });
-  } catch (dbError) {
+  } catch {
     await cloudinary.uploader.destroy(result.public_id).catch(console.error);
 
     res.status(507).json({

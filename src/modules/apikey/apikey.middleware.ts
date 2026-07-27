@@ -45,7 +45,7 @@ export async function authenticateWithApiKey(
     req.user!.id = result.userId;
 
     next();
-  } catch (error) {
+  } catch {
     return next(new UnauthorizedError("API token validation failed"));
   }
 }

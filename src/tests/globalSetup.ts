@@ -25,10 +25,10 @@ const PUBLIC_KEY_PATH  = path.join(tmpdir(), 'focura-test-public.pem');
 export async function setup() {
   // ── 1. Clean up any existing keys ────────────────────────────────────────────
   if (existsSync(PRIVATE_KEY_PATH)) {
-    try { unlinkSync(PRIVATE_KEY_PATH); } catch {}
+    try { unlinkSync(PRIVATE_KEY_PATH); } catch { /* file may not exist */ }
   }
   if (existsSync(PUBLIC_KEY_PATH)) {
-    try { unlinkSync(PUBLIC_KEY_PATH); } catch {}
+    try { unlinkSync(PUBLIC_KEY_PATH); } catch { /* file may not exist */ }
   }
 
   // ── 2. RSA key pair ────────────────────────────────────────────────────────
@@ -111,7 +111,7 @@ export async function setup() {
     pushError = err as Error;
   } finally {
     if (hadEnv) {
-      try { renameSync(envBakPath, envPath); } catch {}
+      try { renameSync(envBakPath, envPath); } catch { /* file may not exist */ }
     }
   }
 

@@ -11,7 +11,7 @@ export function buildTaskScopeWhere({
   type = "all",
   workspaceId,
 }: TaskScopeParams): Prisma.TaskWhereInput {
-  let where: Prisma.TaskWhereInput = {};
+  let where: Prisma.TaskWhereInput;
 
   switch (type) {
     case "personal":

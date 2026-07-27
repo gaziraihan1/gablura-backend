@@ -19,7 +19,7 @@ import type {
   WorkspaceLoadMetrics,
   WorkspaceGrowthMetrics,
 } from "./workspaceUsage.types.js";
-import { CacheClient, CACHE_KEYS, CACHE_TTL } from "../../lib/redis/cache.client.js";
+import { CacheClient } from "../../lib/redis/cache.client.js";
 
 // ─── Shared local types for pre-fetched data ────────────────────────────────
 

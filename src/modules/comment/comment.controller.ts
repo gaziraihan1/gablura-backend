@@ -32,7 +32,7 @@ export const addComment = asyncHandler(
 
     const comment = await CommentMutation.createComment(
       { taskId, userId: req.user!.id, ...parsed.data },
-      async ({ commentId, content, parentId, mentionedIds }) => {
+      async ({ commentId, content, parentId }) => {
         const [task, parentComment] = await Promise.all([
           prisma.task.findUnique({
             where: { id: taskId },

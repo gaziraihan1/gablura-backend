@@ -3,7 +3,6 @@ import { prisma } from '../../lib/prisma.js';
 import type { CreateActivityParams, ClearActivitiesFilters } from './activity.types.js';
 import { activityFullInclude } from './activity.selects.js';
 import { ActivityAccess } from './activity.access.js';
-import { ActivityCache } from '../../lib/redis/cache.client.js';
 import { NotFoundError } from '../../errors/index.js';
 import { addInvalidateCacheJob } from '../../queue/index.js';
 

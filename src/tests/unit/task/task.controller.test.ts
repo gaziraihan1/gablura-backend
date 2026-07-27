@@ -364,7 +364,7 @@ describe('getTaskOverview', () => {
 describe('createTask', () => {
   it('should create task and return 201', async () => {
     const task = { id: 't1', title: 'New Task', workspaceId: 'ws1', dueDate: new Date('2026-01-01') };
-    mockCreateTask.mockImplementation(async (_data: unknown, callback: Function) => {
+    mockCreateTask.mockImplementation(async (_data: unknown, callback: (...args: unknown[]) => unknown) => {
       await callback({ task, assigneeIds: ['a1', 'a2'] });
       return task;
     });
@@ -384,7 +384,7 @@ describe('createTask', () => {
 
   it('should log activity when task has workspaceId', async () => {
     const task = { id: 't1', title: 'Task', workspaceId: 'ws1', dueDate: null };
-    mockCreateTask.mockImplementation(async (_data: unknown, callback: Function) => {
+    mockCreateTask.mockImplementation(async (_data: unknown, callback: (...args: unknown[]) => unknown) => {
       await callback({ task, assigneeIds: [] });
       return task;
     });
@@ -407,7 +407,7 @@ describe('createTask', () => {
 
   it('should not log activity when task has no workspaceId', async () => {
     const task = { id: 't1', title: 'Task', workspaceId: null, dueDate: null };
-    mockCreateTask.mockImplementation(async (_data: unknown, callback: Function) => {
+    mockCreateTask.mockImplementation(async (_data: unknown, callback: (...args: unknown[]) => unknown) => {
       await callback({ task, assigneeIds: [] });
       return task;
     });
@@ -422,7 +422,7 @@ describe('createTask', () => {
 
   it('should notify assignees when assigneeIds is non-empty', async () => {
     const task = { id: 't1', title: 'Task', workspaceId: 'ws1', dueDate: null };
-    mockCreateTask.mockImplementation(async (_data: unknown, callback: Function) => {
+    mockCreateTask.mockImplementation(async (_data: unknown, callback: (...args: unknown[]) => unknown) => {
       await callback({ task, assigneeIds: ['a1'] });
       return task;
     });
@@ -442,7 +442,7 @@ describe('createTask', () => {
 
   it('should not notify when assigneeIds is empty', async () => {
     const task = { id: 't1', title: 'Task', workspaceId: 'ws1', dueDate: null };
-    mockCreateTask.mockImplementation(async (_data: unknown, callback: Function) => {
+    mockCreateTask.mockImplementation(async (_data: unknown, callback: (...args: unknown[]) => unknown) => {
       await callback({ task, assigneeIds: [] });
       return task;
     });
@@ -458,7 +458,7 @@ describe('createTask', () => {
   it('should recalculate calendar when task has dueDate', async () => {
     const dueDate = new Date('2026-06-15');
     const task = { id: 't1', title: 'Task', workspaceId: 'ws1', dueDate };
-    mockCreateTask.mockImplementation(async (_data: unknown, callback: Function) => {
+    mockCreateTask.mockImplementation(async (_data: unknown, callback: (...args: unknown[]) => unknown) => {
       await callback({ task, assigneeIds: [] });
       return task;
     });
@@ -473,7 +473,7 @@ describe('createTask', () => {
 
   it('should not recalculate calendar when task has no dueDate', async () => {
     const task = { id: 't1', title: 'Task', workspaceId: 'ws1', dueDate: null };
-    mockCreateTask.mockImplementation(async (_data: unknown, callback: Function) => {
+    mockCreateTask.mockImplementation(async (_data: unknown, callback: (...args: unknown[]) => unknown) => {
       await callback({ task, assigneeIds: [] });
       return task;
     });
@@ -489,7 +489,7 @@ describe('createTask', () => {
   it('should pass undefined workspaceId to recalculateDay when workspaceId is null', async () => {
     const dueDate = new Date('2026-06-15');
     const task = { id: 't1', title: 'Task', workspaceId: null, dueDate };
-    mockCreateTask.mockImplementation(async (_data: unknown, callback: Function) => {
+    mockCreateTask.mockImplementation(async (_data: unknown, callback: (...args: unknown[]) => unknown) => {
       await callback({ task, assigneeIds: [] });
       return task;
     });
@@ -572,7 +572,7 @@ describe('updateTask', () => {
   it('should update task and return success', async () => {
     const task = { id: 't1', title: 'Updated', workspaceId: 'ws1' };
     mockFindUnique.mockResolvedValue({ dueDate: new Date('2026-01-01') });
-    mockUpdateTask.mockImplementation(async (_id: string, _userId: string, _data: unknown, callback: Function) => {
+    mockUpdateTask.mockImplementation(async (_id: string, _userId: string, _data: unknown, callback: (...args: unknown[]) => unknown) => {
       await callback({ task: { ...task, dueDate: new Date('2026-01-05') } });
       return task;
     });
@@ -593,7 +593,7 @@ describe('updateTask', () => {
     const oldDueDate = new Date('2026-01-01');
     const newDueDate = new Date('2026-01-05');
     mockFindUnique.mockResolvedValue({ dueDate: oldDueDate });
-    mockUpdateTask.mockImplementation(async (_id: string, _userId: string, _data: unknown, callback: Function) => {
+    mockUpdateTask.mockImplementation(async (_id: string, _userId: string, _data: unknown, callback: (...args: unknown[]) => unknown) => {
       await callback({ task: { id: 't1', workspaceId: 'ws1', dueDate: newDueDate } });
       return {};
     });
@@ -611,7 +611,7 @@ describe('updateTask', () => {
   it('should not duplicate recalculation when old and new dueDate are the same', async () => {
     const sameDate = new Date('2026-01-01');
     mockFindUnique.mockResolvedValue({ dueDate: sameDate });
-    mockUpdateTask.mockImplementation(async (_id: string, _userId: string, _data: unknown, callback: Function) => {
+    mockUpdateTask.mockImplementation(async (_id: string, _userId: string, _data: unknown, callback: (...args: unknown[]) => unknown) => {
       await callback({ task: { id: 't1', workspaceId: 'ws1', dueDate: sameDate } });
       return {};
     });
@@ -626,7 +626,7 @@ describe('updateTask', () => {
 
   it('should recalculate only new date when oldTask has no dueDate', async () => {
     mockFindUnique.mockResolvedValue({ dueDate: null });
-    mockUpdateTask.mockImplementation(async (_id: string, _userId: string, _data: unknown, callback: Function) => {
+    mockUpdateTask.mockImplementation(async (_id: string, _userId: string, _data: unknown, callback: (...args: unknown[]) => unknown) => {
       await callback({ task: { id: 't1', workspaceId: 'ws1', dueDate: new Date('2026-01-05') } });
       return {};
     });
@@ -642,7 +642,7 @@ describe('updateTask', () => {
   it('should recalculate only old date when new dueDate is null', async () => {
     const oldDueDate = new Date('2026-01-01');
     mockFindUnique.mockResolvedValue({ dueDate: oldDueDate });
-    mockUpdateTask.mockImplementation(async (_id: string, _userId: string, _data: unknown, callback: Function) => {
+    mockUpdateTask.mockImplementation(async (_id: string, _userId: string, _data: unknown, callback: (...args: unknown[]) => unknown) => {
       await callback({ task: { id: 't1', workspaceId: 'ws1', dueDate: null } });
       return {};
     });
@@ -658,7 +658,7 @@ describe('updateTask', () => {
 
   it('should not recalculate when both dates are null', async () => {
     mockFindUnique.mockResolvedValue({ dueDate: null });
-    mockUpdateTask.mockImplementation(async (_id: string, _userId: string, _data: unknown, callback: Function) => {
+    mockUpdateTask.mockImplementation(async (_id: string, _userId: string, _data: unknown, callback: (...args: unknown[]) => unknown) => {
       await callback({ task: { id: 't1', workspaceId: 'ws1', dueDate: null } });
       return {};
     });
@@ -673,7 +673,7 @@ describe('updateTask', () => {
 
   it('should handle oldTask being null (task not found in prisma)', async () => {
     mockFindUnique.mockResolvedValue(null);
-    mockUpdateTask.mockImplementation(async (_id: string, _userId: string, _data: unknown, callback: Function) => {
+    mockUpdateTask.mockImplementation(async (_id: string, _userId: string, _data: unknown, callback: (...args: unknown[]) => unknown) => {
       await callback({ task: { id: 't1', workspaceId: 'ws1', dueDate: new Date('2026-01-05') } });
       return {};
     });
@@ -716,7 +716,7 @@ describe('updateTask', () => {
 describe('updateTaskStatus', () => {
   it('should update status and return success', async () => {
     const task = { id: 't1', title: 'Task', status: 'IN_PROGRESS' };
-    mockUpdateTaskStatus.mockImplementation(async (_id: string, _userId: string, _status: string, callback: Function) => {
+    mockUpdateTaskStatus.mockImplementation(async (_id: string, _userId: string, _status: string, callback: (...args: unknown[]) => unknown) => {
       await callback({ task, oldStatus: 'TODO', newStatus: 'IN_PROGRESS' });
       return task;
     });
@@ -731,7 +731,7 @@ describe('updateTaskStatus', () => {
 
   it('should log status change when workspace exists and status differs', async () => {
     const task = { id: 't1', title: 'Task', workspaceId: 'ws1' };
-    mockUpdateTaskStatus.mockImplementation(async (_id: string, _userId: string, _status: string, callback: Function) => {
+    mockUpdateTaskStatus.mockImplementation(async (_id: string, _userId: string, _status: string, callback: (...args: unknown[]) => unknown) => {
       await callback({ task, oldStatus: 'TODO', newStatus: 'IN_PROGRESS' });
       return task;
     });
@@ -753,7 +753,7 @@ describe('updateTaskStatus', () => {
 
   it('should not log status change when workspaceId is missing', async () => {
     const task = { id: 't1', title: 'Task', workspaceId: null };
-    mockUpdateTaskStatus.mockImplementation(async (_id: string, _userId: string, _status: string, callback: Function) => {
+    mockUpdateTaskStatus.mockImplementation(async (_id: string, _userId: string, _status: string, callback: (...args: unknown[]) => unknown) => {
       await callback({ task, oldStatus: 'TODO', newStatus: 'IN_PROGRESS' });
       return task;
     });
@@ -768,7 +768,7 @@ describe('updateTaskStatus', () => {
 
   it('should not log status change when oldStatus === newStatus', async () => {
     const task = { id: 't1', title: 'Task', workspaceId: 'ws1' };
-    mockUpdateTaskStatus.mockImplementation(async (_id: string, _userId: string, _status: string, callback: Function) => {
+    mockUpdateTaskStatus.mockImplementation(async (_id: string, _userId: string, _status: string, callback: (...args: unknown[]) => unknown) => {
       await callback({ task, oldStatus: 'TODO', newStatus: 'TODO' });
       return task;
     });
@@ -783,7 +783,7 @@ describe('updateTaskStatus', () => {
 
   it('should not log when oldStatus is null', async () => {
     const task = { id: 't1', title: 'Task', workspaceId: 'ws1' };
-    mockUpdateTaskStatus.mockImplementation(async (_id: string, _userId: string, _status: string, callback: Function) => {
+    mockUpdateTaskStatus.mockImplementation(async (_id: string, _userId: string, _status: string, callback: (...args: unknown[]) => unknown) => {
       await callback({ task, oldStatus: null, newStatus: 'IN_PROGRESS' });
       return task;
     });
@@ -798,7 +798,7 @@ describe('updateTaskStatus', () => {
 
   it('should not log when newStatus is null', async () => {
     const task = { id: 't1', title: 'Task', workspaceId: 'ws1' };
-    mockUpdateTaskStatus.mockImplementation(async (_id: string, _userId: string, _status: string, callback: Function) => {
+    mockUpdateTaskStatus.mockImplementation(async (_id: string, _userId: string, _status: string, callback: (...args: unknown[]) => unknown) => {
       await callback({ task, oldStatus: 'TODO', newStatus: null });
       return task;
     });
@@ -813,7 +813,7 @@ describe('updateTaskStatus', () => {
 
   it('should notify task completed when newStatus is COMPLETED and old is not', async () => {
     const task = { id: 't1', title: 'Task' };
-    mockUpdateTaskStatus.mockImplementation(async (_id: string, _userId: string, _status: string, callback: Function) => {
+    mockUpdateTaskStatus.mockImplementation(async (_id: string, _userId: string, _status: string, callback: (...args: unknown[]) => unknown) => {
       await callback({ task, oldStatus: 'IN_PROGRESS', newStatus: 'COMPLETED' });
       return task;
     });
@@ -832,7 +832,7 @@ describe('updateTaskStatus', () => {
 
   it('should not notify when newStatus is COMPLETED and old was already COMPLETED', async () => {
     const task = { id: 't1', title: 'Task' };
-    mockUpdateTaskStatus.mockImplementation(async (_id: string, _userId: string, _status: string, callback: Function) => {
+    mockUpdateTaskStatus.mockImplementation(async (_id: string, _userId: string, _status: string, callback: (...args: unknown[]) => unknown) => {
       await callback({ task, oldStatus: 'COMPLETED', newStatus: 'COMPLETED' });
       return task;
     });
@@ -847,7 +847,7 @@ describe('updateTaskStatus', () => {
 
   it('should not notify when newStatus is not COMPLETED', async () => {
     const task = { id: 't1', title: 'Task' };
-    mockUpdateTaskStatus.mockImplementation(async (_id: string, _userId: string, _status: string, callback: Function) => {
+    mockUpdateTaskStatus.mockImplementation(async (_id: string, _userId: string, _status: string, callback: (...args: unknown[]) => unknown) => {
       await callback({ task, oldStatus: 'TODO', newStatus: 'IN_PROGRESS' });
       return task;
     });
@@ -897,7 +897,7 @@ describe('updateTaskStatus', () => {
 
 describe('deleteTask', () => {
   it('should delete task and return success', async () => {
-    mockDeleteTask.mockImplementation(async (_id: string, _userId: string, callback: Function) => {
+    mockDeleteTask.mockImplementation(async (_id: string, _userId: string, callback: (...args: unknown[]) => unknown) => {
       await callback({
         task: {
           id: 't1',
@@ -923,7 +923,7 @@ describe('deleteTask', () => {
   });
 
   it('should log deletion when task has a project with workspaceId', async () => {
-    mockDeleteTask.mockImplementation(async (_id: string, _userId: string, callback: Function) => {
+    mockDeleteTask.mockImplementation(async (_id: string, _userId: string, callback: (...args: unknown[]) => unknown) => {
       await callback({
         task: {
           id: 't1',
@@ -953,7 +953,7 @@ describe('deleteTask', () => {
   });
 
   it('should not log deletion when project is null', async () => {
-    mockDeleteTask.mockImplementation(async (_id: string, _userId: string, callback: Function) => {
+    mockDeleteTask.mockImplementation(async (_id: string, _userId: string, callback: (...args: unknown[]) => unknown) => {
       await callback({
         task: {
           id: 't1',
@@ -976,7 +976,7 @@ describe('deleteTask', () => {
   });
 
   it('should not log deletion when project has no workspaceId', async () => {
-    mockDeleteTask.mockImplementation(async (_id: string, _userId: string, callback: Function) => {
+    mockDeleteTask.mockImplementation(async (_id: string, _userId: string, callback: (...args: unknown[]) => unknown) => {
       await callback({
         task: {
           id: 't1',
@@ -1000,7 +1000,7 @@ describe('deleteTask', () => {
 
   it('should recalculate calendar when deleted task has dueDate', async () => {
     const dueDate = new Date('2026-03-10');
-    mockDeleteTask.mockImplementation(async (_id: string, _userId: string, callback: Function) => {
+    mockDeleteTask.mockImplementation(async (_id: string, _userId: string, callback: (...args: unknown[]) => unknown) => {
       await callback({
         task: {
           id: 't1',
@@ -1023,7 +1023,7 @@ describe('deleteTask', () => {
   });
 
   it('should not recalculate calendar when deleted task has no dueDate', async () => {
-    mockDeleteTask.mockImplementation(async (_id: string, _userId: string, callback: Function) => {
+    mockDeleteTask.mockImplementation(async (_id: string, _userId: string, callback: (...args: unknown[]) => unknown) => {
       await callback({
         task: {
           id: 't1',
@@ -1047,7 +1047,7 @@ describe('deleteTask', () => {
 
   it('should pass undefined workspaceId to recalculateDay when workspaceId is null', async () => {
     const dueDate = new Date('2026-03-10');
-    mockDeleteTask.mockImplementation(async (_id: string, _userId: string, callback: Function) => {
+    mockDeleteTask.mockImplementation(async (_id: string, _userId: string, callback: (...args: unknown[]) => unknown) => {
       await callback({
         task: {
           id: 't1',

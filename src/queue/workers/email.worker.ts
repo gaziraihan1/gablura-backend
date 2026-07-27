@@ -10,7 +10,7 @@ export function createEmailWorker() {
   const worker = new Worker(
     EMAIL_WORKER_NAME,
     async (job: Job<SendEmailJobData>) => {
-      const { type, to, subject, data } = job.data;
+      const { type, to, data } = job.data;
 
       console.log(`[EmailWorker] Processing ${type} job ${job.id}`);
 

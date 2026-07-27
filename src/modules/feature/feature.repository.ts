@@ -1,6 +1,6 @@
 import { NotFoundError } from '../../errors/AppError.js';
 import { prisma } from '../../lib/prisma.js';
-import { CacheClient, CACHE_TTL } from '../../lib/redis/cache.client.js';
+import { CacheClient } from '../../lib/redis/cache.client.js';
 import type {
   CreateFeatureRequestInput,
   UpdateFeatureStatusInput,

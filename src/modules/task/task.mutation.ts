@@ -69,8 +69,6 @@ export const TaskMutation = {
       finalWorkspaceId = project.workspaceId;
     }
 
-    let quotaConsumed: 'personal' | 'workspace' | null = null;
-
     if (finalWorkspaceId) {
       const [plan, memberCount] = await Promise.all([
         resolveWorkspacePlan(finalWorkspaceId),
@@ -81,12 +79,10 @@ export const TaskMutation = {
         data.createdById, finalWorkspaceId, plan, memberCount,
       );
       if (!quota.allowed) throw new BadRequestError(quota.reason ?? 'Workspace task creation limit reached');
-      quotaConsumed = 'workspace';
     } else {
       const plan  = await resolveUserPlan(data.createdById);
       const quota = await checkAndConsumePersonalQuota(data.createdById, plan);
       if (!quota.allowed) throw new BadRequestError(quota.reason ?? 'Daily personal task creation limit reached');
-      quotaConsumed = 'personal';
     }
 
     let computedPriority = data.priority ?? 'MEDIUM';
@@ -125,8 +121,8 @@ export const TaskMutation = {
     try {
       task = await prisma.task.create({ data: taskData, include: taskFullInclude });
     } catch (dbError) {
-      if (quotaConsumed === 'personal') await rollbackPersonalQuota(data.createdById);
-      else if (quotaConsumed === 'workspace' && finalWorkspaceId) {
+      if (!finalWorkspaceId) await rollbackPersonalQuota(data.createdById);
+      else if (finalWorkspaceId) {
         await rollbackWorkspaceQuota(data.createdById, finalWorkspaceId);
       }
       throw dbError;

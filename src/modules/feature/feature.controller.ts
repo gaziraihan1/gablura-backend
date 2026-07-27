@@ -1,4 +1,4 @@
-import { Response, NextFunction } from "express";
+import { Response } from "express";
 import type { AuthRequest } from "../../middleware/auth.js";
 import { FeatureService } from "./feature.service.js";
 import { isFocuraAdmin } from "../../config/admin.config.js";

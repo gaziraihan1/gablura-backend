@@ -1,5 +1,5 @@
 import { Worker, Job } from "bullmq";
-import { notifyUser, notifyUsers, notifyTaskAssignees, notifyWorkspaceMembers } from "../../modules/notification/notification.helpers.js";
+import { notifyUser, notifyTaskAssignees, notifyWorkspaceMembers } from "../../modules/notification/notification.helpers.js";
 import type { SendNotificationJobData, NotifyTaskAssigneesJobData, NotifyWorkspaceMembersJobData } from "../queues/notification.queue.js";
 
 const NOTIFICATION_WORKER_NAME = "notification-worker";

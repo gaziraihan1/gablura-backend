@@ -1,8 +1,7 @@
 import { WorkspacePlan } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { isFocuraAdmin } from "../config/admin.config.js";
-import { sendWorkspaceDeletedEmail, sendBanEmail } from "./admin.email.js";
-import { notifyUser } from "../modules/notification/notification.helpers.js";
+
 import {
   ForbiddenError,
   NotFoundError,

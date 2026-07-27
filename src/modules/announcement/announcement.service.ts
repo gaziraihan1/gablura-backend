@@ -6,7 +6,6 @@ import {
 } from './announcement.utils.js';
 import type {
   CreateAnnouncementInput,
-  UpdateAnnouncementInput,
   AnnouncementFilterParams,
 } from './announcement.types.js';
 import { WorkspaceRole } from '../workspace/workspace.types.js';

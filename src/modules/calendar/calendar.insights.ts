@@ -3,7 +3,6 @@ import type { BurnoutSignal, CalendarInsights } from "./calendar.types.js";
 import type { RiskLevel } from "./calendar.types.js";
 import { CalendarAggregation } from "./calendar.aggregation.js";
 import {
-  normalizeDate,
   countWorkDays,
   getWorkDayNumbers,
   countConsecutiveDays,

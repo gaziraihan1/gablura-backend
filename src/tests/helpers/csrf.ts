@@ -1,4 +1,3 @@
-import crypto from 'crypto';
 import type { TestUser } from './auth.js';
 
 export async function generateTestCsrfToken(
@@ -35,10 +34,10 @@ export function isCsrfEnabled(): boolean {
   return !!process.env.REDIS_URL;
 }
 
-export function mockCsrfMiddleware(): void {
+export async function mockCsrfMiddleware(): Promise<void> {
   try {
-    const csrfModule = require('../../middleware/csrf.js');
-    csrfModule.requireCsrfToken = () => (req: any, res: any, next: any) => next();
+    const csrfModule = await import('../../middleware/csrf.js');
+    (csrfModule as any).requireCsrfToken = () => (req: any, res: any, next: any) => next();
     console.warn('⚠️  CSRF middleware mocked for tests');
   } catch (error) {
     console.error('Failed to mock CSRF middleware:', error);

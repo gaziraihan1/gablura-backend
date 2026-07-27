@@ -169,7 +169,7 @@ app.get("/health", async (req: Request, res: Response) => {
         replica: dbHealth.replica ? "connected" : "disconnected",
       },
     });
-  } catch (error) {
+  } catch {
     res.status(503).json({
       status: "ERROR",
       timestamp: new Date().toISOString(),
