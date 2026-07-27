@@ -18,7 +18,6 @@ import {
   updateTaskStatusSchema,
 } from './task.validators.js';
 import { prisma } from '../../lib/prisma.js';
-import { Prisma } from '@prisma/client';
 
 // ─── Slack URL Validation ─────────────────────────────────────────────────────
 
@@ -112,7 +111,7 @@ export const updateTask = asyncHandler(async (req: AuthRequest, res: Response) =
 
   const task = await TaskMutation.updateTask(
     req.params.id, req.user!.id, parsed.data,
-    async ({ task, oldStatus, newStatus, addedAssigneeIds }) => {
+    async ({ task }) => {
       // ... rest of callback unchanged
       const dates = new Set<Date>();
       if (oldTask?.dueDate) dates.add(oldTask.dueDate);  // ✅ optional chain since oldTask may be null

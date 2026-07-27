@@ -333,7 +333,6 @@ async function handleSlackSlashCommand(
   integration: { id: string; workspaceId: string | null; connectedById: string | null; userId: string | null },
   command: SlackSlashCommand,
 ): Promise<void> {
-  const workspaceId = integration.workspaceId ?? undefined;
   const slackService = new SlackService(integration.id);
 
   // Parse command text
@@ -721,8 +720,6 @@ async function handleSlackInteraction(
   integration: { id: string; workspaceId: string | null; connectedById: string | null; userId: string | null },
   payload: SlackInteractionPayload,
 ): Promise<void> {
-  const workspaceId = integration.workspaceId ?? undefined;
-
   switch (payload.type) {
     case 'block_actions':
       await handleSlackBlockActions(integration, payload);
@@ -1091,7 +1088,7 @@ async function handleAppMention(
 
   if (lowerText.includes('create task') || lowerText.includes('add task')) {
     // Extract task title from the mention
-    let title = text
+    const title = text
       .replace(/<@[^>]+>/g, '')  // Remove mention
       .replace(/(create task|add task)/i, '')  // Remove command
       .trim();
@@ -1379,7 +1376,6 @@ async function processGithubWebhook(
     // Handle release events
     if (ghPayload.release) {
       const release = ghPayload.release;
-      const repoFullName = ghPayload.repository?.full_name;
 
       const linkedTasks = await prisma.task.findMany({
         where: { workspaceId: ghWorkspaceId, githubBranchName: release.target_commitish },

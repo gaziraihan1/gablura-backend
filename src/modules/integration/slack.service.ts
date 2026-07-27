@@ -1,5 +1,4 @@
 import { prisma } from '../../lib/prisma.js';
-import { decryptToken } from '../../utils/tokenEncryption.js';
 import { getValidAccessToken } from './integration.oauth.js';
 import type {
   SlackUser,
