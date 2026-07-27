@@ -206,82 +206,83 @@ model WellnessRecommendation {
 }
 
 model User {
-  id                     String                 @id @default(cuid())
-  name                   String?
-  email                  String                 @unique
-  password               String?
-  emailVerified          DateTime?
-  image                  String?
-  lastProfileUpdateAt    DateTime?
-  bio                    String?
-  timezone               String?                @default("UTC")
-  role                   UserRole               @default(USER)
-  theme                  String?                @default("system")
-  notifications          Boolean                @default(true)
-  createdAt              DateTime               @default(now())
-  updatedAt              DateTime               @updatedAt
-  lastLoginAt            DateTime?
-  stripeCustomerId       String?                @unique
-  banReason              String?
-  bannedAt               DateTime?
-  bannedById             String?
-  accounts               Account[]
-  activities             Activity[]
-  createdAnnouncements   Announcement[]         @relation("AnnouncementCreator")
-  announcementTargets    AnnouncementTarget[]   @relation("AnnouncementTargets")
-  burnoutSignals         BurnoutSignal[]
-  calendarAggregates     CalendarDayAggregate[]
-  comments               Comment[]
-  commentMentionsBy      CommentMention[]       @relation("MentionedBy")
-  mentionedInComments    CommentMention[]       @relation("MentionedIn")
-  dailyTasks             DailyTask[]
-  FeatureRequest         FeatureRequest[]
-  FeatureVote            FeatureVote[]
-  files                  File[]
-  focusSessions          FocusSession[]
-  goalCheckpoints        GoalCheckpoint[]
-  labels                 Label[]
-  createdMeetings        Meeting[]              @relation("MeetingCreator")
-  meetingAttendees       MeetingAttendee[]
-  notifications_sent     Notification[]         @relation("NotificationSender")
-  notifications_received Notification[]         @relation("NotificationReceiver")
-  createdProjects        Project[]              @relation("ProjectCreator")
-  projectFavorites       ProjectFavorite[]
-  projectMembers         ProjectMember[]
-  refresh_token          RefreshToken[]
-  sessions               Session[]
-  systemEvents           SystemCalendarEvent[]
-  createdTasks           Task[]                 @relation("TaskCreator")
-  assignedTasks          TaskAssignee[]
-  timeEntries            TimeEntry[]
-  UploadRateLimit        UploadRateLimit[]
-  userCapacity           UserCapacity?
-  userWorkSchedule       UserWorkSchedule?
-  energyLevels           EnergyLevel[]
+  id                      String                   @id @default(cuid())
+  name                    String?
+  email                   String                   @unique
+  password                String?
+  emailVerified           DateTime?
+  image                   String?
+  lastProfileUpdateAt     DateTime?
+  bio                     String?
+  timezone                String?                  @default("UTC")
+  role                    UserRole                 @default(USER)
+  theme                   String?                  @default("system")
+  notifications           Boolean                  @default(true)
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
+  lastLoginAt             DateTime?
+  stripeCustomerId        String?                  @unique
+  banReason               String?
+  bannedAt                DateTime?
+  bannedById              String?
+  accounts                Account[]
+  activities              Activity[]
+  createdAnnouncements    Announcement[]           @relation("AnnouncementCreator")
+  announcementTargets     AnnouncementTarget[]     @relation("AnnouncementTargets")
+  burnoutSignals          BurnoutSignal[]
+  calendarAggregates      CalendarDayAggregate[]
+  comments                Comment[]
+  commentMentionsBy       CommentMention[]         @relation("MentionedBy")
+  mentionedInComments     CommentMention[]         @relation("MentionedIn")
+  dailyTasks              DailyTask[]
+  FeatureRequest          FeatureRequest[]
+  FeatureVote             FeatureVote[]
+  files                   File[]
+  focusSessions           FocusSession[]
+  goalCheckpoints         GoalCheckpoint[]
+  labels                  Label[]
+  createdMeetings         Meeting[]                @relation("MeetingCreator")
+  meetingAttendees        MeetingAttendee[]
+  notifications_sent      Notification[]           @relation("NotificationSender")
+  notifications_received  Notification[]           @relation("NotificationReceiver")
+  createdProjects         Project[]                @relation("ProjectCreator")
+  projectFavorites        ProjectFavorite[]
+  projectMembers          ProjectMember[]
+  refresh_token           RefreshToken[]
+  sessions                Session[]
+  systemEvents            SystemCalendarEvent[]
+  createdTasks            Task[]                   @relation("TaskCreator")
+  assignedTasks           TaskAssignee[]
+  timeEntries             TimeEntry[]
+  UploadRateLimit         UploadRateLimit[]
+  userCapacity            UserCapacity?
+  userWorkSchedule        UserWorkSchedule?
+  energyLevels            EnergyLevel[]
   wellnessRecommendations WellnessRecommendation[]
-  ownedWorkspaces        Workspace[]            @relation("WorkspaceOwner")
-  workspaceMembers       WorkspaceMember[]
-  popularResourcesCreated PopularResource[] @relation("PopularResourceCreatedBy")
-  productUpdatesCreated   ProductUpdate[]   @relation("ProductUpdateCreatedBy")
+  ownedWorkspaces         Workspace[]              @relation("WorkspaceOwner")
+  workspaceMembers        WorkspaceMember[]
+  popularResourcesCreated PopularResource[]        @relation("PopularResourceCreatedBy")
+  productUpdatesCreated   ProductUpdate[]          @relation("ProductUpdateCreatedBy")
   apiKeys                 ApiKey[]
   integrations            Integration[]
-  connectedIntegrations   Integration[]          @relation("IntegrationConnectedBy")
+  connectedIntegrations   Integration[]            @relation("IntegrationConnectedBy")
+  ProjectView             ProjectView[]
 
   @@index([stripeCustomerId])
 }
 
 model ApiKey {
-  id          String    @id @default(cuid())
-  name        String
-  prefix      String    // First 8 chars for display (e.g., "foc_a1b2c3d4")
-  hash        String    // Argon2 hash of the full token
-  userId      String
-  lastUsedAt  DateTime?
-  expiresAt   DateTime?
-  isActive    Boolean   @default(true)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id         String    @id @default(cuid())
+  name       String
+  prefix     String // First 8 chars for display (e.g., "foc_a1b2c3d4")
+  hash       String // Argon2 hash of the full token
+  userId     String
+  lastUsedAt DateTime?
+  expiresAt  DateTime?
+  isActive   Boolean   @default(true)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([prefix])
@@ -323,7 +324,6 @@ model Workspace {
   integrations    Integration[]
 
   @@unique([id, slug])
-
   @@index([ownerId])
   @@index([slug])
   @@index([plan])
@@ -422,33 +422,33 @@ model WorkspaceInvitation {
 }
 
 model Project {
-  id           String             @id @default(cuid())
-  name         String
-  description  String?
-  color        String?            @default("#667eea")
-  icon         String?
-  status       ProjectStatus      @default(ACTIVE)
-  priority     Priority           @default(MEDIUM)
-  startDate    DateTime?
-  dueDate      DateTime?
-  completedAt  DateTime?
-  createdAt    DateTime           @default(now())
-  updatedAt    DateTime           @updatedAt
-  workspaceId  String?
+  id            String             @id @default(cuid())
+  name          String
+  description   String?
+  color         String?            @default("#667eea")
+  icon          String?
+  status        ProjectStatus      @default(ACTIVE)
+  priority      Priority           @default(MEDIUM)
+  startDate     DateTime?
+  dueDate       DateTime?
+  completedAt   DateTime?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  workspaceId   String?
   workspaceSlug String?
-  createdById  String
-  slug         String
-  announcement Announcement[]
-  files        File[]
-  createdBy    User               @relation("ProjectCreator", fields: [createdById], references: [id], onDelete: Cascade)
-  workspace    Workspace?         @relation(fields: [workspaceId, workspaceSlug], references: [id, slug], onDelete: Cascade)
-  favorites    ProjectFavorite[]
-  members      ProjectMember[]
-  milestones   ProjectMilestone[]
-  sections     ProjectSection[]
-  views        ProjectView[]
-  sprints      Sprint[]
-  tasks        Task[]
+  createdById   String
+  slug          String
+  announcement  Announcement[]
+  files         File[]
+  createdBy     User               @relation("ProjectCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  workspace     Workspace?         @relation(fields: [workspaceId, workspaceSlug], references: [id, slug], onDelete: Cascade)
+  favorites     ProjectFavorite[]
+  members       ProjectMember[]
+  milestones    ProjectMilestone[]
+  sections      ProjectSection[]
+  views         ProjectView[]
+  sprints       Sprint[]
+  tasks         Task[]
 
   @@unique([workspaceId, slug])
   @@index([workspaceId, workspaceSlug])
@@ -457,13 +457,22 @@ model Project {
 }
 
 model ProjectSection {
-  id        String  @id @default(cuid())
-  name      String
-  position  Int     @default(0)
-  projectId String
-  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  id          String        @id @default(cuid())
+  name        String
+  description String?
+  color       String?
+  status      SectionStatus @default(ACTIVE)
+  position    Int           @default(0)
+  projectId   String
+  project     Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@index([projectId])
+}
+
+enum SectionStatus {
+  PENDING
+  ACTIVE
+  COMPLETED
 }
 
 model ProjectMember {
@@ -479,133 +488,181 @@ model ProjectMember {
 }
 
 model Sprint {
-  id        String   @id @default(cuid())
-  name      String
-  goal      String?
-  startDate DateTime
-  endDate   DateTime
-  projectId String
-  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  id              String       @id @default(cuid())
+  name            String
+  goal            String?
+  status          SprintStatus @default(PLANNING)
+  startDate       DateTime
+  endDate         DateTime
+  completedAt     DateTime?
+  retrospective   String?
+  totalPoints     Int?
+  completedPoints Int?
+  velocity        Float?
+  projectId       String
+  project         Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tasks           Task[]
 
   @@index([projectId])
+}
+
+enum SprintStatus {
+  PLANNING
+  ACTIVE
+  COMPLETED
+  CANCELLED
 }
 
 model ProjectMilestone {
-  id          String    @id @default(cuid())
-  title       String
-  description String?
-  dueDate     DateTime?
-  completed   Boolean   @default(false)
-  projectId   String
-  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  id           String             @id @default(cuid())
+  title        String
+  description  String?
+  status       MilestoneStatus    @default(ON_TRACK)
+  progress     Int                @default(0)
+  color        String?
+  icon         String?
+  dueDate      DateTime?
+  completedAt  DateTime?
+  completed    Boolean            @default(false)
+  projectId    String
+  dependsOnId  String?
+  dependsOn    ProjectMilestone?  @relation("MilestoneDependencies", fields: [dependsOnId], references: [id])
+  dependencies ProjectMilestone[] @relation("MilestoneDependencies")
+  project      Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@index([projectId])
 }
 
+enum MilestoneStatus {
+  ON_TRACK
+  AT_RISK
+  DELAYED
+  COMPLETED
+}
+
 model ProjectView {
-  id        String          @id @default(cuid())
-  projectId String
-  name      String
-  type      ProjectViewType @default(KANBAN)
-  filters   Json?
-  sort      Json?
-  project   Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  id          String          @id @default(cuid())
+  projectId   String
+  name        String
+  description String?
+  type        ProjectViewType @default(KANBAN)
+  filters     Json?
+  sort        Json?
+  config      Json?
+  isDefault   Boolean         @default(false)
+  visibility  ViewVisibility  @default(PRIVATE)
+  createdById String
+  createdBy   User            @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  project     Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@index([projectId])
+  @@index([createdById])
+}
+
+enum ViewVisibility {
+  PRIVATE
+  SHARED
 }
 
 model ProjectFavorite {
   id        String   @id @default(cuid())
   projectId String
   userId    String
+  group     String?
+  sortOrder Int      @default(0)
+  note      String?
   createdAt DateTime @default(now())
   project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([projectId, userId])
+  @@index([userId, sortOrder])
 }
 
 model Task {
-  id              String           @id @default(cuid())
-  title           String
-  description     String?
-  focusRequired   Boolean          @default(false)
-  focusLevel      Int?
-  energyType      TaskEnergy?
-  intent          TaskIntent?      @default(EXECUTION)
-  distractionCost Int?
-  status          TaskStatus       @default(TODO)
-  priority        Priority         @default(MEDIUM)
-  startDate       DateTime?
-  dueDate         DateTime?
-  completedAt     DateTime?
-  estimatedHours  Int?
-  actualHours     Float?
-  position        Int              @default(0)
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
-  projectId       String?
-  createdById     String
-  parentId        String?
-  workspaceId     String?
-  depth           Int              @default(0)
-  githubRepo      String?
-  githubPrUrl     String?
-  githubPrNumber  Int?
-  githubPrStatus  String?
-  githubPrChecks  Json?
-  githubIssueUrl  String?
-  githubIssueNumber  Int?
-  githubIssueState   String?
-  githubBranchName   String?
-  githubBranchUrl    String?
-  githubBranchProtected  Boolean?
-  githubCommitSha    String?
-  githubCommitUrl    String?
-  githubCommitMessage  String?
-  githubCommitAuthor  String?
-  githubWorkflowStatus  String?
-  githubWorkflowName  String?
-  githubWorkflowUrl  String?
-  githubWorkflowRunId  String?
-  githubReleaseName  String?
-  githubReleaseUrl  String?
-  githubReleaseTagName  String?
-  githubMilestoneTitle  String?
-  githubMilestoneUrl  String?
-  githubMilestoneState  String?
-  githubProjectNumber  Int?
-  githubProjectUrl  String?
-  githubProjectTitle  String?
-  githubDiscussionNumber  Int?
-  githubDiscussionUrl  String?
-  githubDiscussionCategory  String?
-  githubLabels  Json?
+  id                       String      @id @default(cuid())
+  title                    String
+  description              String?
+  focusRequired            Boolean     @default(false)
+  focusLevel               Int?
+  energyType               TaskEnergy?
+  intent                   TaskIntent? @default(EXECUTION)
+  distractionCost          Int?
+  status                   TaskStatus  @default(TODO)
+  priority                 Priority    @default(MEDIUM)
+  startDate                DateTime?
+  dueDate                  DateTime?
+  completedAt              DateTime?
+  estimatedHours           Int?
+  actualHours              Float?
+  position                 Int         @default(0)
+  createdAt                DateTime    @default(now())
+  updatedAt                DateTime    @updatedAt
+  projectId                String?
+  sprintId                 String?
+  sectionId                String?
+  createdById              String
+  parentId                 String?
+  workspaceId              String?
+  depth                    Int         @default(0)
+  githubRepo               String?
+  githubPrUrl              String?
+  githubPrNumber           Int?
+  githubPrStatus           String?
+  githubPrChecks           Json?
+  githubIssueUrl           String?
+  githubIssueNumber        Int?
+  githubIssueState         String?
+  githubBranchName         String?
+  githubBranchUrl          String?
+  githubBranchProtected    Boolean?
+  githubCommitSha          String?
+  githubCommitUrl          String?
+  githubCommitMessage      String?
+  githubCommitAuthor       String?
+  githubWorkflowStatus     String?
+  githubWorkflowName       String?
+  githubWorkflowUrl        String?
+  githubWorkflowRunId      String?
+  githubReleaseName        String?
+  githubReleaseUrl         String?
+  githubReleaseTagName     String?
+  githubMilestoneTitle     String?
+  githubMilestoneUrl       String?
+  githubMilestoneState     String?
+  githubProjectNumber      Int?
+  githubProjectUrl         String?
+  githubProjectTitle       String?
+  githubDiscussionNumber   Int?
+  githubDiscussionUrl      String?
+  githubDiscussionCategory String?
+  githubLabels             Json?
 
   // Slack fields (linked messages/threads)
-  slackChannelId    String?   // Slack channel ID where task was created from
-  slackMessageTs    String?   // Slack message timestamp (unique ID for messages)
-  slackThreadTs     String?   // Slack thread timestamp (if message is part of a thread)
-  slackMessageUrl   String?   // URL to the Slack message
-  slackUserId       String?   // Slack user ID who created/triggered the task
+  slackChannelId       String? // Slack channel ID where task was created from
+  slackMessageTs       String? // Slack message timestamp (unique ID for messages)
+  slackThreadTs        String? // Slack thread timestamp (if message is part of a thread)
+  slackMessageUrl      String? // URL to the Slack message
+  slackUserId          String? // Slack user ID who created/triggered the task
   slackUserDisplayName String? // Slack user display name
 
-  activities      Activity[]
-  comments        Comment[]
-  dailyTasks      DailyTask[]
-  files           File[]
-  focusSessions   FocusSession[]
-  createdBy       User             @relation("TaskCreator", fields: [createdById], references: [id], onDelete: Cascade)
-  parent          Task?            @relation("Subtasks", fields: [parentId], references: [id])
-  subtasks        Task[]           @relation("Subtasks")
-  project         Project?         @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  workspace       Workspace?       @relation(fields: [workspaceId], references: [id])
-  assignees       TaskAssignee[]
-  blockedBy       TaskDependency[] @relation("TaskBlockedBy")
-  dependencies    TaskDependency[] @relation("TaskDependsOn")
-  labels          TaskLabel[]
-  recurrence      TaskRecurrence?
-  timeEntries     TimeEntry[]
+  activities    Activity[]
+  comments      Comment[]
+  dailyTasks    DailyTask[]
+  files         File[]
+  focusSessions FocusSession[]
+  createdBy     User             @relation("TaskCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  parent        Task?            @relation("Subtasks", fields: [parentId], references: [id])
+  subtasks      Task[]           @relation("Subtasks")
+  sprint        Sprint?          @relation(fields: [sprintId], references: [id])
+  project       Project?         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  workspace     Workspace?       @relation(fields: [workspaceId], references: [id])
+  assignees     TaskAssignee[]
+  blockedBy     TaskDependency[] @relation("TaskBlockedBy")
+  dependencies  TaskDependency[] @relation("TaskDependsOn")
+  labels        TaskLabel[]
+  recurrence    TaskRecurrence?
+  timeEntries   TimeEntry[]
 
   @@index([projectId])
   @@index([createdById])
@@ -617,6 +674,8 @@ model Task {
   @@index([focusRequired])
   @@index([energyType])
   @@index([createdAt])
+  @@index([sprintId])
+  @@index([sectionId])
 }
 
 model TaskAssignee {
@@ -709,20 +768,20 @@ model MeetingAttendee {
 }
 
 model Announcement {
-  id          String                 @id @default(cuid())
-  title       String
-  content     String
-  visibility  AnnouncementVisibility @default(PUBLIC)
-  isPinned    Boolean                @default(false)
-  createdAt   DateTime               @default(now())
-  updatedAt   DateTime               @updatedAt
+  id            String                 @id @default(cuid())
+  title         String
+  content       String
+  visibility    AnnouncementVisibility @default(PUBLIC)
+  isPinned      Boolean                @default(false)
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
   workspaceSlug String
-  createdById String
-  projectId   String?
-  createdBy   User                   @relation("AnnouncementCreator", fields: [createdById], references: [id], onDelete: Cascade)
-  project     Project?               @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  workspace   Workspace              @relation(fields: [workspaceSlug], references: [slug], onDelete: Cascade)
-  targets     AnnouncementTarget[]
+  createdById   String
+  projectId     String?
+  createdBy     User                   @relation("AnnouncementCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  project       Project?               @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  workspace     Workspace              @relation(fields: [workspaceSlug], references: [slug], onDelete: Cascade)
+  targets       AnnouncementTarget[]
 
   @@index([workspaceSlug])
   @@index([createdById])
@@ -758,13 +817,13 @@ enum ResourceStatus {
 
 /// Popular Resource — shown in the public "Popular resources" section.
 model PopularResource {
-  id          String         @id @default(cuid())
+  id String @id @default(cuid())
 
   /// Admin-assigned, human-readable identifier — the "ID" field from the
   /// create form (e.g. "getting-started-guide"). Kept separate from the
   /// Prisma primary key above so admins get a stable, readable value
   /// without colliding with Prisma's own id generation/relations.
-  slug        String         @unique
+  slug String @unique
 
   title       String
   description String         @db.Text
@@ -773,10 +832,10 @@ model PopularResource {
   status      ResourceStatus @default(DRAFT)
 
   createdById String
-  createdBy   User           @relation("PopularResourceCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
+  createdBy   User   @relation("PopularResourceCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
 
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([status])
   @@index([category])
@@ -784,10 +843,10 @@ model PopularResource {
 }
 
 model ProductUpdate {
-  id          String         @id @default(cuid())
+  id String @id @default(cuid())
 
   /// Same rationale as PopularResource.slug above.
-  slug        String         @unique
+  slug String @unique
 
   title       String
   date        DateTime
@@ -796,16 +855,15 @@ model ProductUpdate {
   status      ResourceStatus @default(DRAFT)
 
   createdById String
-  createdBy   User           @relation("ProductUpdateCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
+  createdBy   User   @relation("ProductUpdateCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
 
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([status])
   @@index([date])
   @@map("product_updates")
 }
-
 
 model UserCapacity {
   id                 String   @id @default(cuid())
@@ -1014,17 +1072,17 @@ model FocusSession {
 }
 
 model TimeEntry {
-  id          String             @id @default(cuid())
+  id          String            @id @default(cuid())
   description String?
   duration    Int
-  billable    Boolean            @default(false)
-  category    TimeEntryCategory  @default(OTHER)
+  billable    Boolean           @default(false)
+  category    TimeEntryCategory @default(OTHER)
   startedAt   DateTime
   endedAt     DateTime?
   userId      String
   taskId      String
-  task        Task               @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  task        Task              @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([taskId])
@@ -1033,19 +1091,19 @@ model TimeEntry {
 }
 
 model Activity {
-  id          String       @id @default(cuid())
-  action      ActivityType
-  entityType  EntityType
-  entityId    String
-  metadata    Json?
-  createdAt   DateTime     @default(now())
-  userId      String
-  workspaceId String
-  workspaceSlug  String   
-  taskId      String?
-  task        Task?        @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  workspace   Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  id            String       @id @default(cuid())
+  action        ActivityType
+  entityType    EntityType
+  entityId      String
+  metadata      Json?
+  createdAt     DateTime     @default(now())
+  userId        String
+  workspaceId   String
+  workspaceSlug String
+  taskId        String?
+  task          Task?        @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace     Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@index([workspaceId])
   @@index([workspaceSlug])
@@ -1074,28 +1132,28 @@ model Notification {
 }
 
 model Integration {
-  id              String    @id @default(cuid())
-  name            String
-  provider        String    // github, slack, google-calendar, trello
-  accessToken     String?
-  refreshToken    String?
-  expiresAt       DateTime?
-  config          Json?     // IntegrationConfig (syncDirection, autoSync, etc.)
-  webhookUrl      String?   // For receiving webhook events from provider
-  webhookSecret   String?   // Secret to verify webhook signatures
-  syncStatus      Json?     // SyncStatus (lastSyncAt, lastSyncStatus, syncCount, error)
-  active          Boolean   @default(true)
-  connectedAt     DateTime  @default(now())
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  workspaceId     String?
-  userId          String?
-  connectedById   String?   // User who connected this integration
+  id            String    @id @default(cuid())
+  name          String
+  provider      String // github, slack, google-calendar, trello
+  accessToken   String?
+  refreshToken  String?
+  expiresAt     DateTime?
+  config        Json? // IntegrationConfig (syncDirection, autoSync, etc.)
+  webhookUrl    String? // For receiving webhook events from provider
+  webhookSecret String? // Secret to verify webhook signatures
+  syncStatus    Json? // SyncStatus (lastSyncAt, lastSyncStatus, syncCount, error)
+  active        Boolean   @default(true)
+  connectedAt   DateTime  @default(now())
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  workspaceId   String?
+  userId        String?
+  connectedById String? // User who connected this integration
 
   // Relationships
-  workspace       Workspace?      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  user            User?           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  connectedBy     User?           @relation("IntegrationConnectedBy", fields: [connectedById], references: [id])
+  workspace   Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user        User?      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  connectedBy User?      @relation("IntegrationConnectedBy", fields: [connectedById], references: [id])
 
   @@index([workspaceId])
   @@index([userId])
@@ -1485,10 +1543,11 @@ model JobPosting {
 }
 
 model TemplateList {
-  email             String         @unique
+  email String @unique
 }
+
 model SubscribeList {
-  email             String         @unique
+  email String @unique
 }
 
 enum JobDepartment {

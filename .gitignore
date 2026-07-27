@@ -22,3 +22,4 @@ performance/results/
 .mimocode
 debug-*.ts
 debug-*.mjs
+nul

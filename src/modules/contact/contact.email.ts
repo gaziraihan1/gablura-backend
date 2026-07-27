@@ -1,55 +1,47 @@
 import nodemailer from "nodemailer";
 import type { CreateContactMessageInput } from "./contact.validator.js";
-
-// ─── HTML escaping to prevent XSS ──────────────────────────────────────────────
-function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
+import {
+  EmailSendError,
+  baseWrapper,
+  escapeHtml,
+  resetSmtpTransporter,
+} from "../../lib/email/shared.js";
 
 // ─── Custom error class ───────────────────────────────────────────────────────
-export class ContactEmailError extends Error {
-  constructor(message: string, public readonly cause?: unknown) {
-    super(message);
+export class ContactEmailError extends EmailSendError {
+  constructor(message: string, public override readonly cause?: unknown) {
+    super(message, cause);
     this.name = "ContactEmailError";
   }
 }
 
-// ─── Singleton transporter ────────────────────────────────────────────────────
-function createTransporter() {
-  const { EMAIL_SERVER_HOST, EMAIL_SERVER_PORT, EMAIL_SERVER_USER, EMAIL_SERVER_PASSWORD } =
-    process.env;
+// ─── Singleton transporter (EMAIL_SERVER_* env vars) ─────────────────────────
+let _transporter: ReturnType<typeof nodemailer.createTransport> | null = null;
 
-  if (!EMAIL_SERVER_HOST || !EMAIL_SERVER_PORT || !EMAIL_SERVER_USER || !EMAIL_SERVER_PASSWORD) {
+function getTransporter() {
+  if (_transporter) return _transporter;
+
+  const host = process.env.EMAIL_SERVER_HOST;
+  const port = process.env.EMAIL_SERVER_PORT;
+  const user = process.env.EMAIL_SERVER_USER;
+  const pass = process.env.EMAIL_SERVER_PASSWORD;
+
+  if (!host || !port || !user || !pass) {
     throw new ContactEmailError(
       "Missing required email env vars: EMAIL_SERVER_HOST, EMAIL_SERVER_PORT, EMAIL_SERVER_USER, EMAIL_SERVER_PASSWORD"
     );
   }
 
-  return nodemailer.createTransport({
-    host: EMAIL_SERVER_HOST,
-    port: Number(EMAIL_SERVER_PORT),
-    secure: false, // true for SMTPS, false for STARTTLS (587)
-    auth: {
-      user: EMAIL_SERVER_USER,
-      pass: EMAIL_SERVER_PASSWORD,
-    },
+  _transporter = nodemailer.createTransport({
+    host,
+    port: Number(port),
+    secure: false,
+    auth: { user, pass },
     tls: {
       rejectUnauthorized: process.env.NODE_ENV === "production",
     },
   });
-}
 
-let _transporter: ReturnType<typeof nodemailer.createTransport> | null = null;
-
-function getTransporter() {
-  if (!_transporter) {
-    _transporter = createTransporter();
-  }
   return _transporter;
 }
 
@@ -83,11 +75,12 @@ async function sendMail(options: {
       error instanceof Error &&
       (error.message.includes("ECONNREFUSED") ||
         error.message.includes("ENOTFOUND") ||
-        error.message.includes("535") || // SMTP auth failure
+        error.message.includes("535") ||
         error.message.includes("534"));
 
     if (isConnectionError) {
       _transporter = null;
+      resetSmtpTransporter();
     }
 
     console.error(`[contact.email] Failed to send to ${options.to}:`, error);
@@ -156,53 +149,6 @@ export async function sendUserAutoReply(
 
 // ─── HTML templates ───────────────────────────────────────────────────────────
 
-function baseWrapper(content: string): string {
-  return `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Focura</title>
-</head>
-<body style="margin:0;padding:0;background:#f5f5f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f5f5;padding:40px 0;">
-    <tr>
-      <td align="center">
-        <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;">
-
-          <!-- Header -->
-          <tr>
-            <td style="background:#0a0a0a;border-radius:12px 12px 0 0;padding:28px 36px;">
-              <span style="font-size:20px;font-weight:700;color:#ffffff;letter-spacing:-0.5px;">Focura</span>
-            </td>
-          </tr>
-
-          <!-- Body -->
-          <tr>
-            <td style="background:#ffffff;padding:36px;border-radius:0 0 12px 12px;">
-              ${content}
-            </td>
-          </tr>
-
-          <!-- Footer -->
-          <tr>
-            <td style="padding:24px 0;text-align:center;">
-              <p style="margin:0;font-size:12px;color:#a3a3a3;">
-                © ${new Date().getFullYear()} Focura ·
-                <a href="${process.env.CLIENT_URL || process.env.FRONTEND_URL || 'https://focura.app'}" style="color:#a3a3a3;">${process.env.CLIENT_URL || process.env.FRONTEND_URL || 'focura.app'}</a>
-              </p>
-            </td>
-          </tr>
-
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>`.trim();
-}
-
 function buildAdminEmailHtml(
   data: CreateContactMessageInput,
   messageId: string,
@@ -259,6 +205,8 @@ function buildUserAutoReplyHtml(data: CreateContactMessageInput): string {
   const preview =
     data.message.length > 300 ? data.message.slice(0, 300) + "…" : data.message;
   const firstName = data.name.split(" ")[0];
+  const supportEmail =
+    process.env.SUPPORT_EMAIL ?? process.env.EMAIL_SERVER_USER ?? "support@focura.app";
 
   const content = `
     <h2 style="margin:0 0 8px;font-size:18px;font-weight:700;color:#0a0a0a;">
@@ -283,7 +231,7 @@ function buildUserAutoReplyHtml(data: CreateContactMessageInput): string {
 
     <p style="margin:0 0 8px;font-size:13px;color:#737373;line-height:1.6;">
       If this is urgent, you can also reach us directly at
-      <a href="mailto:${supportEmail}" style="color:#0a0a0a;font-weight:600;">${supportEmail}</a>.
+      <a href="mailto:${escapeHtml(supportEmail)}" style="color:#0a0a0a;font-weight:600;">${escapeHtml(supportEmail)}</a>.
     </p>
     <p style="margin:0;font-size:13px;color:#737373;">— The Focura Team</p>
   `;
