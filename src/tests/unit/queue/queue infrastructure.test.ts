@@ -5,29 +5,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// ── Mock Redis (must come before queue imports) ──────────────────────────────
-vi.mock('../../../redis/redis.client.js', () => ({
-  getRedisClient: vi.fn().mockReturnValue({
-    get: vi.fn().mockResolvedValue(null),
-    set: vi.fn().mockResolvedValue('OK'),
-    setex: vi.fn().mockResolvedValue('OK'),
-    del: vi.fn().mockResolvedValue(1),
-    incrby: vi.fn().mockResolvedValue(1),
-    pipeline: vi.fn().mockReturnValue({
-      get: vi.fn().mockReturnThis(),
-      set: vi.fn().mockReturnThis(),
-      zadd: vi.fn().mockReturnThis(),
-      zcard: vi.fn().mockReturnThis(),
-      zremrangebyscore: vi.fn().mockReturnThis(),
-      expire: vi.fn().mockReturnThis(),
-      exec: vi.fn().mockResolvedValue([[null, 0], [null, 1], [null, 1], [null, 1]]),
-    }),
-    eval: vi.fn().mockResolvedValue(1),
-    on: vi.fn().mockReturnThis(),
-  }),
-}));
-
-// ── Import queue modules (BullMQ will use default mock) ──────────────────────
+// ── Import queue modules (BullMQ is mocked globally in setup.ts) ──────────────
 import {
   emailQueue,
   addSendEmailJob,
@@ -79,7 +57,6 @@ describe('Queue Infrastructure', () => {
         data: { contactData: {}, messageId: 'msg-1', ip: '127.0.0.1' },
       });
 
-      // Queue.add should have been called (BullMQ mock)
       expect(emailQueue.add).toBeDefined();
     });
 

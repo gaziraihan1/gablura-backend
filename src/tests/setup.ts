@@ -174,6 +174,32 @@ vi.mock('stripe', () => ({
   })),
 }));
 
+// ── MOCK: bullmq ───────────────────────────────────────────────────────────────
+vi.mock('bullmq', () => {
+  const mockAdd = vi.fn().mockResolvedValue({ id: 'mock-job-id' });
+  const mockClose = vi.fn().mockResolvedValue(undefined);
+
+  class MockQueue {
+    add = mockAdd;
+    close = mockClose;
+    on = vi.fn().mockReturnThis();
+  }
+
+  class MockWorker {
+    close = mockClose;
+    on = vi.fn().mockReturnThis();
+  }
+
+  return {
+    Queue: vi.fn().mockImplementation(() => new MockQueue()),
+    Worker: vi.fn().mockImplementation(() => new MockWorker()),
+    QueueEvents: vi.fn().mockImplementation(() => ({
+      close: mockClose,
+      on: vi.fn().mockReturnThis(),
+    })),
+  };
+});
+
 // ── MOCK: nodemailer ────────────────────────────────────────────────────────────
 vi.mock('nodemailer', () => ({
   default: {

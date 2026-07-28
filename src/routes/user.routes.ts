@@ -1,6 +1,12 @@
 import { Router, Response } from 'express';
 import { authenticate } from '../middleware/auth.js';
 import { getUserProfile, updateUserProfile, changePassword } from '../controllers/user.controller.js';
+import {
+  getSecuritySettings,
+  setupTwoFactor,
+  verifyTwoFactor,
+  disableTwoFactor,
+} from '../controllers/twoFactor.controller.js';
 import { AuthRequest } from '../middleware/auth.js';
 import { prisma } from '../lib/prisma.js';
 
@@ -11,6 +17,12 @@ router.get('/profile', authenticate, getUserProfile);
 router.put('/profile', authenticate, updateUserProfile);
 
 router.put('/password', authenticate, changePassword);
+
+router.get('/security', authenticate, getSecuritySettings);
+
+router.post('/2fa/setup', authenticate, setupTwoFactor);
+router.post('/2fa/verify', authenticate, verifyTwoFactor);
+router.post('/2fa/disable', authenticate, disableTwoFactor);
 
 router.get('/workspace-members', authenticate, async (req: AuthRequest, res: Response) => {
   try {

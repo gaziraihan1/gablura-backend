@@ -61,6 +61,7 @@
     "multer": "^2.0.2",
     "node-cron": "^4.2.1",
     "nodemailer": "^7.0.11",
+    "otplib": "^13.4.1",
     "slugify": "^1.6.6",
     "stripe": "^20.4.1",
     "zod": "^4.1.13"

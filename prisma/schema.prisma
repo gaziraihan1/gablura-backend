@@ -221,6 +221,8 @@ model User {
   createdAt               DateTime                 @default(now())
   updatedAt               DateTime                 @updatedAt
   lastLoginAt             DateTime?
+  twoFactorSecret         String?
+  twoFactorEnabled        Boolean                  @default(false)
   stripeCustomerId        String?                  @unique
   banReason               String?
   bannedAt                DateTime?

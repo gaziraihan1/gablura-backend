@@ -5,28 +5,6 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// ── Mock Redis (must come before queue imports) ──────────────────────────────
-vi.mock('../../../redis/redis.client.js', () => ({
-  getRedisClient: vi.fn().mockReturnValue({
-    get: vi.fn().mockResolvedValue(null),
-    set: vi.fn().mockResolvedValue('OK'),
-    setex: vi.fn().mockResolvedValue('OK'),
-    del: vi.fn().mockResolvedValue(1),
-    incrby: vi.fn().mockResolvedValue(1),
-    pipeline: vi.fn().mockReturnValue({
-      get: vi.fn().mockReturnThis(),
-      set: vi.fn().mockReturnThis(),
-      zadd: vi.fn().mockReturnThis(),
-      zcard: vi.fn().mockReturnThis(),
-      zremrangebyscore: vi.fn().mockReturnThis(),
-      expire: vi.fn().mockReturnThis(),
-      exec: vi.fn().mockResolvedValue([[null, 0], [null, 1], [null, 1], [null, 1]]),
-    }),
-    eval: vi.fn().mockResolvedValue(1),
-    on: vi.fn().mockReturnThis(),
-  }),
-}));
-
 // ── Mock Workers ─────────────────────────────────────────────────────────────
 vi.mock('../../../queue/workers/email.worker.js', () => ({
   createEmailWorker: vi.fn().mockReturnValue({
@@ -63,6 +41,13 @@ vi.mock('../../../queue/workers/analytics.worker.js', () => ({
   }),
 }));
 
+vi.mock('../../../queue/workers/integration.worker.js', () => ({
+  createIntegrationWorker: vi.fn().mockReturnValue({
+    close: vi.fn().mockResolvedValue(undefined),
+    on: vi.fn().mockReturnThis(),
+  }),
+}));
+
 // ── Import queue index after mocks ───────────────────────────────────────────
 import { initQueueWorkers, closeQueueWorkers } from '../../../queue/index.js';
 import { createEmailWorker } from '../../../queue/workers/email.worker.js';
@@ -70,6 +55,7 @@ import { createNotificationWorker } from '../../../queue/workers/notification.wo
 import { createActivityWorker } from '../../../queue/workers/activity.worker.js';
 import { createCalendarWorker } from '../../../queue/workers/calendar.worker.js';
 import { createAnalyticsWorker } from '../../../queue/workers/analytics.worker.js';
+import { createIntegrationWorker } from '../../../queue/workers/integration.worker.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -79,7 +65,7 @@ describe('Queue Index', () => {
   });
 
   describe('initQueueWorkers', () => {
-    it('initializes all 5 workers', async () => {
+    it('initializes all 6 workers', async () => {
       await initQueueWorkers();
 
       expect(createEmailWorker).toHaveBeenCalled();
@@ -87,29 +73,28 @@ describe('Queue Index', () => {
       expect(createActivityWorker).toHaveBeenCalled();
       expect(createCalendarWorker).toHaveBeenCalled();
       expect(createAnalyticsWorker).toHaveBeenCalled();
+      expect(createIntegrationWorker).toHaveBeenCalled();
     });
   });
 
   describe('closeQueueWorkers', () => {
     it('closes all workers and queues', async () => {
-      // First initialize workers
       await initQueueWorkers();
-
-      // Then close them
       await closeQueueWorkers();
 
-      // Workers should be closed (each worker has close method)
       const emailWorker = (createEmailWorker as any).mock.results[0]?.value;
       const notificationWorker = (createNotificationWorker as any).mock.results[0]?.value;
       const activityWorker = (createActivityWorker as any).mock.results[0]?.value;
       const calendarWorker = (createCalendarWorker as any).mock.results[0]?.value;
       const analyticsWorker = (createAnalyticsWorker as any).mock.results[0]?.value;
+      const integrationWorker = (createIntegrationWorker as any).mock.results[0]?.value;
 
       if (emailWorker) expect(emailWorker.close).toHaveBeenCalled();
       if (notificationWorker) expect(notificationWorker.close).toHaveBeenCalled();
       if (activityWorker) expect(activityWorker.close).toHaveBeenCalled();
       if (calendarWorker) expect(calendarWorker.close).toHaveBeenCalled();
       if (analyticsWorker) expect(analyticsWorker.close).toHaveBeenCalled();
+      if (integrationWorker) expect(integrationWorker.close).toHaveBeenCalled();
     });
   });
 });
