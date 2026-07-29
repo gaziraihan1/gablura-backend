@@ -169,7 +169,7 @@ function buildSubFields(
     currentPeriodEnd: toDate(sub.currentBillingPeriod?.endsAt),
     cancelAtPeriodEnd: sub.scheduledChange?.action === 'cancel',
     canceledAt: sub.canceledAt ? toDate(sub.canceledAt) : null,
-    trialStart: null,
+    trialStart: sub.status === 'trialing' ? toDate(sub.startedAt) : null,
     trialEnd,
     metadata: customData,
     raw,
@@ -348,6 +348,38 @@ export class PaddleProvider implements IPaymentProvider {
           ),
         };
 
+      case EventName.TransactionCompleted:
+        return this.normaliseTxnAsInvoice(
+          'INVOICE_PAID',
+          (event as TransactionCompletedEvent).data,
+          eventId,
+          event,
+        );
+
+      case EventName.TransactionPaymentFailed:
+        return this.normaliseTxnAsInvoice(
+          'INVOICE_PAYMENT_FAILED',
+          (event as TransactionPaymentFailedEvent).data,
+          eventId,
+          event,
+        );
+
+      case EventName.TransactionBilled:
+        return this.normaliseTxnAsInvoice(
+          'INVOICE_CREATED',
+          (event as TransactionBilledEvent).data,
+          eventId,
+          event,
+        );
+
+      case EventName.TransactionUpdated:
+        return this.normaliseTxnAsInvoice(
+          'INVOICE_UPDATED',
+          (event as TransactionUpdatedEvent).data,
+          eventId,
+          event,
+        );
+
       default:
         return null;
     }
@@ -362,7 +394,7 @@ export class PaddleProvider implements IPaymentProvider {
     const customData = (txn.customData ?? {}) as Record<string, string>;
     const totals = txn.details?.totals;
 
-    const amountDue = Number(totals?.total ?? 0);
+    const amountDue = Number(totals?.grandTotal ?? totals?.total ?? 0);
 
     const lastPayment =
       txn.payments?.[txn.payments.length - 1];
@@ -372,6 +404,27 @@ export class PaddleProvider implements IPaymentProvider {
       : 0;
 
     const amountRemaining = Math.max(0, amountDue - amountPaid);
+
+    let paymentMethodType: string | null = null;
+    let cardLast4: string | null = null;
+
+    if (lastPayment?.methodDetails) {
+      paymentMethodType = lastPayment.methodDetails.type ?? null;
+      cardLast4 = lastPayment.methodDetails.card?.last4 ?? null;
+    }
+
+    const lineItems = (txn.details?.lineItems ?? []).map((item) => ({
+      priceId: item.priceId ?? null,
+      quantity: item.quantity ?? 1,
+      name: item.product?.name ?? null,
+      amount: Number(item.unitTotals?.total ?? item.totals?.total ?? 0),
+    }));
+
+    const paidAt = lastPayment?.capturedAt
+      ? toDate(lastPayment.capturedAt)
+      : lastPayment?.status === 'captured'
+        ? toDate(lastPayment.createdAt)
+        : null;
 
     return {
       type,
@@ -395,11 +448,11 @@ export class PaddleProvider implements IPaymentProvider {
         ? toDate(txn.billingPeriod.endsAt)
         : null,
       dueDate: null,
-      paidAt: null,
+      paidAt,
       attemptCount: txn.payments?.length ?? 0,
-      paymentMethodType: null,
-      cardLast4: null,
-      lineItems: [],
+      paymentMethodType,
+      cardLast4,
+      lineItems: lineItems.length > 0 ? lineItems : [],
       metadata: customData,
       raw,
     };

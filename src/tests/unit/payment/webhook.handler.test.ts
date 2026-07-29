@@ -201,6 +201,224 @@ describe("webhook.handler", () => {
     });
   });
 
+  describe("invoice event handling", () => {
+    it("processes INVOICE_PAID and creates payment record", async () => {
+      const mockEvent = {
+        providerEventId: "evt_inv_paid",
+        type: "INVOICE_PAID",
+        raw: {},
+        metadata: { workspaceId: "ws_123", ownerId: "user_123" },
+        providerInvoiceId: "txn_123",
+        providerCustomerId: "cus_paddle_123",
+        providerSubscriptionId: "sub_paddle_123",
+        providerPaymentId: "paymtatt_123",
+        amountDue: 1000,
+        amountPaid: 1000,
+        amountRemaining: 0,
+        currency: "usd",
+        status: "PAID",
+        invoiceNumber: "INV-001",
+        invoicePdfUrl: null,
+        hostedInvoiceUrl: null,
+        periodStart: new Date("2026-01-01"),
+        periodEnd: new Date("2026-02-01"),
+        dueDate: null,
+        paidAt: new Date("2026-01-15"),
+        attemptCount: 1,
+        paymentMethodType: "card",
+        cardLast4: "4242",
+        lineItems: [],
+      };
+
+      vi.mocked(getPaymentProvider).mockReturnValue({
+        verifyAndParseWebhook: vi.fn().mockResolvedValue(mockEvent),
+      } as any);
+
+      vi.mocked(prisma.billingEvent.findUnique).mockResolvedValue(null);
+      vi.mocked(prisma.billingEvent.upsert).mockResolvedValue({ id: "billing_inv_1" } as any);
+      vi.mocked(prisma.subscription.findFirst).mockResolvedValue({ id: "sub_123", workspaceId: "ws_123" } as any);
+      vi.mocked(prisma.workspace.findUnique).mockResolvedValue({ ownerId: "user_123" } as any);
+      vi.mocked(prisma.invoice.upsert).mockResolvedValue({} as any);
+      vi.mocked(prisma.payment.upsert).mockResolvedValue({} as any);
+
+      await webhookHandler(mockReq, mockRes);
+
+      expect(prisma.invoice.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { stripeInvoiceId: "txn_123" },
+          create: expect.objectContaining({
+            stripeInvoiceId: "txn_123",
+            status: "PAID",
+            amountPaid: 1000,
+          }),
+        })
+      );
+      expect(prisma.payment.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { stripePaymentIntentId: "paymtatt_123" },
+          create: expect.objectContaining({
+            stripePaymentIntentId: "paymtatt_123",
+            workspaceId: "ws_123",
+            amount: 1000,
+            status: "SUCCEEDED",
+            paymentMethod: "card",
+            last4: "4242",
+          }),
+        })
+      );
+      expect(mockRes.json).toHaveBeenCalledWith({ received: true });
+    });
+
+    it("processes INVOICE_PAYMENT_FAILED and updates subscription to PAST_DUE", async () => {
+      const mockEvent = {
+        providerEventId: "evt_inv_fail",
+        type: "INVOICE_PAYMENT_FAILED",
+        raw: {},
+        metadata: { workspaceId: "ws_123" },
+        providerInvoiceId: "txn_fail_123",
+        providerCustomerId: "cus_paddle_123",
+        providerSubscriptionId: "sub_paddle_123",
+        providerPaymentId: null,
+        amountDue: 1000,
+        amountPaid: 0,
+        amountRemaining: 1000,
+        currency: "usd",
+        status: "UNCOLLECTIBLE",
+        invoiceNumber: null,
+        invoicePdfUrl: null,
+        hostedInvoiceUrl: null,
+        periodStart: null,
+        periodEnd: null,
+        dueDate: null,
+        paidAt: null,
+        attemptCount: 1,
+        paymentMethodType: null,
+        cardLast4: null,
+        lineItems: [],
+      };
+
+      vi.mocked(getPaymentProvider).mockReturnValue({
+        verifyAndParseWebhook: vi.fn().mockResolvedValue(mockEvent),
+      } as any);
+
+      vi.mocked(prisma.billingEvent.findUnique).mockResolvedValue(null);
+      vi.mocked(prisma.billingEvent.upsert).mockResolvedValue({ id: "billing_inv_fail" } as any);
+      vi.mocked(prisma.subscription.findFirst).mockResolvedValue({
+        id: "sub_123",
+        workspaceId: "ws_123",
+      } as any);
+      vi.mocked(prisma.workspace.findUnique).mockResolvedValue({ ownerId: "user_123" } as any);
+      vi.mocked(prisma.invoice.upsert).mockResolvedValue({} as any);
+      vi.mocked(prisma.subscription.update).mockResolvedValue({} as any);
+
+      await webhookHandler(mockReq, mockRes);
+
+      expect(prisma.invoice.upsert).toHaveBeenCalled();
+      expect(prisma.subscription.update).toHaveBeenCalledWith({
+        where: { id: "sub_123" },
+        data: { status: "PAST_DUE" },
+      });
+      expect(mockRes.json).toHaveBeenCalledWith({ received: true });
+    });
+
+    it("processes INVOICE_CREATED event", async () => {
+      const mockEvent = {
+        providerEventId: "evt_inv_created",
+        type: "INVOICE_CREATED",
+        raw: {},
+        metadata: { workspaceId: "ws_123" },
+        providerInvoiceId: "txn_billed_123",
+        providerCustomerId: "cus_paddle_123",
+        providerSubscriptionId: "sub_paddle_123",
+        providerPaymentId: null,
+        amountDue: 1000,
+        amountPaid: 0,
+        amountRemaining: 1000,
+        currency: "usd",
+        status: "OPEN",
+        invoiceNumber: "INV-002",
+        invoicePdfUrl: null,
+        hostedInvoiceUrl: null,
+        periodStart: new Date("2026-01-01"),
+        periodEnd: new Date("2026-02-01"),
+        dueDate: null,
+        paidAt: null,
+        attemptCount: 0,
+        paymentMethodType: null,
+        cardLast4: null,
+        lineItems: [],
+      };
+
+      vi.mocked(getPaymentProvider).mockReturnValue({
+        verifyAndParseWebhook: vi.fn().mockResolvedValue(mockEvent),
+      } as any);
+
+      vi.mocked(prisma.billingEvent.findUnique).mockResolvedValue(null);
+      vi.mocked(prisma.billingEvent.upsert).mockResolvedValue({ id: "billing_inv_created" } as any);
+      vi.mocked(prisma.subscription.findFirst).mockResolvedValue({ id: "sub_123", workspaceId: "ws_123" } as any);
+      vi.mocked(prisma.workspace.findUnique).mockResolvedValue({ ownerId: "user_123" } as any);
+      vi.mocked(prisma.invoice.upsert).mockResolvedValue({} as any);
+
+      await webhookHandler(mockReq, mockRes);
+
+      expect(prisma.invoice.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { stripeInvoiceId: "txn_billed_123" },
+          create: expect.objectContaining({
+            status: "OPEN",
+          }),
+        })
+      );
+      expect(mockRes.json).toHaveBeenCalledWith({ received: true });
+    });
+
+    it("throws when invoice event has no workspaceId from any source", async () => {
+      const mockEvent = {
+        providerEventId: "evt_inv_nows",
+        type: "INVOICE_PAID",
+        raw: {},
+        metadata: {},
+        providerInvoiceId: "txn_nows",
+        providerCustomerId: null,
+        providerSubscriptionId: null,
+        providerPaymentId: "paymtatt_nows",
+        amountDue: 1000,
+        amountPaid: 1000,
+        amountRemaining: 0,
+        currency: "usd",
+        status: "PAID",
+        invoiceNumber: null,
+        invoicePdfUrl: null,
+        hostedInvoiceUrl: null,
+        periodStart: null,
+        periodEnd: null,
+        dueDate: null,
+        paidAt: new Date(),
+        attemptCount: 1,
+        paymentMethodType: null,
+        cardLast4: null,
+        lineItems: [],
+      };
+
+      vi.mocked(getPaymentProvider).mockReturnValue({
+        verifyAndParseWebhook: vi.fn().mockResolvedValue(mockEvent),
+      } as any);
+
+      vi.mocked(prisma.billingEvent.findUnique).mockResolvedValue(null);
+      vi.mocked(prisma.billingEvent.upsert).mockResolvedValue({ id: "billing_nows" } as any);
+      vi.mocked(prisma.subscription.findFirst).mockResolvedValue(null);
+      vi.mocked(prisma.workspace.findUnique).mockResolvedValue(null);
+
+      await webhookHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(500);
+      expect(prisma.billingEvent.update).toHaveBeenCalledWith({
+        where: { id: "billing_nows" },
+        data: { error: expect.stringContaining("missing workspaceId") },
+      });
+    });
+  });
+
   describe("safeDate helper", () => {
     it("returns valid date as-is", async () => {
       const date = new Date("2024-01-01");
