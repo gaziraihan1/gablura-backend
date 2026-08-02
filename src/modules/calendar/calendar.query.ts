@@ -166,6 +166,27 @@ export const CalendarQuery = {
     return result;
   },
 
+  /**
+   * Fetch all energy entries for a user within a date range (unpaginated),
+   * ordered oldest → newest. Used by the CSV export endpoint.
+   */
+  async getEnergyHistoryExport(userId: string, startDate: Date, endDate: Date): Promise<EnergyLevel[]> {
+    const startStr = startDate.toISOString().split('T')[0];
+    const endStr = endDate.toISOString().split('T')[0];
+    const cacheKey = CACHE_KEYS.calendarEnergyExport(userId, startStr, endStr);
+
+    const cached = await CacheClient.get<EnergyLevel[]>(cacheKey);
+    if (cached) return cached;
+
+    const entries = await prisma.energyLevel.findMany({
+      where: { userId, date: { gte: startDate, lte: endDate } },
+      orderBy: { date: 'asc' },
+    });
+
+    await CacheClient.set(cacheKey, entries, CACHE_TTL.CALENDAR_ENERGY_HISTORY);
+    return entries;
+  },
+
   async getBurnoutTrends(userId: string, weeks: number): Promise<BurnoutTrend[]> {
     const cacheKey = CACHE_KEYS.calendarBurnoutTrends(userId, weeks);
     const cached = await CacheClient.get<BurnoutTrend[]>(cacheKey);

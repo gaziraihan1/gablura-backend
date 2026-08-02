@@ -534,7 +534,7 @@ All mutating authenticated routes additionally require `X-CSRF-Token`.
 | `DELETE` | `/api/v1/notifications/read/all` | ✓ | Delete all read |
 | `GET` | `/api/v1/notifications/metrics` | — | Debug metrics (dev only) |
 
-### Calendar and Wellness (17 endpoints)
+### Calendar and Wellness (19 endpoints)
 
 | Method | Route | CSRF | Description |
 |--------|-------|------|-------------|
@@ -549,14 +549,16 @@ All mutating authenticated routes additionally require `X-CSRF-Token`.
 | `PUT` | `/api/v1/calendar/schedule` | ✓ | Update schedule |
 | `GET` | `/api/v1/calendar/energy` | — | Current energy level |
 | `GET` | `/api/v1/calendar/energy/history` | — | Energy level history |
+| `GET` | `/api/v1/calendar/energy/export` | — | Export energy history as CSV |
 | `POST` | `/api/v1/calendar/energy` | ✓ | Log energy level |
 | `GET` | `/api/v1/calendar/burnout-trends` | — | Burnout trend data |
 | `GET` | `/api/v1/calendar/recommendations` | — | Wellness recommendations |
 | `PATCH` | `/api/v1/calendar/recommendations/:id/dismiss` | ✓ | Dismiss recommendation |
+| `POST` | `/api/v1/calendar/recommendations/dismiss-all` | ✓ | Dismiss all recommendations |
 | `POST` | `/api/v1/calendar/recalculate` | ✓ | Force recalculate aggregates |
 | `POST` | `/api/v1/calendar/initialize` | ✓ | Initialize user calendar settings |
 
-### Focus Sessions (6 endpoints)
+### Focus Sessions (7 endpoints)
 
 | Method | Route | CSRF | Description |
 |--------|-------|------|-------------|
@@ -564,6 +566,7 @@ All mutating authenticated routes additionally require `X-CSRF-Token`.
 | `GET` | `/api/v1/focus-sessions/active` | — | Get active session |
 | `GET` | `/api/v1/focus-sessions/history` | — | Get session history |
 | `GET` | `/api/v1/focus-sessions/stats` | — | Get session statistics |
+| `GET` | `/api/v1/focus-sessions/daily-summary` | — | Today's focus summary (sessions, minutes, per-type) |
 | `POST` | `/api/v1/focus-sessions/:id/complete` | ✓ | Complete session |
 | `POST` | `/api/v1/focus-sessions/:id/cancel` | ✓ | Cancel session |
 
@@ -879,7 +882,8 @@ Provider-agnostic webhook handler (`payment/webhook.handler.ts`):
 | Overdue alerts | Every 5 minutes | Notifies assignees 1h, 6h, 24h after due date |
 | Notification cleanup | Daily at 3 AM | Deletes read notifications older than 30 days |
 | Daily task reset | Scheduled | Handled via `dailyTask.cron.ts` |
-| Wellness monitoring | Scheduled | Calendar wellness checks via `wellness.cron.ts` |
+| Wellness monitoring | Daily at 6 AM | Generates wellness recommendations via `wellness.cron.ts` |
+| Burnout signals | Weekly Monday 7 AM | Batch pre-computes `BurnoutSignal` rows via `burnoutSignal.cron.ts` |
 
 Redis dedup keys (`notif:sent:<taskId>:<userId>:<type>:<label>`) prevent double-firing across cron runs. TTL is set to 25 hours.
 
@@ -1114,6 +1118,7 @@ This runs: `tsc && prisma migrate deploy && node dist/index.js`
 
 - [**AUTHENTICATION.md**](./AUTHENTICATION.md) — Complete authentication and security architecture
 - [**BACKEND_ANALYSIS.md**](./BACKEND_ANALYSIS.md) — Backend codebase analysis
+- [**CONTRIBUTING.md**](./CONTRIBUTING.md) — Contribution guide (setup, architecture rules, testing)
 - [**DATABASE_POOL_FIXES.md**](./DATABASE_POOL_FIXES.md) — DB connection pool fixes
 - [**DEPLOYMENT.MD**](./DEPLOYMENT.MD) — Deployment guide
 - [**FRONTEND_AUTH_GUIDE.md**](./FRONTEND_AUTH_GUIDE.md) — Frontend auth integration guide

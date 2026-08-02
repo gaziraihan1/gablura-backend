@@ -127,6 +127,80 @@ describe("CalendarQuery.getEnergyHistory", () => {
   });
 });
 
+describe("CalendarQuery.getEnergyHistoryExport", () => {
+  it("returns all energy entries unpaginated ordered oldest first", async () => {
+    const user = await createUser();
+
+    await prisma.energyLevel.createMany({
+      data: [
+        { userId: user.id, date: new Date("2025-06-03"), energyLevel: 7 },
+        { userId: user.id, date: new Date("2025-06-01"), energyLevel: 5 },
+        { userId: user.id, date: new Date("2025-06-02"), energyLevel: 6, note: "good, focused" },
+      ],
+    });
+
+    const result = await CalendarQuery.getEnergyHistoryExport(
+      user.id,
+      new Date("2025-01-01"),
+      new Date("2025-12-31"),
+    );
+
+    expect(result).toHaveLength(3);
+    // Oldest first
+    expect(result[0].energyLevel).toBe(5);
+    expect(result[2].energyLevel).toBe(7);
+    // Note preserved
+    expect(result[1].note).toBe("good, focused");
+  });
+
+  it("filters by date range", async () => {
+    const user = await createUser();
+
+    await prisma.energyLevel.createMany({
+      data: [
+        { userId: user.id, date: new Date("2025-06-01"), energyLevel: 5 },
+        { userId: user.id, date: new Date("2025-08-01"), energyLevel: 9 },
+      ],
+    });
+
+    const result = await CalendarQuery.getEnergyHistoryExport(
+      user.id,
+      new Date("2025-06-01"),
+      new Date("2025-06-30"),
+    );
+
+    expect(result).toHaveLength(1);
+    expect(result[0].energyLevel).toBe(5);
+  });
+
+  it("returns empty array when no entries exist", async () => {
+    const user = await createUser();
+    const result = await CalendarQuery.getEnergyHistoryExport(
+      user.id,
+      new Date("2025-01-01"),
+      new Date("2025-12-31"),
+    );
+    expect(result).toHaveLength(0);
+  });
+
+  it("respects user isolation", async () => {
+    const userA = await createUser();
+    const userB = await createUser();
+
+    await prisma.energyLevel.create({
+      data: { userId: userA.id, date: new Date("2025-06-01"), energyLevel: 9 },
+    });
+
+    const resultB = await CalendarQuery.getEnergyHistoryExport(
+      userB.id,
+      new Date("2025-01-01"),
+      new Date("2025-12-31"),
+    );
+
+    expect(resultB).toHaveLength(0);
+  });
+});
+
 describe("CalendarQuery.getBurnoutTrends", () => {
   it("returns burnout trends for given weeks", async () => {
     const user = await createUser();

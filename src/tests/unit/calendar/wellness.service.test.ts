@@ -49,6 +49,55 @@ describe("WellnessService.dismissRecommendation", () => {
   });
 });
 
+describe("WellnessService.dismissAllRecommendations", () => {
+  it("dismisses all non-dismissed recommendations for the user", async () => {
+    const user = await createUser();
+
+    await prisma.wellnessRecommendation.createMany({
+      data: [
+        { userId: user.id, type: "BREAK_REMINDER", message: "Take a break", priority: 50 },
+        { userId: user.id, type: "FOCUS_SUGGESTION", message: "Focus more", priority: 40 },
+        { userId: user.id, type: "CAPACITY_TIP", message: "Already dismissed", priority: 30, dismissed: true },
+      ],
+    });
+
+    const count = await WellnessService.dismissAllRecommendations(user.id);
+
+    expect(count).toBe(2);
+
+    const remaining = await prisma.wellnessRecommendation.findMany({
+      where: { userId: user.id },
+    });
+    expect(remaining.every((r) => r.dismissed)).toBe(true);
+  });
+
+  it("only dismisses the calling user's recommendations", async () => {
+    const owner = await createUser();
+    const other = await createUser();
+
+    await prisma.wellnessRecommendation.create({
+      data: { userId: owner.id, type: "WORKLOAD_ALERT", message: "Heavy week", priority: 80 },
+    });
+    await prisma.wellnessRecommendation.create({
+      data: { userId: other.id, type: "WORKLOAD_ALERT", message: "Other user", priority: 80 },
+    });
+
+    await WellnessService.dismissAllRecommendations(owner.id);
+
+    const ownerRecs = await prisma.wellnessRecommendation.findMany({ where: { userId: owner.id } });
+    const otherRecs = await prisma.wellnessRecommendation.findMany({ where: { userId: other.id } });
+
+    expect(ownerRecs.every((r) => r.dismissed)).toBe(true);
+    expect(otherRecs.every((r) => !r.dismissed)).toBe(true);
+  });
+
+  it("returns 0 when nothing to dismiss", async () => {
+    const user = await createUser();
+    const count = await WellnessService.dismissAllRecommendations(user.id);
+    expect(count).toBe(0);
+  });
+});
+
 describe("WellnessService.generateRecommendations", () => {
   it("generates focus suggestion for new users with no data", async () => {
     const user = await createUser();

@@ -48,6 +48,11 @@ export const energyHistorySchema = z.object({
   limit:     z.coerce.number().int().min(1).max(100).default(31),
 });
 
+export const energyExportSchema = z.object({
+  startDate: z.coerce.date(),
+  endDate:   z.coerce.date(),
+});
+
 export type CalendarRangeInput         = z.infer<typeof calendarRangeSchema>;
 export type CreateGoalCheckpointInput  = z.infer<typeof createGoalCheckpointSchema>;
 export type RecalculateInput           = z.infer<typeof recalculateSchema>;
@@ -55,3 +60,4 @@ export type UpdateCapacityInput        = z.infer<typeof updateCapacitySchema>;
 export type UpdateScheduleInput        = z.infer<typeof updateScheduleSchema>;
 export type LogEnergyInput             = z.infer<typeof logEnergySchema>;
 export type EnergyHistoryInput         = z.infer<typeof energyHistorySchema>;
+export type EnergyExportInput          = z.infer<typeof energyExportSchema>;

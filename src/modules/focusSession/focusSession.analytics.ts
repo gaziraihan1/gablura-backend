@@ -1,6 +1,6 @@
 
 import { prisma } from '../../lib/prisma.js';
-import type { GetFocusStatsInput, FocusStats } from './focusSession.types.js';
+import type { GetFocusStatsInput, FocusStats, FocusDailySummary } from './focusSession.types.js';
 import { CacheClient, CACHE_KEYS, CACHE_TTL } from '../../lib/redis/cache.client.js';
 
 export const FocusSessionAnalytics = {
@@ -89,5 +89,54 @@ export const FocusSessionAnalytics = {
 
     await CacheClient.set(cacheKey, streak, CACHE_TTL.FOCUS_SESSION_STREAK);
     return streak;
+  },
+
+  /**
+   * Today's focus summary: completed sessions, total minutes and a per-type
+   * breakdown for the current day (server-local timezone).
+   */
+  async getDailySummary(userId: string): Promise<FocusDailySummary> {
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const todayEnd = new Date();
+    todayEnd.setHours(23, 59, 59, 999);
+
+    const dateStr = todayStart.toISOString().split('T')[0];
+    const cacheKey = CACHE_KEYS.focusSessionDailySummary(userId, dateStr);
+
+    const cached = await CacheClient.get<FocusDailySummary>(cacheKey);
+    if (cached) return cached;
+
+    const sessions = await prisma.focusSession.findMany({
+      where: {
+        userId,
+        completed: true,
+        startedAt: { gte: todayStart, lte: todayEnd },
+      },
+      select: { type: true, duration: true },
+    });
+
+    const totalMinutes = sessions.reduce((sum, s) => sum + s.duration, 0);
+    const byTypeMap = new Map<string, { sessions: number; minutes: number }>();
+
+    for (const s of sessions) {
+      const entry = byTypeMap.get(s.type) ?? { sessions: 0, minutes: 0 };
+      entry.sessions += 1;
+      entry.minutes += s.duration;
+      byTypeMap.set(s.type, entry);
+    }
+
+    const result: FocusDailySummary = {
+      date: dateStr,
+      totalSessions: sessions.length,
+      totalMinutes,
+      byType: Array.from(byTypeMap.entries()).map(([type, summary]) => ({
+        type: type as FocusDailySummary['byType'][number]['type'],
+        ...summary,
+      })),
+    };
+
+    await CacheClient.set(cacheKey, result, CACHE_TTL.FOCUS_SESSION_STATS);
+    return result;
   },
 };

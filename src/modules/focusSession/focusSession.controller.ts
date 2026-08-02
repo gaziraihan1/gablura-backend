@@ -86,3 +86,8 @@ export const getStats = asyncHandler(async (req: AuthRequest, res: Response) => 
 
   res.json({ success: true, data: { ...stats, focusStreak } });
 });
+
+export const getDailySummary = asyncHandler(async (req: AuthRequest, res: Response) => {
+  const summary = await FocusSessionAnalytics.getDailySummary(req.user!.id);
+  res.json({ success: true, data: summary });
+});

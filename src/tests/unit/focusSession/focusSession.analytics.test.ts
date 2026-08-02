@@ -256,4 +256,115 @@ describe('FocusSessionAnalytics', () => {
       expect(streak).toBe(1);
     });
   });
+
+  describe('getDailySummary', () => {
+    it('returns today\'s sessions, minutes and per-type breakdown', async () => {
+      const now = new Date();
+      const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+
+      await prisma.focusSession.createMany({
+        data: [
+          {
+            userId: admin.id,
+            taskId: task.id,
+            duration: 25,
+            type: 'POMODORO',
+            startedAt: today,
+            completed: true,
+            endedAt: new Date(today.getTime() + 1000 * 60 * 25),
+          },
+          {
+            userId: admin.id,
+            taskId: task.id,
+            duration: 25,
+            type: 'POMODORO',
+            startedAt: new Date(today.getTime() + 1000 * 60 * 60),
+            completed: true,
+            endedAt: new Date(today.getTime() + 1000 * 60 * 85),
+          },
+          {
+            userId: admin.id,
+            taskId: task.id,
+            duration: 90,
+            type: 'DEEP_WORK',
+            startedAt: new Date(today.getTime() + 1000 * 60 * 120),
+            completed: true,
+            endedAt: new Date(today.getTime() + 1000 * 60 * 210),
+          },
+        ],
+      });
+
+      const summary = await FocusSessionAnalytics.getDailySummary(admin.id);
+
+      expect(summary.totalSessions).toBe(3);
+      expect(summary.totalMinutes).toBe(140);
+      expect(summary.byType).toHaveLength(2);
+
+      const pomodoro = summary.byType.find((t) => t.type === 'POMODORO');
+      const deepWork = summary.byType.find((t) => t.type === 'DEEP_WORK');
+
+      expect(pomodoro?.sessions).toBe(2);
+      expect(pomodoro?.minutes).toBe(50);
+      expect(deepWork?.sessions).toBe(1);
+      expect(deepWork?.minutes).toBe(90);
+    });
+
+    it('only counts completed sessions from today', async () => {
+      const now = new Date();
+      const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+      const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
+
+      await prisma.focusSession.create({
+        data: {
+          userId: admin.id,
+          taskId: task.id,
+          duration: 25,
+          type: 'POMODORO',
+          startedAt: today,
+          completed: true,
+          endedAt: new Date(today.getTime() + 1000 * 60 * 25),
+        },
+      });
+      // Yesterday — should be excluded
+      await prisma.focusSession.create({
+        data: {
+          userId: admin.id,
+          taskId: task.id,
+          duration: 60,
+          type: 'DEEP_WORK',
+          startedAt: yesterday,
+          completed: true,
+          endedAt: new Date(yesterday.getTime() + 1000 * 60 * 60),
+        },
+      });
+      // Incomplete today — should be excluded
+      await prisma.focusSession.create({
+        data: {
+          userId: admin.id,
+          taskId: task.id,
+          duration: 25,
+          type: 'POMODORO',
+          startedAt: today,
+          completed: false,
+          endedAt: null,
+        },
+      });
+
+      const summary = await FocusSessionAnalytics.getDailySummary(admin.id);
+
+      expect(summary.totalSessions).toBe(1);
+      expect(summary.totalMinutes).toBe(25);
+      expect(summary.byType).toHaveLength(1);
+      expect(summary.byType[0].type).toBe('POMODORO');
+    });
+
+    it('returns empty summary when no sessions today', async () => {
+      const summary = await FocusSessionAnalytics.getDailySummary(admin.id);
+
+      expect(summary.totalSessions).toBe(0);
+      expect(summary.totalMinutes).toBe(0);
+      expect(summary.byType).toHaveLength(0);
+      expect(summary.date).toBeTruthy();
+    });
+  });
 });

@@ -207,6 +207,7 @@ export const CACHE_KEYS = {
   calendarSchedule: (userId: string) => `calendar:schedule:${userId}`,
   calendarEnergyLevel: (userId: string, date: string) => `calendar:energy:${userId}:${date}`,
   calendarEnergyHistory: (userId: string, startDate: string, endDate: string) => `calendar:energy:history:${userId}:${startDate}:${endDate}`,
+  calendarEnergyExport: (userId: string, startDate: string, endDate: string) => `calendar:energy:export:${userId}:${startDate}:${endDate}`,
   calendarBurnoutTrends: (userId: string, weeks: number) => `calendar:burnout-trends:${userId}:${weeks}`,
 
   // Focus Session caching
@@ -215,6 +216,7 @@ export const CACHE_KEYS = {
   focusSessionStats: (userId: string, startDate?: string, endDate?: string) =>
     `focus:stats:${userId}:${startDate ?? "all"}:${endDate ?? "all"}`,
   focusSessionStreak: (userId: string) => `focus:streak:${userId}`,
+  focusSessionDailySummary: (userId: string, date: string) => `focus:daily-summary:${userId}:${date}`,
 
   // User caching
   userProfile: (userId: string) => `user:profile:${userId}`,
@@ -614,10 +616,14 @@ export const CalendarCache = {
   },
 
   /**
-   * Invalidate energy level caches for a user
+   * Invalidate energy level caches for a user (level + history + export)
    */
   async invalidateEnergy(userId: string): Promise<void> {
-    await CacheClient.deletePattern(`calendar:energy:${userId}:*`);
+    await Promise.all([
+      CacheClient.deletePattern(`calendar:energy:${userId}:*`),
+      CacheClient.deletePattern(`calendar:energy:history:${userId}:*`),
+      CacheClient.deletePattern(`calendar:energy:export:${userId}:*`),
+    ]);
   },
 
   /**
@@ -674,6 +680,13 @@ export const FocusSessionCache = {
   },
 
   /**
+   * Invalidate today's focus summary cache for a user
+   */
+  async invalidateDailySummary(userId: string): Promise<void> {
+    await CacheClient.deletePattern(`focus:daily-summary:${userId}:*`);
+  },
+
+  /**
    * Invalidate all focus session caches for a user
    */
   async invalidateUserFocusSessions(userId: string): Promise<void> {
@@ -682,6 +695,7 @@ export const FocusSessionCache = {
       this.invalidateHistory(userId),
       this.invalidateStats(userId),
       this.invalidateStreak(userId),
+      this.invalidateDailySummary(userId),
     ]);
   },
 };

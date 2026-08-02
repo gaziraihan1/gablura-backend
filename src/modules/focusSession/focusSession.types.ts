@@ -48,3 +48,16 @@ export interface FocusStats {
 export interface FocusStatsWithStreak extends FocusStats {
   focusStreak: number;
 }
+
+export interface FocusSessionTypeSummary {
+  type: FocusType;
+  sessions: number;
+  minutes: number;
+}
+
+export interface FocusDailySummary {
+  date: string;
+  totalSessions: number;
+  totalMinutes: number;
+  byType: FocusSessionTypeSummary[];
+}

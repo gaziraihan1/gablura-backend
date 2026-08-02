@@ -242,4 +242,16 @@ export const WellnessService = {
       data: { dismissed: true },
     });
   },
+
+  /**
+   * Dismiss every non-dismissed recommendation for a user.
+   * Returns the number of recommendations dismissed.
+   */
+  async dismissAllRecommendations(userId: string): Promise<number> {
+    const result = await prisma.wellnessRecommendation.updateMany({
+      where: { userId, dismissed: false },
+      data: { dismissed: true },
+    });
+    return result.count;
+  },
 };

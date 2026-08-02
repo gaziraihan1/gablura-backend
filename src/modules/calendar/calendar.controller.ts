@@ -14,6 +14,7 @@ import {
   updateScheduleSchema,
   logEnergySchema,
   energyHistorySchema,
+  energyExportSchema,
 } from './calendar.validators.js';
 
 export const getCalendarAggregates = asyncHandler(async (req: AuthRequest, res: Response) => {
@@ -146,6 +147,36 @@ export const getEnergyHistory = asyncHandler(async (req: AuthRequest, res: Respo
   res.json({ success: true, data: result.data, pagination: result.pagination });
 });
 
+export const exportEnergyHistory = asyncHandler(async (req: AuthRequest, res: Response) => {
+  const parsed = energyExportSchema.safeParse(req.query);
+  if (!parsed.success) throw new ValidationError('Validation error', parsed.error.issues);
+
+  const { startDate, endDate } = parsed.data;
+  const entries = await CalendarQuery.getEnergyHistoryExport(req.user!.id, startDate, endDate);
+
+  // Build CSV: date, energyLevel, note (RFC-4180 escaping for the note field)
+  const escapeCsv = (value: string | null | undefined): string => {
+    if (value === null || value === undefined) return '';
+    const str = String(value);
+    return /[,"\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
+  };
+
+  const header = 'date,energyLevel,note\n';
+  const rows = entries
+    .map((e) => {
+      const date = e.date.toISOString().split('T')[0];
+      return `${date},${e.energyLevel},${escapeCsv(e.note)}`;
+    })
+    .join('\n');
+
+  const csv = header + rows;
+  const filename = `energy-history-${startDate.toISOString().split('T')[0]}_${endDate.toISOString().split('T')[0]}.csv`;
+
+  // Return the CSV inside the standard JSON envelope so the frontend `api`
+  // wrapper can consume it; the client builds the download from the string.
+  res.json({ success: true, data: { filename, csv } });
+});
+
 export const getBurnoutTrends = asyncHandler(async (req: AuthRequest, res: Response) => {
   const rawWeeks = parseInt(req.query.weeks as string, 10);
   const weeks = Number.isFinite(rawWeeks) && rawWeeks >= 1 && rawWeeks <= 52 ? rawWeeks : 12;
@@ -162,4 +193,9 @@ export const dismissRecommendation = asyncHandler(async (req: AuthRequest, res: 
   const { id } = req.params;
   await WellnessService.dismissRecommendation(id, req.user!.id);
   res.json({ success: true, message: 'Recommendation dismissed' });
+});
+
+export const dismissAllRecommendations = asyncHandler(async (req: AuthRequest, res: Response) => {
+  const dismissedCount = await WellnessService.dismissAllRecommendations(req.user!.id);
+  res.json({ success: true, data: { dismissedCount }, message: 'All recommendations dismissed' });
 });

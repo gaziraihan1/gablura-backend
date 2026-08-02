@@ -64,6 +64,7 @@ export const FocusSessionMutation = {
       FocusSessionCache.invalidateHistory(input.userId),
       FocusSessionCache.invalidateStats(input.userId),
       FocusSessionCache.invalidateStreak(input.userId),
+      FocusSessionCache.invalidateDailySummary(input.userId),
       // Calendar caches (focus sessions affect aggregates)
       CalendarCache.invalidateAggregates(input.userId, workspaceId ?? undefined),
       CalendarCache.invalidateInsights(input.userId, workspaceId ?? undefined),
@@ -93,6 +94,7 @@ export const FocusSessionMutation = {
     // Invalidate caches
     FocusSessionCache.invalidateActiveSession(input.userId).catch((err) => console.error('[FocusSession] Failed to invalidate active session cache:', err));
     FocusSessionCache.invalidateHistory(input.userId).catch((err) => console.error('[FocusSession] Failed to invalidate history cache:', err));
+    FocusSessionCache.invalidateDailySummary(input.userId).catch((err) => console.error('[FocusSession] Failed to invalidate daily summary cache:', err));
 
     return session;
   },

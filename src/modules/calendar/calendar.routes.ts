@@ -15,9 +15,11 @@ import {
   logEnergy,
   getEnergyLevel,
   getEnergyHistory,
+  exportEnergyHistory,
   getBurnoutTrends,
   getRecommendations,
   dismissRecommendation,
+  dismissAllRecommendations,
 } from './calendar.controller.js';
 
 const router = Router();
@@ -30,6 +32,7 @@ router.get('/capacity',      getCapacity);
 router.get('/schedule',      getSchedule);
 router.get('/energy',        getEnergyLevel);
 router.get('/energy/history', getEnergyHistory);
+router.get('/energy/export', exportEnergyHistory);
 router.get('/burnout-trends', getBurnoutTrends);
 router.get('/recommendations', getRecommendations);
 
@@ -42,5 +45,6 @@ router.put('/capacity',      updateCapacity);
 router.put('/schedule',      updateSchedule);
 
 router.patch('/recommendations/:id/dismiss', dismissRecommendation);
+router.post('/recommendations/dismiss-all', dismissAllRecommendations);
 
 export default router;
