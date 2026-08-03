@@ -46,6 +46,11 @@ describe('Task Validators', () => {
       };
       expect(() => createTaskSchema.parse(invalidTask)).toThrow();
     });
+
+    it('should accept an optional sectionId', () => {
+      const task = { title: 'Task', sectionId: 'sec-1' };
+      expect(createTaskSchema.parse(task).sectionId).toBe('sec-1');
+    });
   });
 
   describe('updateTaskSchema', () => {

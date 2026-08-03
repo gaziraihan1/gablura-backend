@@ -6,6 +6,10 @@ export const SectionQuery = {
     return prisma.projectSection.findMany({
       where:  { projectId },
       orderBy: { position: 'asc' },
+      // Task counts let the UI show how many tasks live in each section
+      include: {
+        _count: { select: { tasks: true } },
+      },
     });
   },
 

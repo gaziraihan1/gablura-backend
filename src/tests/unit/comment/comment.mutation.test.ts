@@ -38,6 +38,13 @@ vi.mock('../../../modules/comment/mention/mention.utils.js', () => ({
 import { extractMentionedUserIds } from '../../../modules/comment/mention/mention.utils.js';
 
 import { CommentMutation } from '../../../modules/comment/comment.mutation.js';
+import { TaskCache, ActivityCache } from '../../../lib/redis/cache.client.js';
+
+// ── Cache invalidation ────────────────────────────────────────────────────────
+vi.mock('../../../lib/redis/cache.client.js', () => ({
+  TaskCache: { invalidateTask: vi.fn() },
+  ActivityCache: { invalidateTaskActivities: vi.fn() },
+}));
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -69,6 +76,8 @@ describe('CommentMutation.createComment', () => {
 
     expect(result.id).toBe('c1');
     expect(prisma.$transaction).toHaveBeenCalledOnce();
+    expect(TaskCache.invalidateTask).toHaveBeenCalledWith('t1');
+    expect(ActivityCache.invalidateTaskActivities).toHaveBeenCalledWith('t1');
   });
 
   it('calls assertTaskAccess with the correct taskId and userId', async () => {
@@ -97,6 +106,16 @@ describe('CommentMutation.createComment', () => {
     await expect(
       CommentMutation.createComment({ ...BASE_INPUT, parentId: 'p1' }),
     ).rejects.toThrow('Invalid parent comment');
+  });
+
+  it('throws BAD_REQUEST when parent comment does not exist (e.g. stale/optimistic id)', async () => {
+    (CommentAccess.assertTaskAccess as any).mockResolvedValue(true);
+    (prisma.comment.findUnique as any).mockResolvedValue(null);
+
+    await expect(
+      CommentMutation.createComment({ ...BASE_INPUT, parentId: 'optimistic-comment-123' }),
+    ).rejects.toThrow('Invalid parent comment');
+    expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
   it('flattens a grandchild reply to grandparent level (max 1 level deep)', async () => {
@@ -216,6 +235,8 @@ describe('CommentMutation.updateComment', () => {
     expect(prisma.comment.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: { content: 'new', edited: true } }),
     );
+    expect(TaskCache.invalidateTask).toHaveBeenCalledWith('t1');
+    expect(ActivityCache.invalidateTaskActivities).toHaveBeenCalledWith('t1');
   });
 
   it('calls assertCommentOwnership with correct args', async () => {
@@ -285,6 +306,8 @@ describe('CommentMutation.deleteComment', () => {
     await CommentMutation.deleteComment('c1', 't1', 'u1');
 
     expect(prisma.comment.delete).toHaveBeenCalledWith({ where: { id: 'c1' } });
+    expect(TaskCache.invalidateTask).toHaveBeenCalledWith('t1');
+    expect(ActivityCache.invalidateTaskActivities).toHaveBeenCalledWith('t1');
   });
 
   it('throws when assertCommentOwnership rejects (not owner)', async () => {

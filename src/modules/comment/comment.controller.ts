@@ -11,6 +11,7 @@ import {
 } from "./comment.validators.js";
 import { notifyMentions, notifyUser } from "../notification/index.js";
 import { stripMentionSyntax } from "./mention/mention.utils.js";
+import { addInvalidateCacheJob } from "../../queue/index.js";
 import { asyncHandler, ValidationError } from "../../errors/index.js";
 
 export const getComments = asyncHandler(
@@ -132,6 +133,10 @@ export const addComment = asyncHandler(
         }
 
         await Promise.allSettled(jobs);
+
+        // Refresh workspace/user activity feeds and task stats (async, best-effort)
+        addInvalidateCacheJob({ type: 'activity', taskId, userId: req.user!.id, workspaceId }).catch(() => {});
+        addInvalidateCacheJob({ type: 'task', taskId, userId: req.user!.id, workspaceId }).catch(() => {});
       },
     );
 
@@ -167,6 +172,9 @@ export const updateComment = asyncHandler(
           oldContent: oldContent!.substring(0, 50),
           newContent: newContent!.substring(0, 50),
         });
+
+        addInvalidateCacheJob({ type: 'activity', taskId, userId: req.user!.id, workspaceId: task.project.workspaceId }).catch(() => {});
+        addInvalidateCacheJob({ type: 'task', taskId, userId: req.user!.id, workspaceId: task.project.workspaceId }).catch(() => {});
       },
     );
 
@@ -197,6 +205,9 @@ export const deleteComment = asyncHandler(
           workspaceId: task.project.workspaceId,
           commentContent: content!.substring(0, 100),
         });
+
+        addInvalidateCacheJob({ type: 'activity', taskId, userId: req.user!.id, workspaceId: task.project.workspaceId }).catch(() => {});
+        addInvalidateCacheJob({ type: 'task', taskId, userId: req.user!.id, workspaceId: task.project.workspaceId }).catch(() => {});
       },
     );
 

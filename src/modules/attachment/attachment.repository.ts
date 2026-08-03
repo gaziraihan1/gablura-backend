@@ -1,4 +1,5 @@
 import { prisma } from "../../lib/prisma.js";
+import { addInvalidateCacheJob } from "../../queue/index.js";
 
 export const AttachmentRepository = {
   aggregateWorkspaceSize(workspaceId: string) {
@@ -24,6 +25,16 @@ export const AttachmentRepository = {
   },
 
   createActivity(data: any) {
-    return prisma.activity.create({ data });
+    return prisma.activity.create({ data }).then((activity) => {
+      // Refresh activity feeds/timelines so newly logged activities (task/comment
+      // updates, uploads, etc.) are visible without waiting for the cache TTL.
+      addInvalidateCacheJob({
+        type: 'activity',
+        workspaceId: data?.workspaceId ?? undefined,
+        userId:      data?.userId ?? undefined,
+        taskId:      data?.taskId ?? undefined,
+      }).catch(() => {});
+      return activity;
+    });
   },
 };

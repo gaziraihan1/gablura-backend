@@ -23,6 +23,7 @@ describe("SectionQuery", () => {
       expect(prisma.projectSection.findMany).toHaveBeenCalledWith({
         where: { projectId: "p1" },
         orderBy: { position: "asc" },
+        include: { _count: { select: { tasks: true } } },
       });
       expect(result).toEqual(mockSections);
     });

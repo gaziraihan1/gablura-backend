@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { SectionMutation } from "../../../modules/project/project.section.mutation.js";
 import { prisma } from "../../../lib/prisma.js";
-import { NotFoundError } from "../../../errors/index.js";
+import { NotFoundError, BadRequestError } from "../../../errors/index.js";
 
 vi.mock("../../../lib/prisma.js", () => ({
   prisma: {
-    projectSection: { create: vi.fn(), update: vi.fn(), delete: vi.fn(), findUnique: vi.fn() },
+    projectSection: { create: vi.fn(), update: vi.fn(), delete: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn() },
     $transaction: vi.fn((updates: any[]) => Promise.all(updates)),
   },
 }));
@@ -21,16 +21,50 @@ describe("SectionMutation", () => {
   beforeEach(() => { vi.clearAllMocks(); });
 
   describe("create", () => {
-    it("should create a section", async () => {
+    it("should create a section and auto-assign position after the last one", async () => {
       const data = { name: "Backend", color: "#667eea", projectId: "p1" };
-      (prisma.projectSection.create as any).mockResolvedValue({ id: "sec1", ...data });
+      (prisma.projectSection.findFirst as any).mockResolvedValue({ position: 2 });
+      (prisma.projectSection.create as any).mockResolvedValue({ id: "sec1", ...data, position: 3 });
       const result = await SectionMutation.create(data, "u1");
-      expect(prisma.projectSection.create).toHaveBeenCalledWith({ data });
+      expect(prisma.projectSection.findFirst).toHaveBeenCalledWith({
+        where:  { projectId: "p1" },
+        orderBy: { position: "desc" },
+        select:  { position: true },
+      });
+      expect(prisma.projectSection.create).toHaveBeenCalledWith({
+        data: { ...data, position: 3 },
+      });
       expect(result.id).toBe("sec1");
+    });
+
+    it("should default position to 0 when no sections exist", async () => {
+      (prisma.projectSection.findFirst as any).mockResolvedValue(null);
+      (prisma.projectSection.create as any).mockResolvedValue({ id: "sec1", position: 0 });
+      await SectionMutation.create({ name: "Backend", projectId: "p1" }, "u1");
+      expect(prisma.projectSection.create).toHaveBeenCalledWith({
+        data: { name: "Backend", projectId: "p1", position: 0 },
+      });
+    });
+
+    it("should respect an explicitly provided position", async () => {
+      (prisma.projectSection.findFirst as any).mockResolvedValue(null);
+      (prisma.projectSection.create as any).mockResolvedValue({ id: "sec1", position: 7 });
+      await SectionMutation.create({ name: "Backend", projectId: "p1", position: 7 }, "u1");
+      expect(prisma.projectSection.create).toHaveBeenCalledWith({
+        data: { name: "Backend", projectId: "p1", position: 7 },
+      });
+    });
+
+    it("should reject a taskStatus that is already mapped in the project", async () => {
+      (prisma.projectSection.findFirst as any).mockResolvedValueOnce({ id: "sec-existing" });
+      await expect(
+        SectionMutation.create({ name: "Backend", projectId: "p1", taskStatus: "TODO" as any }, "u1"),
+      ).rejects.toThrow(BadRequestError);
     });
 
     it("should assert project admin access", async () => {
       const { ProjectAccess } = await import("../../../modules/project/project.access.js");
+      (prisma.projectSection.findFirst as any).mockResolvedValue(null);
       (prisma.projectSection.create as any).mockResolvedValue({ id: "sec1" });
       await SectionMutation.create({ name: "Test", projectId: "p1" }, "u1");
       expect(ProjectAccess.assertProjectAdminAccess).toHaveBeenCalledWith("u1", "p1");
@@ -48,6 +82,35 @@ describe("SectionMutation", () => {
     it("should throw NotFoundError if not found", async () => {
       (prisma.projectSection.findUnique as any).mockResolvedValue(null);
       await expect(SectionMutation.update("nonexistent", { name: "X" }, "u1")).rejects.toThrow(NotFoundError);
+    });
+
+    it("should reject remapping to a taskStatus used by another section", async () => {
+      (prisma.projectSection.findUnique as any).mockResolvedValue({ id: "sec1", projectId: "p1", taskStatus: "TODO" });
+      (prisma.projectSection.findFirst as any).mockResolvedValueOnce({ id: "sec-other" });
+      await expect(
+        SectionMutation.update("sec1", { taskStatus: "IN_PROGRESS" as any }, "u1"),
+      ).rejects.toThrow(BadRequestError);
+    });
+
+    it("should allow updating taskStatus to its current value", async () => {
+      (prisma.projectSection.findUnique as any).mockResolvedValue({ id: "sec1", projectId: "p1", taskStatus: "TODO" });
+      (prisma.projectSection.update as any).mockResolvedValue({ id: "sec1", taskStatus: "TODO" });
+      const result = await SectionMutation.update("sec1", { taskStatus: "TODO" as any }, "u1");
+      expect(result.taskStatus).toBe("TODO");
+      expect(prisma.projectSection.findFirst).not.toHaveBeenCalled();
+    });
+
+    it("should clear the taskStatus mapping when null is passed", async () => {
+      (prisma.projectSection.findUnique as any).mockResolvedValue({ id: "sec1", projectId: "p1", taskStatus: "TODO" });
+      (prisma.projectSection.update as any).mockResolvedValue({ id: "sec1", projectId: "p1", taskStatus: null });
+      const result = await SectionMutation.update("sec1", { taskStatus: null }, "u1");
+      expect(prisma.projectSection.update).toHaveBeenCalledWith({
+        where: { id: "sec1" },
+        data:  { taskStatus: null },
+      });
+      // Clearing never checks availability — it cannot conflict with other sections
+      expect(prisma.projectSection.findFirst).not.toHaveBeenCalled();
+      expect(result.taskStatus).toBeNull();
     });
   });
 

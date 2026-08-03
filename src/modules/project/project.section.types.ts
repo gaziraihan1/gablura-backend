@@ -1,3 +1,5 @@
+import { TaskStatus } from '@prisma/client';
+
 export type SectionStatus = 'PENDING' | 'ACTIVE' | 'COMPLETED';
 
 export interface CreateSectionDto {
@@ -6,6 +8,8 @@ export interface CreateSectionDto {
   color?:       string;
   status?:      SectionStatus;
   position?:    number;
+  wipLimit?:    number;
+  taskStatus?:  TaskStatus;
   projectId:    string;
 }
 
@@ -15,4 +19,7 @@ export interface UpdateSectionDto {
   color?:       string;
   status?:      SectionStatus;
   position?:    number;
+  wipLimit?:    number;
+  // null explicitly clears the mapping (a section stops being a board column)
+  taskStatus?:  TaskStatus | null;
 }

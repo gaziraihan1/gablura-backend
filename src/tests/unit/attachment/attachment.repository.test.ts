@@ -19,6 +19,11 @@ vi.mock('../../../lib/prisma.js', () => ({
 }));
 import { prisma } from '../../../lib/prisma.js';
 
+vi.mock('../../../queue/index.js', () => ({
+  addInvalidateCacheJob: vi.fn().mockResolvedValue(undefined),
+}));
+import { addInvalidateCacheJob } from '../../../queue/index.js';
+
 import { AttachmentRepository } from '../../../modules/attachment/attachment.repository.js';
 
 describe('AttachmentRepository.aggregateWorkspaceSize', () => {
@@ -190,6 +195,12 @@ describe('AttachmentRepository.createActivity', () => {
       data: ACTIVITY_DATA,
     });
     expect(result).toBeDefined();
+    expect(addInvalidateCacheJob).toHaveBeenCalledWith({
+      type:        'activity',
+      workspaceId: 'ws1',
+      userId:      'user1',
+      taskId:      'task1',
+    });
   });
 
   it('handles activity creation with minimal metadata', async () => {
@@ -208,6 +219,12 @@ describe('AttachmentRepository.createActivity', () => {
 
     expect(prisma.activity.create).toHaveBeenCalledWith({
       data: minimalData,
+    });
+    expect(addInvalidateCacheJob).toHaveBeenCalledWith({
+      type:        'activity',
+      workspaceId: 'ws1',
+      userId:      'user1',
+      taskId:      undefined,
     });
   });
 
@@ -234,6 +251,12 @@ describe('AttachmentRepository.createActivity', () => {
 
     expect(prisma.activity.create).toHaveBeenCalledWith({
       data: dataWithoutTask,
+    });
+    expect(addInvalidateCacheJob).toHaveBeenCalledWith({
+      type:        'activity',
+      workspaceId: 'ws1',
+      userId:      'user1',
+      taskId:      undefined,
     });
   });
 });

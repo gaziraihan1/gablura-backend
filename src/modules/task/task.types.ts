@@ -29,6 +29,7 @@ export interface CreateTaskInput {
   title:            string;
   description?:     string;
   projectId?:       string;
+  sectionId?:       string;
   status?:          string;
   priority?:        string;
   dueDate?:         Date;

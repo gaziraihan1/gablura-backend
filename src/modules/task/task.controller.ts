@@ -4,6 +4,7 @@ import { TaskQuery }         from './task.query.js';
 import { TaskMutation }      from './task.mutation.js';
 import { TaskActivity }      from './task.activity.js';
 import { TaskNotifications } from './task.notifications.js';
+import { computeTaskChanges } from './task.utils.js';
 import { CalendarAggregation } from '../calendar/calendar.aggregation.js';
 import { asyncHandler, ValidationError } from '../../errors/index.js';
 import {
@@ -103,21 +104,40 @@ export const updateTask = asyncHandler(async (req: AuthRequest, res: Response) =
   // ✅ Remove this — it blocks admins before permission check even runs
   // const oldTask = await TaskQuery.getTaskById(req.params.id, req.user!.id);
 
-  // ✅ Fetch old task without ownership restriction (only needed for dueDate diff)
+  // ✅ Fetch old task without ownership restriction (needed for dueDate diff + activity changes)
   const oldTask = await prisma.task.findUnique({
     where:  { id: req.params.id },
-    select: { dueDate: true },
+    select: {
+      title: true, description: true, priority: true, status: true, projectId: true,
+      dueDate: true, startDate: true, estimatedHours: true,
+      focusRequired: true, focusLevel: true, energyType: true, distractionCost: true, intent: true,
+      assignees: { select: { userId: true } },
+      labels:    { select: { labelId: true } },
+    },
   });
 
   const task = await TaskMutation.updateTask(
     req.params.id, req.user!.id, parsed.data,
     async ({ task }) => {
-      // ... rest of callback unchanged
       const dates = new Set<Date>();
-      if (oldTask?.dueDate) dates.add(oldTask.dueDate);  // ✅ optional chain since oldTask may be null
+      if (oldTask?.dueDate) dates.add(oldTask.dueDate);
       if (task.dueDate)     dates.add(task.dueDate);
       for (const date of dates) {
         void CalendarAggregation.recalculateDay(req.user!.id, task.workspaceId || undefined, date);
+      }
+
+      // Log an activity entry so other members can see what changed and who did it
+      if (task.workspaceId) {
+        const changes = computeTaskChanges(parsed.data, oldTask);
+        if (Object.keys(changes).length > 0) {
+          void TaskActivity.logUpdated({
+            taskId:      task.id,
+            taskTitle:   task.title,
+            userId:      req.user!.id,
+            workspaceId: task.workspaceId,
+            changes,
+          });
+        }
       }
     },
   );

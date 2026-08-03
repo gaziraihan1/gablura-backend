@@ -11,6 +11,7 @@ const {
   mockDeleteTask,
   mockLogCreated,
   mockLogStatusChanged,
+  mockLogUpdated,
   mockLogDeleted,
   mockNotifyNewAssignees,
   mockNotifyTaskCompleted,
@@ -28,6 +29,7 @@ const {
   mockDeleteTask: vi.fn(),
   mockLogCreated: vi.fn(),
   mockLogStatusChanged: vi.fn(),
+  mockLogUpdated: vi.fn(),
   mockLogDeleted: vi.fn(),
   mockNotifyNewAssignees: vi.fn(),
   mockNotifyTaskCompleted: vi.fn(),
@@ -102,6 +104,7 @@ vi.mock('../../../modules/task/task.activity.js', () => ({
   TaskActivity: {
     logCreated: mockLogCreated,
     logStatusChanged: mockLogStatusChanged,
+    logUpdated: mockLogUpdated,
     logDeleted: mockLogDeleted,
   },
 }));
@@ -706,6 +709,74 @@ describe('updateTask', () => {
     await updateTask(req as any, res as any, mockNext);
 
     expect(mockNext).toHaveBeenCalledWith(error);
+  });
+
+  it('should log an UPDATED activity with changed fields and the acting user', async () => {
+    mockFindUnique.mockResolvedValue({
+      title: 'Old Title', description: 'Old desc', priority: 'MEDIUM', status: 'TODO', projectId: 'p1',
+      dueDate: null, startDate: null, estimatedHours: 4,
+      focusRequired: false, focusLevel: null, energyType: null, distractionCost: null, intent: 'EXECUTION',
+      assignees: [{ userId: 'u1' }], labels: [],
+    });
+    mockUpdateTask.mockImplementation(async (_id: string, _userId: string, _data: unknown, callback: (...args: unknown[]) => unknown) => {
+      await callback({ task: { id: 't1', title: 'New Title', workspaceId: 'ws1' } });
+      return {};
+    });
+
+    const req = mockReq({ params: { id: 't1' }, body: { title: 'New Title', priority: 'HIGH' } });
+    const res = mockRes();
+
+    await updateTask(req as any, res as any, mockNext);
+
+    expect(mockLogUpdated).toHaveBeenCalledWith(
+      expect.objectContaining({
+        taskId:      't1',
+        taskTitle:   'New Title',
+        userId:      'user1',
+        workspaceId: 'ws1',
+        changes:     expect.objectContaining({ title: 'New Title', priority: 'HIGH' }),
+      }),
+    );
+  });
+
+  it('should not log an UPDATED activity when nothing actually changed', async () => {
+    mockFindUnique.mockResolvedValue({
+      title: 'Same', description: null, priority: 'MEDIUM', status: 'TODO', projectId: null,
+      dueDate: null, startDate: null, estimatedHours: null,
+      focusRequired: null, focusLevel: null, energyType: null, distractionCost: null, intent: null,
+      assignees: [], labels: [],
+    });
+    mockUpdateTask.mockImplementation(async (_id: string, _userId: string, _data: unknown, callback: (...args: unknown[]) => unknown) => {
+      await callback({ task: { id: 't1', title: 'Same', workspaceId: 'ws1' } });
+      return {};
+    });
+
+    const req = mockReq({ params: { id: 't1' }, body: { title: 'Same', priority: 'MEDIUM' } });
+    const res = mockRes();
+
+    await updateTask(req as any, res as any, mockNext);
+
+    expect(mockLogUpdated).not.toHaveBeenCalled();
+  });
+
+  it('should not log an UPDATED activity for personal tasks (no workspaceId)', async () => {
+    mockFindUnique.mockResolvedValue({
+      title: 'Old', description: null, priority: 'MEDIUM', status: 'TODO', projectId: null,
+      dueDate: null, startDate: null, estimatedHours: null,
+      focusRequired: null, focusLevel: null, energyType: null, distractionCost: null, intent: null,
+      assignees: [], labels: [],
+    });
+    mockUpdateTask.mockImplementation(async (_id: string, _userId: string, _data: unknown, callback: (...args: unknown[]) => unknown) => {
+      await callback({ task: { id: 't1', title: 'New', workspaceId: null } });
+      return {};
+    });
+
+    const req = mockReq({ params: { id: 't1' }, body: { title: 'New' } });
+    const res = mockRes();
+
+    await updateTask(req as any, res as any, mockNext);
+
+    expect(mockLogUpdated).not.toHaveBeenCalled();
   });
 });
 

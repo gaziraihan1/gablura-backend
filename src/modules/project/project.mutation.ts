@@ -10,8 +10,18 @@ import { BadRequestError, NotFoundError } from '../../errors/index.js';
 import { projectListInclude, projectMemberInclude } from './project.selects.js';
 import { ProjectAccess }   from './project.access.js';
 import { SlugService }     from '../../services/slug.service.js';
-import { ProjectStatus }   from '@prisma/client';
+import { ProjectStatus, TaskStatus } from '@prisma/client';
 import { WorkspaceCache, AnalyticsCache, ProjectCache, AccessControlCache } from '../../lib/redis/cache.client.js';
+
+// Default workflow seeded on every new project so the Kanban board is never empty.
+// Mirrors the frontend's static COLUMNS (one TaskStatus per column).
+const DEFAULT_SECTIONS = [
+  { name: 'Backlog',     color: '#94a3b8', wipLimit: 20,  taskStatus: TaskStatus.TODO },
+  { name: 'In Progress', color: '#3b82f6', wipLimit: 3,   taskStatus: TaskStatus.IN_PROGRESS },
+  { name: 'Review',      color: '#a855f7', wipLimit: 5,   taskStatus: TaskStatus.IN_REVIEW },
+  { name: 'Blocked',     color: '#ef4444', wipLimit: 999, taskStatus: TaskStatus.BLOCKED },
+  { name: 'Done',        color: '#10b981', wipLimit: 999, taskStatus: TaskStatus.COMPLETED },
+] as const;
 
 export const ProjectMutation = {
   async createProject(data: CreateProjectDto) {
@@ -42,6 +52,18 @@ export const ProjectMutation = {
       createdBy:   { connect: { id: data.createdById } },
     },
     include: projectListInclude,
+  });
+
+  // Seed the default workflow so the board has columns out of the box
+  await prisma.projectSection.createMany({
+    data: DEFAULT_SECTIONS.map((section, index) => ({
+      name:       section.name,
+      color:      section.color,
+      wipLimit:   section.wipLimit,
+      taskStatus: section.taskStatus,
+      position:   index,
+      projectId:  project.id,
+    })),
   });
 
   // Invalidate caches in a non-blocking way

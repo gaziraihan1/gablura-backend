@@ -50,6 +50,7 @@ export const createTaskSchema = z.object({
   title: z.string().min(1, "Task title is required").max(500),
   description: z.string().optional(),
   projectId: z.string().optional(),
+  sectionId: z.string().optional(),
   status: taskStatusEnum.optional(),
   priority: taskPriorityEnum.optional(),
   dueDate: z.coerce.date().optional(),

@@ -14,6 +14,7 @@ import {
 import { ProjectAccess }   from '../project/project.access.js';
 import { BadRequestError, ForbiddenError, NotFoundError } from '../../errors/index.js';
 import { addInvalidateCacheJob } from '../../queue/index.js';
+import { TaskCache }          from '../../lib/redis/cache.client.js';
 
 // ─── Callback types ───────────────────────────────────────────────────────────
 
@@ -91,6 +92,15 @@ export const TaskMutation = {
       if (hoursLeft <= 24) computedPriority = 'HIGH';
     }
 
+    if (data.sectionId) {
+      if (!data.projectId) throw new BadRequestError('Section requires a project');
+      const section = await prisma.projectSection.findFirst({
+        where: { id: data.sectionId, projectId: data.projectId },
+        select: { id: true },
+      });
+      if (!section) throw new BadRequestError('Section does not belong to this project');
+    }
+
     const taskData: any = {
       title:           data.title,
       description:     data.description,
@@ -108,6 +118,7 @@ export const TaskMutation = {
     };
 
     if (data.projectId)      taskData.project   = { connect: { id: data.projectId } };
+    if (data.sectionId)      taskData.sectionId = data.sectionId;
     if (finalWorkspaceId)    taskData.workspace  = { connect: { id: finalWorkspaceId } };
     if (data.parentId)       taskData.parent     = { connect: { id: data.parentId } };
     if (data.assigneeIds?.length) {
@@ -202,6 +213,11 @@ export const TaskMutation = {
       include: taskFullInclude,
     });
 
+    // Clear the task's Redis cache synchronously so any immediate read
+    // (e.g. the frontend refetch after this mutation) sees fresh data.
+    // The background job still handles stats/list/analytics invalidation.
+    await TaskCache.invalidateTask(taskId);
+
     if (existingTask.workspaceId) {
       addInvalidateCacheJob({ type: 'analytics', workspaceId: existingTask.workspaceId }).catch(() => {});
       addInvalidateCacheJob({ type: 'workspace', workspaceId: existingTask.workspaceId }).catch(() => {});
@@ -273,6 +289,11 @@ export const TaskMutation = {
       data:    { status: status as any, ...(wasCompleted && { completedAt: new Date() }) },
       include: taskFullInclude,
     });
+
+    // Clear the task's Redis cache synchronously so any immediate read
+    // (e.g. the frontend refetch after this mutation) sees fresh data.
+    // The background job still handles stats/list/analytics invalidation.
+    await TaskCache.invalidateTask(taskId);
 
     if (existingTask.workspaceId) {
       addInvalidateCacheJob({ type: 'analytics', workspaceId: existingTask.workspaceId }).catch(() => {});

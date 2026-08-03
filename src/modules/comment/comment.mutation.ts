@@ -3,6 +3,7 @@ import type { CreateCommentInput, UpdateCommentInput } from './comment.types.js'
 import { commentSimpleInclude } from './comment.selects.js';
 import { CommentAccess } from './comment.access.js';
 import { extractMentionedUserIds } from './mention/mention.utils.js';
+import { TaskCache, ActivityCache } from '../../lib/redis/cache.client.js';
 import { BadRequestError } from '../../errors/index.js';
 
 type OnCommentCreated = (data: {
@@ -33,6 +34,12 @@ export const CommentMutation = {
 
     // Flatten nested replies to max 1 level deep
     let resolvedParentId = input.parentId ?? null;
+    if (input.parentId && !parentComment) {
+      // Reject references to non-existent parents (e.g. a stale/optimistic id
+      // from the client) instead of silently creating an orphaned reply that
+      // would never show up in the comment tree.
+      throw new BadRequestError('Invalid parent comment');
+    }
     if (parentComment) {
       if (parentComment.taskId !== input.taskId) {
         throw new BadRequestError('Invalid parent comment');
@@ -79,6 +86,13 @@ export const CommentMutation = {
       ]);
     }
 
+    // Keep the task detail/overview and task activity timeline caches fresh for
+    // immediate reads (e.g. the frontend refetch right after this mutation).
+    await Promise.all([
+      TaskCache.invalidateTask(input.taskId),
+      ActivityCache.invalidateTaskActivities(input.taskId),
+    ]);
+
 return comment;
   },
 
@@ -96,6 +110,13 @@ return comment;
       data:    { content: input.content, edited: true },
       include: commentSimpleInclude,
     });
+
+    // Keep the task detail/overview and task activity timeline caches fresh for
+    // immediate reads (e.g. the frontend refetch right after this mutation).
+    await Promise.all([
+      TaskCache.invalidateTask(taskId),
+      ActivityCache.invalidateTaskActivities(taskId),
+    ]);
 
     if (onUpdated) {
       onUpdated({
@@ -116,6 +137,13 @@ return comment;
     const comment = await CommentAccess.assertCommentOwnership(commentId, taskId, userId);
 
     await prisma.comment.delete({ where: { id: commentId } });
+
+    // Keep the task detail/overview and task activity timeline caches fresh for
+    // immediate reads (e.g. the frontend refetch right after this mutation).
+    await Promise.all([
+      TaskCache.invalidateTask(taskId),
+      ActivityCache.invalidateTaskActivities(taskId),
+    ]);
 
     if (onDeleted) {
       onDeleted({ content: comment.content })

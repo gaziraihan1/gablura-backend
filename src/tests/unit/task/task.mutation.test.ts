@@ -10,6 +10,7 @@ import {
   rollbackWorkspaceQuota 
 } from "../../../modules/task/task.quota.service.js";
 import { BadRequestError, ForbiddenError } from "../../../errors/index.js";
+import { TaskCache } from "../../../lib/redis/cache.client.js";
 
 vi.mock("../../../lib/prisma.js", () => ({
   prisma: {
@@ -41,6 +42,9 @@ vi.mock("../../../lib/prisma.js", () => ({
     project: {
       findFirst: vi.fn(),
       findUnique: vi.fn(),
+    },
+    projectSection: {
+      findFirst: vi.fn(),
     },
     workspace: {
       findUnique: vi.fn(),
@@ -93,6 +97,7 @@ vi.mock("../../../lib/redis/cache.client.js", async (importOriginal) => {
     ...actual,
     AnalyticsCache: { invalidateWorkspace: vi.fn() },
     WorkspaceCache: { invalidateWorkspace: vi.fn() },
+    TaskCache: { invalidateTask: vi.fn() },
     CacheClient: { 
       ...actual.CacheClient,
       get: vi.fn(), 
@@ -202,6 +207,39 @@ describe("TaskMutation", () => {
       }));
     });
 
+    it("should set sectionId when the section belongs to the project", async () => {
+      vi.mocked(prisma.project.findFirst).mockResolvedValue({ workspaceId: "ws1" } as any);
+      vi.mocked(prisma.workspace.findUnique).mockResolvedValue({ plan: "PRO" } as any);
+      vi.mocked(prisma.workspaceMember.count).mockResolvedValue(5);
+      vi.mocked(checkAndConsumeWorkspaceQuota).mockResolvedValue({ allowed: true } as any);
+      vi.mocked(prisma.projectSection.findFirst).mockResolvedValue({ id: "sec-1" } as any);
+      vi.mocked(prisma.task.create).mockResolvedValue({ id: "t1", sectionId: "sec-1" } as any);
+
+      await TaskMutation.createTask({ ...mockInput, sectionId: "sec-1" });
+
+      expect(prisma.task.create).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({ sectionId: "sec-1" }),
+      }));
+    });
+
+    it("should throw BadRequestError when sectionId belongs to another project", async () => {
+      vi.mocked(prisma.project.findFirst).mockResolvedValue({ workspaceId: "ws1" } as any);
+      vi.mocked(prisma.workspace.findUnique).mockResolvedValue({ plan: "PRO" } as any);
+      vi.mocked(prisma.workspaceMember.count).mockResolvedValue(5);
+      vi.mocked(checkAndConsumeWorkspaceQuota).mockResolvedValue({ allowed: true } as any);
+      vi.mocked(prisma.projectSection.findFirst).mockResolvedValue(null);
+
+      await expect(TaskMutation.createTask({ ...mockInput, sectionId: "sec-other" })).rejects.toThrow(BadRequestError);
+    });
+
+    it("should throw BadRequestError when sectionId is provided without a project", async () => {
+      vi.mocked(checkAndConsumePersonalQuota).mockResolvedValue({ allowed: true } as any);
+
+      await expect(
+        TaskMutation.createTask({ title: "T", createdById: "u1", projectId: null, sectionId: "sec-1" } as any),
+      ).rejects.toThrow(BadRequestError);
+    });
+
     it("should throw BadRequestError if workspace quota exceeded", async () => {
       vi.mocked(prisma.project.findFirst).mockResolvedValue({ workspaceId: "ws1" } as any);
       vi.mocked(prisma.workspace.findUnique).mockResolvedValue({ plan: "FREE" } as any);
@@ -254,6 +292,7 @@ describe("TaskMutation", () => {
 
       expect(result.title).toBe("Updated");
       expect(prisma.task.update).toHaveBeenCalled();
+      expect(TaskCache.invalidateTask).toHaveBeenCalledWith("t1");
     });
 
     it("should sync assignees correctly when provided", async () => {
@@ -354,6 +393,7 @@ describe("TaskMutation", () => {
       expect(prisma.task.update).toHaveBeenCalledWith(expect.objectContaining({
         data: expect.objectContaining({ status: "COMPLETED" }),
       }));
+      expect(TaskCache.invalidateTask).toHaveBeenCalledWith("t1");
     });
   });
 

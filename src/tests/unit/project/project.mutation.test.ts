@@ -7,6 +7,7 @@ vi.mock("../../../lib/prisma.js", () => ({
   prisma: {
     project: { create: vi.fn(), update: vi.fn(), delete: vi.fn(), findFirst: vi.fn(), findUnique: vi.fn() },
     projectMember: { create: vi.fn(), update: vi.fn(), delete: vi.fn(), findFirst: vi.fn() },
+    projectSection: { createMany: vi.fn() },
     workspace: { findUnique: vi.fn() },
     workspaceMember: { findFirst: vi.fn() },
   },
@@ -46,10 +47,29 @@ describe("ProjectMutation", () => {
       (ProjectAccess.assertWorkspaceAccess as any).mockResolvedValue({ id: "ws1" });
       (prisma.workspace.findUnique as any).mockResolvedValue({ id: "ws1", slug: "test-ws", name: "WS", ownerId: "u1" });
       (prisma.project.create as any).mockResolvedValue({ id: "p1", name: "Test Project" });
+      (prisma.projectSection.createMany as any).mockResolvedValue({ count: 5 });
       const result = await ProjectMutation.createProject({ name: "Test Project", workspaceId: "ws1", createdById: "u1" });
       expect(SlugService.generateProjectSlug).toHaveBeenCalledWith("Test Project", "ws1");
       expect(prisma.project.create).toHaveBeenCalled();
       expect(result).toBeDefined();
+    });
+
+    it("should seed the default workflow sections on project create", async () => {
+      const { ProjectAccess } = await import("../../../modules/project/project.access.js");
+      (ProjectAccess.assertWorkspaceAccess as any).mockResolvedValue({ id: "ws1" });
+      (prisma.workspace.findUnique as any).mockResolvedValue({ id: "ws1", slug: "test-ws", name: "WS", ownerId: "u1" });
+      (prisma.project.create as any).mockResolvedValue({ id: "p1", name: "Test Project" });
+      (prisma.projectSection.createMany as any).mockResolvedValue({ count: 5 });
+      await ProjectMutation.createProject({ name: "Test Project", workspaceId: "ws1", createdById: "u1" });
+      expect(prisma.projectSection.createMany).toHaveBeenCalledTimes(1);
+      const { data: seeded } = (prisma.projectSection.createMany as any).mock.calls[0][0];
+      expect(seeded).toHaveLength(5);
+      expect(seeded[0]).toEqual({
+        name: "Backlog", color: "#94a3b8", wipLimit: 20, taskStatus: "TODO", position: 0, projectId: "p1",
+      });
+      expect(seeded[2]).toMatchObject({ name: "Review", taskStatus: "IN_REVIEW", position: 2 });
+      expect(seeded[4]).toMatchObject({ name: "Done", taskStatus: "COMPLETED", position: 4 });
+      expect(seeded.every((s: any) => s.projectId === "p1")).toBe(true);
     });
 
     it("should throw NotFoundError if workspace not found", async () => {

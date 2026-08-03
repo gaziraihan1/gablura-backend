@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { getTimeStatus, getTimeStatusBatch } from '../../../modules/task/task.utils.js';
+import { getTimeStatus, getTimeStatusBatch, computeTaskChanges } from '../../../modules/task/task.utils.js';
 import { isTaskOverdue } from '../../../modules/task/task.query.js';
 import type { TaskForTimeTracking } from '../../../modules/task/task.types.js';
 
@@ -312,5 +312,65 @@ describe('isTaskOverdue', () => {
       // elapsed = 36h > 0, so overdue
       expect(isTaskOverdue(task, now)).toBe(true);
     });
+  });
+});
+
+describe('Task Utils - computeTaskChanges', () => {
+  const baseSnapshot = {
+    title: 'Old title',
+    description: 'Old desc',
+    priority: 'MEDIUM',
+    status: 'TODO',
+    projectId: 'p1',
+    dueDate: new Date('2026-01-01T00:00:00.000Z'),
+    startDate: null,
+    estimatedHours: 4,
+    focusRequired: false,
+    focusLevel: null,
+    energyType: 'LOW',
+    distractionCost: null,
+    intent: 'EXECUTION',
+    assignees: [{ userId: 'u1' }],
+    labels: [{ labelId: 'l1' }],
+  };
+
+  it('returns an empty object when nothing changed', () => {
+    expect(computeTaskChanges({ title: 'Old title', priority: 'MEDIUM' }, baseSnapshot)).toEqual({});
+  });
+
+  it('detects scalar field changes', () => {
+    expect(
+      computeTaskChanges({ title: 'New title', description: 'New desc', priority: 'HIGH' }, baseSnapshot),
+    ).toEqual({ title: 'New title', description: 'New desc', priority: 'HIGH' });
+  });
+
+  it('detects when an optional date is cleared to null', () => {
+    expect(computeTaskChanges({ dueDate: null }, baseSnapshot)).toEqual({ dueDate: null });
+  });
+
+  it('treats an equal date as unchanged', () => {
+    expect(
+      computeTaskChanges({ dueDate: new Date('2026-01-01T00:00:00.000Z') }, baseSnapshot),
+    ).toEqual({});
+  });
+
+  it('detects assignee and label changes', () => {
+    expect(computeTaskChanges({ assigneeIds: ['u2'], labelIds: ['l2'] }, baseSnapshot)).toEqual({
+      assignees: 'assignees (1)',
+      labels:    'labels (1)',
+    });
+  });
+
+  it('ignores assignees/labels that did not change', () => {
+    expect(computeTaskChanges({ assigneeIds: ['u1'], labelIds: ['l1'] }, baseSnapshot)).toEqual({});
+  });
+
+  it('returns an empty object when the old snapshot is unavailable', () => {
+    expect(computeTaskChanges({ title: 'Anything' }, null)).toEqual({});
+  });
+
+  it('truncates long description values', () => {
+    const changes = computeTaskChanges({ description: 'x'.repeat(500) }, baseSnapshot);
+    expect(changes.description as string).toHaveLength(201); // 200 chars + ellipsis
   });
 });
