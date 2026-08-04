@@ -1,11 +1,14 @@
 import { prisma } from "../../lib/prisma.js";
 import { WorkspaceUsageAccess } from "./workspaceUsage.access.js";
+import { categorizeFileType } from "../file/fileManagement.utils.js";
 import {
   bytesToMB,
   daysBetween,
   getDateRange,
   getDayBounds,
   getMonthRange,
+  pctChange,
+  buildGrowthInsights,
 } from "./workspaceUsage.utils.js";
 import { PLAN_LIMITS } from "./workspaceUsage.types.js";
 import type {
@@ -38,6 +41,8 @@ type FetchedFile = {
   size: number;
   uploadedById: string;
   projectId: string | null;
+  mimeType: string;
+  uploadedAt: Date;
 };
 
 type FetchedWorkspace = {
@@ -58,6 +63,9 @@ function nDaysFromNow(n: number): Date {
 function totalStorageMB(files: FetchedFile[]): number {
   return bytesToMB(files.reduce((sum, f) => sum + f.size, 0));
 }
+
+const PEAK_HOUR_BUCKETS = [0, 3, 6, 9, 12, 15, 18, 21];
+const PEAK_DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 // ─── Query ──────────────────────────────────────────────────────────────────
 
@@ -101,7 +109,14 @@ export const WorkspaceUsageQuery = {
       }),
       prisma.file.findMany({
         where: { workspaceId },
-        select: { id: true, size: true, uploadedById: true, projectId: true },
+        select: {
+          id: true,
+          size: true,
+          uploadedById: true,
+          projectId: true,
+          mimeType: true,
+          uploadedAt: true,
+        },
       }),
     ]);
 
@@ -115,6 +130,15 @@ export const WorkspaceUsageQuery = {
       select: { id: true, name: true },
     });
 
+    // The stored workspace.maxStorage can lag behind the plan (it is only
+    // refreshed on billing webhooks), so never under-report a paid plan's
+    // limit: prefer the plan's authoritative storage, but still respect
+    // admin-set overrides that raise it.
+    const planStorageMB =
+      PLAN_LIMITS[workspace?.plan as keyof typeof PLAN_LIMITS]?.storage ?? 1024;
+    const storageLimitMB =
+      Math.max(workspace?.maxStorage ?? 0, planStorageMB) || 1024;
+
     const [
       snapshot,
       projectActivity,
@@ -127,7 +151,7 @@ export const WorkspaceUsageQuery = {
       this.getUsageSnapshot(workspaceId, members, files, dauLastWeek),
       this.getProjectActivity(workspaceId),
       this.getUserEngagement(workspaceId, members, isAdmin, dauLastWeek),
-      this.getResourceUsage(workspaceId, files, workspace?.maxStorage ?? 1024, sharedProjects),
+      this.getResourceUsage(workspaceId, files, storageLimitMB, sharedProjects),
       this.getWorkspaceLoad(workspaceId, members, isAdmin),
       this.getWorkspaceGrowth(workspaceId),
       this.getFeatureUsage(workspaceId),
@@ -141,13 +165,19 @@ export const WorkspaceUsageQuery = {
       projectActivity.mostActive.length + projectActivity.lowActivity.length,
     );
 
+    // Real data-driven insights — generated from live growth + storage numbers.
+    const workspaceGrowthWithInsights: WorkspaceGrowthMetrics = {
+      ...workspaceGrowth,
+      insights: buildGrowthInsights(workspaceGrowth, resourceUsage),
+    };
+
     const result = {
       snapshot,
       projectActivity,
       userEngagement,
       resourceUsage,
       workspaceLoad,
-      workspaceGrowth,
+      workspaceGrowth: workspaceGrowthWithInsights,
       featureUsage,
       planLimits,
       isAdmin,
@@ -257,6 +287,7 @@ export const WorkspaceUsageQuery = {
         inactiveUsers: [],
         collaborationIndex: [],
         dailyActiveUsers,
+        peakHours: [],
       };
     }
 
@@ -289,7 +320,7 @@ export const WorkspaceUsageQuery = {
       }))
       .sort((a, b) => b.daysSinceActive - a.daysSinceActive);
 
-    const [commentCounts, tasksCounts, assigneeCounts] = await Promise.all([
+    const [commentCounts, tasksCounts, assigneeCounts, peakActivities] = await Promise.all([
       prisma.comment.groupBy({
         by: ["userId"],
         where: { task: { workspaceId } },
@@ -304,6 +335,11 @@ export const WorkspaceUsageQuery = {
         by: ["userId"],
         where: { task: { workspaceId } },
         _count: { userId: true },
+      }),
+      // Real peak-hours data — activity grouped by weekday × hour bucket (30 days).
+      prisma.activity.findMany({
+        where: { workspaceId, createdAt: { gte: oneMonthAgo } },
+        select: { createdAt: true },
       }),
     ]);
 
@@ -329,11 +365,30 @@ export const WorkspaceUsageQuery = {
       })
       .sort((a, b) => b.collaborationScore - a.collaborationScore);
 
+    // Build the 7×8 heatmap: activity intensity 0-100 relative to the busiest cell.
+    const bucketCounts = new Map<string, number>();
+    for (const { createdAt } of peakActivities) {
+      const dayIndex = (createdAt.getDay() + 6) % 7; // Monday = 0
+      const bucket = PEAK_HOUR_BUCKETS[Math.floor(createdAt.getHours() / 3)] ?? 21;
+      const key = `${PEAK_DAY_LABELS[dayIndex]}:${bucket}`;
+      bucketCounts.set(key, (bucketCounts.get(key) ?? 0) + 1);
+    }
+    const maxBucketCount = Math.max(...Array.from(bucketCounts.values()), 1);
+
+    const peakHours = PEAK_DAY_LABELS.flatMap((day) =>
+      PEAK_HOUR_BUCKETS.map((hour) => ({
+        day,
+        hour,
+        activity: Math.round(((bucketCounts.get(`${day}:${hour}`) ?? 0) / maxBucketCount) * 100),
+      })),
+    );
+
     return {
       activeUsers: { online: 0, thisWeek: activeThisWeek, thisMonth: activeThisMonth },
       inactiveUsers,
       collaborationIndex,
       dailyActiveUsers,
+      peakHours,
     };
   },
 
@@ -611,6 +666,38 @@ export const WorkspaceUsageQuery = {
       .filter((u) => u.fileCount > 0)
       .sort((a, b) => b.storageUsedMB - a.storageUsedMB);
 
+    // ── Real storage growth + file trends (last 6 months) ──
+    const monthRanges = getMonthRange(6);
+
+    let cumulativeStorage = 0;
+    const storageGrowth = monthRanges.map(({ start, end, label }) => {
+      const monthBytes = files
+        .filter((f) => f.uploadedAt >= start && f.uploadedAt <= end)
+        .reduce((sum, f) => sum + f.size, 0);
+      cumulativeStorage += monthBytes;
+      return { month: label, storage: bytesToMB(cumulativeStorage) };
+    });
+
+    const fileTrend = monthRanges.map(({ start, end, label }) => ({
+      month: label,
+      count: files.filter((f) => f.uploadedAt >= start && f.uploadedAt <= end).length,
+    }));
+
+    const fileGrowthPct = pctChange(
+      fileTrend[fileTrend.length - 2]?.count ?? 0,
+      fileTrend[fileTrend.length - 1]?.count ?? 0,
+    );
+
+    // ── Real file-type distribution from mimeType ──
+    const typeCounts = new Map<string, number>();
+    for (const f of files) {
+      const category = categorizeFileType(f.mimeType);
+      typeCounts.set(category, (typeCounts.get(category) ?? 0) + 1);
+    }
+    const fileTypeDistribution = Array.from(typeCounts.entries())
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value);
+
     return {
       storageByProject,
       filesByUser,
@@ -619,6 +706,10 @@ export const WorkspaceUsageQuery = {
         totalMB: maxStorageMB,
         percentage: Math.min(100, Math.round((usedMB / maxStorageMB) * 100)),
       },
+      storageGrowth,
+      fileTrend,
+      fileGrowthPct,
+      fileTypeDistribution,
     };
   },
 
@@ -781,6 +872,14 @@ export const WorkspaceUsageQuery = {
 
     const lifecycleMap = new Map(lifecycleRows.map((r) => [r.status, r._count.status]));
 
+    // Real month-over-month % change (null when the previous month has no baseline).
+    const prevTrend = trend[trend.length - 2];
+    const changes = {
+      newTasks: pctChange(prevTrend?.tasks ?? 0, newTasks),
+      newUsers: pctChange(prevTrend?.users ?? 0, newUsers),
+      newProjects: pctChange(prevTrend?.projects ?? 0, newProjects),
+    };
+
     return {
       thisMonth: { newUsers, newProjects, newTasks },
       trend,
@@ -790,6 +889,8 @@ export const WorkspaceUsageQuery = {
         completed: lifecycleMap.get("COMPLETED") ?? 0,
         archived: lifecycleMap.get("ARCHIVED") ?? 0,
       },
+      changes,
+      insights: [],
     };
   },
 };

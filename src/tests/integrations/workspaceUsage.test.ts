@@ -82,9 +82,9 @@ describe("WorkspaceUsage integration", () => {
         planLimits: {
           currentPlan: "PRO",
           memberCount: 2,
-          memberLimit: 50,
+          memberLimit: 25,
           storageUsedMB: 2,
-          storageLimitMB: 5120,
+          storageLimitMB: 10240,
           projectCount: 1,
           projectLimit: -1,
         },
@@ -103,7 +103,7 @@ describe("WorkspaceUsage integration", () => {
       });
       expect(res.body.data.resourceUsage.totalStorage).toMatchObject({
         usedMB: 2,
-        totalMB: workspace.maxStorage,
+        totalMB: 10240, // PRO plan = 10 GB
       });
       expect(res.body.data.resourceUsage.storageByProject[0]).toMatchObject({
         projectId: project.id,

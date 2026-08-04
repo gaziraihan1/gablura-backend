@@ -140,9 +140,11 @@ export const StorageMutation = {
       select: { plan: true, maxStorage: true } as any,
     });
     const plan   = ((ws as any)?.plan   ?? "FREE") as WorkspacePlan;
+    // Never under-report a paid plan: prefer the plan's enforced storage
+    // limit, but still respect admin-set overrides that raise it.
+    const planLimitMB = toMB(getStorageLimits(plan).maxStorageBytes ?? 0);
     const totalMB =
-      ((ws as any)?.maxStorage as number) ??
-      toMB(getStorageLimits(plan).maxStorageBytes ?? 0);
+      Math.max(((ws as any)?.maxStorage as number) ?? 0, planLimitMB) || 1024;
 
     await ensureStorageSeeded(workspaceId);
     const usedBytes    = await getWorkspaceStorageBytes(workspaceId);

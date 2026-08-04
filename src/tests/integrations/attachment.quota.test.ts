@@ -101,9 +101,9 @@ describe('getStorageLimits', () => {
     expect(l.uploadsPerHour).toBe(60);
   });
 
-  it('BUSINESS plan: 50 GB storage, 100 MB file, no daily limit, 30/min, no hr limit', () => {
+  it('BUSINESS plan: 100 GB storage, 100 MB file, no daily limit, 30/min, no hr limit', () => {
     const l = getStorageLimits('BUSINESS');
-    expect(l.maxStorageBytes).toBe(50 * GB);
+    expect(l.maxStorageBytes).toBe(100 * GB);
     expect(l.maxFileSizeBytes).toBe(100 * 1024 * 1024);
     expect(l.maxDailyUploadsPerUser).toBeNull();
     expect(l.uploadsPerMinute).toBe(30);

@@ -22,9 +22,10 @@ describe('billing.plans.config', () => {
 
     it('PRO should have correct limits', () => {
       const pro = PLAN_LIMITS.PRO;
-      expect(pro.maxWorkspacesOwned).toBe(5);
+      expect(pro.maxWorkspacesOwned).toBe(3);
       expect(pro.maxMembersPerWs).toBe(25);
       expect(pro.maxStorageMb).toBe(10240);
+      expect(pro.maxFileSizeMb).toBe(25);
       expect(pro.analyticsAccess).toBe(true);
       expect(pro.prioritySupport).toBe(false);
       expect(pro.apiAccess).toBe(false);

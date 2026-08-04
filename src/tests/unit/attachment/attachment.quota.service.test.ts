@@ -21,7 +21,7 @@ describe('attachment.quota.service (pure functions)', () => {
 
     it('should return BUSINESS limits', () => {
       const limits = getStorageLimits('BUSINESS');
-      expect(limits.maxStorageBytes).toBe(50 * GB);
+      expect(limits.maxStorageBytes).toBe(100 * GB);
       expect(limits.maxFileSizeBytes).toBe(100 * 1024 * 1024);
       expect(limits.uploadsPerMinute).toBe(30);
     });

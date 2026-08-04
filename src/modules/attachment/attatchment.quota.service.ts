@@ -25,7 +25,7 @@ export function getStorageLimits(plan: WorkspacePlan): StorageLimits {
 
     case "BUSINESS":
       return {
-        maxStorageBytes:        50 * GB,
+        maxStorageBytes:        100 * GB,
         maxFileSizeBytes:       100 * 1024 * 1024, // 100 MB per file
         maxDailyUploadsPerUser: null,
         uploadsPerMinute:       30,

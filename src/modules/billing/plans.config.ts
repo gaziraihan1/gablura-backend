@@ -15,10 +15,10 @@ export const PLAN_LIMITS = {
     apiAccess:          false,
   },
   PRO: {
-    maxWorkspacesOwned: 5,
+    maxWorkspacesOwned: 3,
     maxMembersPerWs:    25,
     maxStorageMb:       10_240,
-    maxFileSizeMb:      50,
+    maxFileSizeMb:      25,
     maxMeetingsPerMo:   -1,
     maxProjects:        -1,
     analyticsAccess:    true,

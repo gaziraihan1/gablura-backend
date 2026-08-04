@@ -32,7 +32,7 @@ async function main() {
         maxWorkspacesOwned:   3,
         maxMembersPerWs:      25,
         maxStorageMb:         10240,
-        maxFileSizeMb:        50,
+        maxFileSizeMb:        25,
         maxMeetingsPerMo:     -1,
         maxProjects:          -1,
         analyticsAccess:      true,
@@ -64,6 +64,13 @@ async function main() {
       },
     ],
     skipDuplicates: true,
+  });
+
+  // Self-heal: correct the PRO per-file limit on already-seeded databases
+  // (was seeded as 50 MB; the enforced quota and marketing are 25 MB).
+  await prisma.plan.updateMany({
+    where: { name: 'PRO', maxFileSizeMb: 50 },
+    data: { maxFileSizeMb: 25 },
   });
 
   console.log('✅ Plans seeded');

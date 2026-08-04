@@ -3,6 +3,7 @@ import { StorageQuery } from "../../../modules/storage/storage.query.js";
 import { StorageAccess } from "../../../modules/storage/storage.access.js";
 import { prisma } from "../../../lib/prisma.js";
 import {
+  getStorageLimits,
   getWorkspaceStorageBytes,
   seedWorkspaceStorageFromDb,
 } from "../../../modules/attachment/attatchment.quota.service.js";
@@ -36,6 +37,7 @@ vi.mock("../../../modules/storage/storage.access.js", () => ({
 }));
 
 vi.mock("../../../modules/attachment/attatchment.quota.service.js", () => ({
+  getStorageLimits: vi.fn(),
   getWorkspaceStorageBytes: vi.fn(),
   seedWorkspaceStorageFromDb: vi.fn(),
 }));
@@ -69,15 +71,18 @@ describe("StorageQuery", () => {
       } as any);
       vi.mocked(seedWorkspaceStorageFromDb).mockResolvedValue(undefined);
       vi.mocked(getWorkspaceStorageBytes).mockResolvedValue(500 * 1024 * 1024);
-      vi.mocked(toMB).mockReturnValue(500);
+      vi.mocked(getStorageLimits).mockReturnValue({
+        maxStorageBytes: 10 * 1024 * 1024 * 1024, // PRO = 10 GB
+      } as any);
+      vi.mocked(toMB).mockImplementation((bytes) => bytes / (1024 * 1024));
 
       const result = await StorageQuery.getWorkspaceStorageInfo("workspace1", "user1");
 
       expect(result).toEqual({
         usedMB: 500,
-        totalMB: 1000,
-        remainingMB: 500,
-        percentage: 50,
+        totalMB: 10240,
+        remainingMB: 9740,
+        percentage: 5,
         plan: "PRO",
         workspaceId: "workspace1",
         workspaceName: "Test Workspace",
@@ -99,12 +104,15 @@ describe("StorageQuery", () => {
       } as any);
       vi.mocked(seedWorkspaceStorageFromDb).mockResolvedValue(undefined);
       vi.mocked(getWorkspaceStorageBytes).mockResolvedValue(0);
-      vi.mocked(toMB).mockReturnValue(0);
+      vi.mocked(getStorageLimits).mockReturnValue({
+        maxStorageBytes: 1024 * 1024 * 1024, // FREE = 1 GB
+      } as any);
+      vi.mocked(toMB).mockImplementation((bytes) => bytes / (1024 * 1024));
 
       const result = await StorageQuery.getWorkspaceStorageInfo("workspace1", "user1");
 
       expect(result.percentage).toBe(0);
-      expect(result.remainingMB).toBe(100);
+      expect(result.remainingMB).toBe(1024);
     });
   });
 
@@ -382,6 +390,9 @@ describe("StorageQuery", () => {
         },
       ] as any);
       vi.mocked(seedWorkspaceStorageFromDb).mockResolvedValue(undefined);
+      vi.mocked(getStorageLimits).mockReturnValue({
+        maxStorageBytes: 10 * 1024 * 1024 * 1024, // PRO = 10 GB
+      } as any);
       vi.mocked(toMB).mockImplementation((bytes) => bytes / (1024 * 1024));
 
       const result = await StorageQuery.getUserWorkspacesSummary("user1");
@@ -392,9 +403,9 @@ describe("StorageQuery", () => {
         workspaceName: "Workspace One",
         plan: "PRO",
         usageMB: 500,
-        totalMB: 1000,
-        remainingMB: 500,
-        percentage: 50,
+        totalMB: 10240,
+        remainingMB: 9740,
+        percentage: 5,
         role: "ADMIN",
         fileCount: 10,
       });
@@ -438,6 +449,9 @@ describe("StorageQuery", () => {
         },
       ] as any);
       vi.mocked(seedWorkspaceStorageFromDb).mockResolvedValue(undefined);
+      vi.mocked(getStorageLimits).mockReturnValue({
+        maxStorageBytes: 10 * 1024 * 1024 * 1024, // PRO = 10 GB
+      } as any);
       vi.mocked(toMB).mockImplementation((bytes) => bytes / (1024 * 1024));
 
       const result = await StorageQuery.getUserWorkspacesSummary("user1");

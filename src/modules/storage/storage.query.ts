@@ -12,6 +12,7 @@ import type {
 import { StorageAccess } from "./storage.access.js";
 import { toMB, getCategoryFromMimeType } from "./storage.utils.js";
 import {
+  getStorageLimits,
   getWorkspaceStorageBytes,
   seedWorkspaceStorageFromDb,
 } from "../attachment/attatchment.quota.service.js";
@@ -43,7 +44,10 @@ export const StorageQuery = {
     await ensureStorageSeeded(workspaceId);
     const usedBytes = await getWorkspaceStorageBytes(workspaceId);
     const usedMB = toMB(usedBytes);
-    const totalMB = workspace.maxStorage;
+    // Never under-report a paid plan: prefer the plan's enforced storage
+    // limit, but still respect admin-set overrides that raise it.
+    const planLimitMB = toMB(getStorageLimits(workspace.plan).maxStorageBytes ?? 0);
+    const totalMB = Math.max(workspace.maxStorage ?? 0, planLimitMB) || 1024;
     const remainingMB = Math.max(0, totalMB - usedMB);
     const percentage = Math.min(100, Math.round((usedMB / totalMB) * 100));
 
@@ -307,7 +311,10 @@ export const StorageQuery = {
           sizeMap.get(workspace.id) ?? {};
 
         const usedMB = toMB(totalBytes);
-        const totalMB = workspace.maxStorage;
+        // Never under-report a paid plan: prefer the plan's enforced storage
+        // limit, but still respect admin-set overrides that raise it.
+        const planLimitMB = toMB(getStorageLimits(workspace.plan).maxStorageBytes ?? 0);
+        const totalMB = Math.max(workspace.maxStorage ?? 0, planLimitMB) || 1024;
         const remainingMB = Math.max(0, totalMB - usedMB);
         const percentage = Math.min(100, Math.round((usedMB / totalMB) * 100));
 
