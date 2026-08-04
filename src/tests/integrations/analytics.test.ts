@@ -125,7 +125,7 @@ describe('GET /api/v1/analytics/:workspaceId/projects/health', () => {
 
 describe('GET /api/v1/analytics/:workspaceId/members/contribution', () => {
   it('200 — returns member contributions', async () => {
-    const { user, workspace } = await createWorkspaceWithOwner({}, {plan: "PRO"});
+    const { user, workspace } = await createWorkspaceWithOwner({}, {plan: "BUSINESS"});
 
     const member = await createUser();
     await addMemberToWorkspace(member.id, workspace.id, WorkspaceRole.MEMBER);
@@ -164,7 +164,7 @@ describe('GET /api/v1/analytics/:workspaceId/time/summary', () => {
 
 describe('GET /api/v1/analytics/:workspaceId/activity/trends', () => {
   it('200 — returns activity trends', async () => {
-    const { user, workspace } = await createWorkspaceWithOwner({}, {plan: "PRO"});
+    const { user, workspace } = await createWorkspaceWithOwner({}, {plan: "BUSINESS"});
 
     const res = await request(app)
       .get(`/api/v1/analytics/${workspace.id}/activity/trends`)
@@ -182,7 +182,7 @@ describe('GET /api/v1/analytics/:workspaceId/activity/trends', () => {
 
 describe('GET /api/v1/analytics/:workspaceId/workload', () => {
   it('200 — returns workload per member', async () => {
-    const { user, workspace } = await createWorkspaceWithOwner({}, {plan: "PRO"});
+    const { user, workspace } = await createWorkspaceWithOwner({}, {plan: "BUSINESS"});
 
     const res = await request(app)
       .get(`/api/v1/analytics/${workspace.id}/workload`)

@@ -33,6 +33,21 @@ export const AnalyticsAccess = {
     await this.assertWorkspaceAdminOrOwner(userId, workspaceId);
   },
 
+  async assertBusinessOnlyAccess(userId: string, workspaceId: string) {
+    const workspace = await prisma.workspace.findUnique({
+      where:  { id: workspaceId },
+      select: { plan: true },
+    });
+
+    if (!workspace) throw new NotFoundError('Workspace');
+
+    if (workspace.plan === 'PRO') {
+      return false;
+    }
+
+    return true;
+  },
+
   async assertProjectAnalyticsAccess(userId: string, workspaceId: string, projectId: string) {
     const workspace = await prisma.workspace.findUnique({
       where:  { id: workspaceId },

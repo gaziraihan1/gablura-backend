@@ -18,6 +18,7 @@ describe('billing.plans.config', () => {
       expect(free.analyticsAccess).toBe(false);
       expect(free.prioritySupport).toBe(false);
       expect(free.apiAccess).toBe(false);
+      expect(free.businessOnlyAccess).toBe(false);
     });
 
     it('PRO should have correct limits', () => {
@@ -29,6 +30,7 @@ describe('billing.plans.config', () => {
       expect(pro.analyticsAccess).toBe(true);
       expect(pro.prioritySupport).toBe(false);
       expect(pro.apiAccess).toBe(false);
+      expect(pro.businessOnlyAccess).toBe(false);
     });
 
     it('BUSINESS should have unlimited members and analytics', () => {

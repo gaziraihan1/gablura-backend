@@ -64,7 +64,17 @@ export const getWorkspaceOverview = asyncHandler (async (req: AuthRequest, res: 
           ? await StorageQuery.getUserContributions(workspaceId, userId)
           : null;
 
-        return { storageInfo, breakdown, largestFiles, trend, fileTypes, myContribution, userContributions, isAdmin };
+        const isPro = storageInfo.plan === 'PRO';
+        return {
+          storageInfo,
+          breakdown: isPro ? null : breakdown,
+          largestFiles,
+          trend,
+          fileTypes,
+          myContribution,
+          userContributions,
+          isAdmin,
+        };
       },
       CACHE_TTL.STORAGE_OVERVIEW,
     );

@@ -24,6 +24,7 @@ model Plan {
   analyticsAccess      Boolean        @default(false)
   prioritySupport      Boolean        @default(false)
   apiAccess            Boolean        @default(false)
+  businessOnlyAccess   Boolean        @default(false)
   customBranding       Boolean        @default(false)
   advancedReports      Boolean        @default(false)
   maxWorkspacesOwned   Int            @default(3)

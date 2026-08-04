@@ -5,4 +5,5 @@ export {
   requireMeetingSlot,
   requireProjectSlot,
   requireFileSizeLimit,
+  requireAnalyticsAccess,
 } from "./plan.middleware.js";

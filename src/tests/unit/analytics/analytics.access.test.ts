@@ -204,6 +204,34 @@ describe('AnalyticsAccess', () => {
     });
   });
 
+  describe('assertBusinessOnlyAccess', () => {
+    it('should return true for BUSINESS workspace', async () => {
+      vi.mocked(prisma.workspace.findUnique).mockResolvedValue({
+        plan: 'BUSINESS',
+      } as any);
+
+      const result = await AnalyticsAccess.assertBusinessOnlyAccess('u1', 'ws1');
+      expect(result).toBe(true);
+    });
+
+    it('should return false for PRO workspace', async () => {
+      vi.mocked(prisma.workspace.findUnique).mockResolvedValue({
+        plan: 'PRO',
+      } as any);
+
+      const result = await AnalyticsAccess.assertBusinessOnlyAccess('u1', 'ws1');
+      expect(result).toBe(false);
+    });
+
+    it('should throw NotFoundError for non-existent workspace', async () => {
+      vi.mocked(prisma.workspace.findUnique).mockResolvedValue(null);
+
+      await expect(
+        AnalyticsAccess.assertBusinessOnlyAccess('u1', 'ws1'),
+      ).rejects.toThrow(NotFoundError);
+    });
+  });
+
   describe('getUserAdminWorkspaces', () => {
     it('should return workspace IDs where user is admin or owner', async () => {
       vi.mocked(prisma.workspaceMember.findMany).mockResolvedValue([

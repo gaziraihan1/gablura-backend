@@ -116,6 +116,14 @@ export class AnalyticsController {
       const { workspaceId } = req.params;
       await AnalyticsAccess.assertAnalyticsAccess(req.user!.id, workspaceId);
 
+      const hasBusinessAccess = await AnalyticsAccess.assertBusinessOnlyAccess(
+        req.user!.id, workspaceId,
+      );
+      if (!hasBusinessAccess) {
+        res.json({ success: true, data: null });
+        return;
+      }
+
       const contributions = await AnalyticsQuery.getMemberContribution(
         workspaceId,
         req.user!.id,
@@ -144,6 +152,14 @@ export class AnalyticsController {
       const { workspaceId } = req.params;
       await AnalyticsAccess.assertAnalyticsAccess(req.user!.id, workspaceId);
 
+      const hasBusinessAccess = await AnalyticsAccess.assertBusinessOnlyAccess(
+        req.user!.id, workspaceId,
+      );
+      if (!hasBusinessAccess) {
+        res.json({ success: true, data: null });
+        return;
+      }
+
       const days = parseDays(req.query.days, 30);
 
       const [volumeTrend, mostActiveDay] = await Promise.all([
@@ -158,6 +174,14 @@ export class AnalyticsController {
   static getWorkload = asyncHandler(async (req: AuthRequest, res: Response) => {
     const { workspaceId } = req.params;
     await AnalyticsAccess.assertAnalyticsAccess(req.user!.id, workspaceId);
+
+    const hasBusinessAccess = await AnalyticsAccess.assertBusinessOnlyAccess(
+      req.user!.id, workspaceId,
+    );
+    if (!hasBusinessAccess) {
+      res.json({ success: true, data: null });
+      return;
+    }
 
     const tasksPerMember = await AnalyticsQuery.getTasksPerMember(
       workspaceId,
