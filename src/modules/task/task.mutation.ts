@@ -101,6 +101,24 @@ export const TaskMutation = {
       if (!section) throw new BadRequestError('Section does not belong to this project');
     }
 
+    if (data.sprintId) {
+      if (!data.projectId) throw new BadRequestError('Sprint requires a project');
+      const sprint = await prisma.sprint.findFirst({
+        where: { id: data.sprintId, projectId: data.projectId },
+        select: { id: true },
+      });
+      if (!sprint) throw new BadRequestError('Sprint does not belong to this project');
+    }
+
+    if (data.milestoneId) {
+      if (!data.projectId) throw new BadRequestError('Milestone requires a project');
+      const milestone = await prisma.projectMilestone.findFirst({
+        where: { id: data.milestoneId, projectId: data.projectId },
+        select: { id: true },
+      });
+      if (!milestone) throw new BadRequestError('Milestone does not belong to this project');
+    }
+
     const taskData: any = {
       title:           data.title,
       description:     data.description,
@@ -117,8 +135,10 @@ export const TaskMutation = {
       createdBy:       { connect: { id: data.createdById } },
     };
 
-    if (data.projectId)      taskData.project   = { connect: { id: data.projectId } };
-    if (data.sectionId)      taskData.sectionId = data.sectionId;
+    if (data.projectId)      taskData.projectId   = data.projectId;
+    if (data.sectionId)      taskData.sectionId   = data.sectionId;
+    if (data.sprintId)       taskData.sprintId    = data.sprintId;
+    if (data.milestoneId)    taskData.milestoneId = data.milestoneId;
     if (finalWorkspaceId)    taskData.workspace  = { connect: { id: finalWorkspaceId } };
     if (data.parentId)       taskData.parent     = { connect: { id: data.parentId } };
     if (data.assigneeIds?.length) {
@@ -187,6 +207,8 @@ export const TaskMutation = {
     if (data.energyType !== undefined)     updateData.energyType     = data.energyType as any;
     if (data.distractionCost !== undefined) updateData.distractionCost = data.distractionCost;
     if (data.intent !== undefined)         updateData.intent         = data.intent as any;
+    if (data.sprintId !== undefined)      updateData.sprintId    = data.sprintId ?? null;
+    if (data.milestoneId !== undefined)   updateData.milestoneId = data.milestoneId ?? null;
 
     if (data.projectId && data.projectId !== existingTask.projectId) {
       const newProject = await prisma.project.findUnique({
@@ -205,6 +227,21 @@ export const TaskMutation = {
         userId, workspaceId!, plan, memberCount,
       );
       if (!quota.allowed) throw new BadRequestError(quota.reason ?? 'Workspace task limit reached');
+    }
+
+    if (data.sprintId) {
+      const sprint = await prisma.sprint.findFirst({
+        where: { id: data.sprintId, projectId: existingTask.projectId ?? undefined },
+        select: { id: true },
+      });
+      if (!sprint) throw new BadRequestError('Sprint does not belong to this task project');
+    }
+    if (data.milestoneId) {
+      const milestone = await prisma.projectMilestone.findFirst({
+        where: { id: data.milestoneId, projectId: existingTask.projectId ?? undefined },
+        select: { id: true },
+      });
+      if (!milestone) throw new BadRequestError('Milestone does not belong to this task project');
     }
 
     const task = await prisma.task.update({

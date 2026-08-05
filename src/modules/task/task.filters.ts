@@ -145,6 +145,8 @@ export const TaskFilters = {
       };
     }
 
+    if (filters.sectionId) result.sectionId = filters.sectionId;
+
     return result;
   },
 
@@ -170,6 +172,7 @@ export const TaskFilters = {
       };
       if (where.project) result.project = where.project;
       if (where.projectId) result.projectId = where.projectId;
+      if (where.sectionId) result.sectionId = where.sectionId;
       if (where.createdById) result.createdById = where.createdById;
       if (where.assignees) result.assignees = where.assignees;
       return result;

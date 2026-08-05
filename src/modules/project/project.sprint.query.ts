@@ -6,6 +6,7 @@ export const SprintQuery = {
     return prisma.sprint.findMany({
       where:   { projectId },
       orderBy: { startDate: 'desc' },
+      include: { _count: { select: { tasks: true } } },
     });
   },
 
@@ -50,6 +51,7 @@ export const SprintQuery = {
         totalPoints: true,
         completedPoints: true,
         velocity: true,
+        _count: { select: { tasks: true } },
       },
     });
 

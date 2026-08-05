@@ -15,6 +15,10 @@ export const MilestoneQuery = {
       include: {
         dependsOn: true,
         dependencies: true,
+        tasks: {
+          select: { id: true, title: true, status: true },
+          orderBy: { position: 'asc' },
+        },
       },
     });
     if (!milestone) throw new NotFoundError('Milestone');
@@ -31,6 +35,9 @@ export const MilestoneQuery = {
         progress: true,
         dueDate: true,
         dependsOnId: true,
+        tasks: {
+          select: { id: true, title: true, status: true },
+        },
       },
     });
 
@@ -43,6 +50,21 @@ export const MilestoneQuery = {
       ? Math.round(milestones.reduce((sum, m) => sum + m.progress, 0) / total)
       : 0;
 
-    return { total, completed, atRisk, delayed, onTrack, avgProgress, milestones };
+    // Annotate each milestone with linked-task progress + counts so the UI
+    // can show task-derived completion (stored progress stays manual).
+    const annotated = milestones.map((m) => {
+      const tasksDone = m.tasks.filter((t) => t.status === 'COMPLETED').length;
+      const taskProgress = m.tasks.length > 0
+        ? Math.round((tasksDone / m.tasks.length) * 100)
+        : null;
+      return {
+        ...m,
+        tasksDone,
+        taskProgress,
+        completed: m.status === 'COMPLETED',
+      };
+    });
+
+    return { total, completed, atRisk, delayed, onTrack, avgProgress, milestones: annotated };
   },
 };

@@ -20,6 +20,7 @@ describe("SprintQuery", () => {
       expect(prisma.sprint.findMany).toHaveBeenCalledWith({
         where: { projectId: "proj1" },
         orderBy: { startDate: "desc" },
+        include: { _count: { select: { tasks: true } } },
       });
       expect(result).toEqual(mockSprints);
     });

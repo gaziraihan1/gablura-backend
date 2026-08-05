@@ -46,10 +46,10 @@ describe("MilestoneQuery", () => {
   describe("getMilestoneStats", () => {
     it("should calculate stats from milestones", async () => {
       const mockMilestones = [
-        { id: "m1", title: "Alpha", status: "COMPLETED", progress: 100, dueDate: new Date(), dependsOnId: null },
-        { id: "m2", title: "Beta", status: "ON_TRACK", progress: 50, dueDate: new Date(), dependsOnId: null },
-        { id: "m3", title: "Gamma", status: "AT_RISK", progress: 30, dueDate: new Date(), dependsOnId: "m1" },
-        { id: "m4", title: "Delta", status: "DELAYED", progress: 10, dueDate: new Date(), dependsOnId: null },
+        { id: "m1", title: "Alpha", status: "COMPLETED", progress: 100, dueDate: new Date(), dependsOnId: null, tasks: [] },
+        { id: "m2", title: "Beta", status: "ON_TRACK", progress: 50, dueDate: new Date(), dependsOnId: null, tasks: [] },
+        { id: "m3", title: "Gamma", status: "AT_RISK", progress: 30, dueDate: new Date(), dependsOnId: "m1", tasks: [] },
+        { id: "m4", title: "Delta", status: "DELAYED", progress: 10, dueDate: new Date(), dependsOnId: null, tasks: [] },
       ];
       (prisma.projectMilestone.findMany as any).mockResolvedValue(mockMilestones);
       const result = await MilestoneQuery.getMilestoneStats("proj1");

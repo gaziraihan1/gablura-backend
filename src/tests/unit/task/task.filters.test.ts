@@ -134,6 +134,13 @@ describe('Task Filters', () => {
       expect(result.priority).toBe('HIGH');
       expect(result.labels).toEqual({ some: { labelId: { in: ['l1', 'l2'] } } });
     });
+
+    it('should apply section filter', () => {
+      const where = { id: '1' };
+      const filters = { sectionId: 'sec-1' } as any;
+      const result = TaskFilters.applyAdditionalFilters(where, filters);
+      expect(result.sectionId).toBe('sec-1');
+    });
   });
 
   describe('applySearchFilter', () => {

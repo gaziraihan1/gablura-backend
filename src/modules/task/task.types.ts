@@ -8,6 +8,7 @@ export interface TaskFilterParams {
   type?:       string;
   workspaceId?: string;
   projectId?:  string;
+  sectionId?:  string;
   status?:     string;
   priority?:   string;
   labelIds?:   string[];
@@ -30,6 +31,8 @@ export interface CreateTaskInput {
   description?:     string;
   projectId?:       string;
   sectionId?:       string;
+  sprintId?:        string;
+  milestoneId?:     string;
   status?:          string;
   priority?:        string;
   dueDate?:         Date;
@@ -50,6 +53,8 @@ export interface UpdateTaskInput {
   title?:            string;
   description?:      string;
   projectId?:        string;
+  sprintId?:         string | null;
+  milestoneId?:      string | null;
   status?:           string;
   priority?:         string;
   dueDate?:          Date | null;

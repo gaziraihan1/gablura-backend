@@ -114,6 +114,11 @@ describe('Task Validators', () => {
       expect(parsed.pageSize).toBe(10);
     });
 
+    it('should accept sectionId query param', () => {
+      const parsed = getTasksQuerySchema.parse({ sectionId: 'sec-1' });
+      expect(parsed.sectionId).toBe('sec-1');
+    });
+
     it('should fail if pageSize is too large', () => {
       expect(() => getTasksQuerySchema.parse({ pageSize: '101' })).toThrow();
     });
