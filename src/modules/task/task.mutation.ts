@@ -132,15 +132,15 @@ export const TaskMutation = {
       energyType:      data.energyType as any,
       distractionCost: data.distractionCost,
       intent:          data.intent as any,
-      createdBy:       { connect: { id: data.createdById } },
+      createdById:     data.createdById,
     };
 
     if (data.projectId)      taskData.projectId   = data.projectId;
     if (data.sectionId)      taskData.sectionId   = data.sectionId;
     if (data.sprintId)       taskData.sprintId    = data.sprintId;
     if (data.milestoneId)    taskData.milestoneId = data.milestoneId;
-    if (finalWorkspaceId)    taskData.workspace  = { connect: { id: finalWorkspaceId } };
-    if (data.parentId)       taskData.parent     = { connect: { id: data.parentId } };
+    if (finalWorkspaceId)    taskData.workspaceId  = finalWorkspaceId;
+    if (data.parentId)       taskData.parentId     = data.parentId;
     if (data.assigneeIds?.length) {
       taskData.assignees = { create: data.assigneeIds.map((userId) => ({ userId })) };
     }
