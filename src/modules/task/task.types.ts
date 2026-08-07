@@ -62,6 +62,7 @@ export interface UpdateTaskInput {
   title?:            string;
   description?:      string;
   projectId?:        string;
+  sectionId?:        string | null;
   sprintId?:         string | null;
   milestoneId?:      string | null;
   status?:           string;

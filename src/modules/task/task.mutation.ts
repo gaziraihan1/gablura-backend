@@ -14,12 +14,43 @@ import {
 import { ProjectAccess }   from '../project/project.access.js';
 import { BadRequestError, ForbiddenError, NotFoundError } from '../../errors/index.js';
 import { addInvalidateCacheJob } from '../../queue/index.js';
-import { TaskCache }          from '../../lib/redis/cache.client.js';
+import { TaskCache, AccessControlCache } from '../../lib/redis/cache.client.js';
 
 // ─── Callback types ───────────────────────────────────────────────────────────
 
 type OnTaskCreated  = (data: { task: any; assigneeIds: string[] }) => Promise<void>;
 type OnTaskUpdated  = (data: { task: any; oldStatus?: string; newStatus?: string; addedAssigneeIds: string[] }) => Promise<void>;
+
+/**
+ * Refresh a task's live status onto the permission snapshot before computing
+ * status transitions. checkEditPermission caches its result per (taskId,
+ * userId), so `status` can lag a recent change made by another request.
+ */
+export async function refreshTaskStatus(
+  taskId: string,
+  existingTask: { status?: string },
+): Promise<void> {
+  const current = await prisma.task.findUnique({
+    where: { id: taskId },
+    select: { status: true },
+  });
+  if (current) existingTask.status = current.status;
+}
+
+/**
+ * Compute the completion/reopen transition between two statuses so callers can
+ * set or clear `completedAt`. Both flags are false when `nextStatus` is absent.
+ */
+export function computeStatusTransition(
+  previousStatus: string | undefined,
+  nextStatus: string | undefined,
+): { wasCompleted: boolean; wasReopened: boolean } {
+  if (!nextStatus) return { wasCompleted: false, wasReopened: false };
+  return {
+    wasCompleted: nextStatus === 'COMPLETED' && previousStatus !== 'COMPLETED',
+    wasReopened:  nextStatus !== 'COMPLETED' && previousStatus === 'COMPLETED',
+  };
+}
 type OnTaskDeleted  = (data: { task: any }) => Promise<void>;
 type OnCommentAdded = (data: { taskId: string; taskTitle: string; workspaceId?: string }) => Promise<void>;
 
@@ -157,7 +188,7 @@ export const TaskMutation = {
           const anchor = created.dueDate && created.dueDate.getTime() > Date.now()
             ? created.dueDate
             : new Date();
-          await tx.taskRecurrence.create({
+          const recurrenceRow = await tx.taskRecurrence.create({
             data: {
               taskId:         created.id,
               pattern:        recurrence.pattern,
@@ -167,7 +198,7 @@ export const TaskMutation = {
               lastOccurredAt: anchor,
             },
           });
-          return created;
+          return { ...created, recurrence: recurrenceRow };
         });
       } else {
         task = await prisma.task.create({ data: taskData, include: taskFullInclude });
@@ -211,7 +242,11 @@ export const TaskMutation = {
       await ProjectAccess.assertProjectNotArchived(existingTask.projectId);
     }
 
-    const wasCompleted = data.status === 'COMPLETED' && existingTask.status !== 'COMPLETED';
+    if (data.status) {
+      await refreshTaskStatus(taskId, existingTask);
+    }
+
+    const { wasCompleted, wasReopened } = computeStatusTransition(existingTask.status, data.status);
 
     const updateData: any = {};
     if (data.title)                     updateData.title           = data.title;
@@ -223,11 +258,13 @@ export const TaskMutation = {
     if (data.startDate !== undefined)   updateData.startDate       = data.startDate ? new Date(data.startDate) : null;
     if (data.estimatedHours !== undefined) updateData.estimatedHours = data.estimatedHours;
     if (wasCompleted)                   updateData.completedAt     = new Date();
+    if (wasReopened)                    updateData.completedAt     = null;
     if (data.focusRequired !== undefined)  updateData.focusRequired  = data.focusRequired;
     if (data.focusLevel !== undefined)     updateData.focusLevel     = data.focusLevel;
     if (data.energyType !== undefined)     updateData.energyType     = data.energyType as any;
     if (data.distractionCost !== undefined) updateData.distractionCost = data.distractionCost;
     if (data.intent !== undefined)         updateData.intent         = data.intent as any;
+    if (data.sectionId !== undefined)     updateData.sectionId   = data.sectionId ?? null;
     if (data.sprintId !== undefined)      updateData.sprintId    = data.sprintId ?? null;
     if (data.milestoneId !== undefined)   updateData.milestoneId = data.milestoneId ?? null;
 
@@ -250,6 +287,14 @@ export const TaskMutation = {
       if (!quota.allowed) throw new BadRequestError(quota.reason ?? 'Workspace task limit reached');
     }
 
+    if (data.sectionId) {
+      if (!existingTask.projectId) throw new BadRequestError('Section requires a project');
+      const section = await prisma.projectSection.findFirst({
+        where: { id: data.sectionId, projectId: existingTask.projectId },
+        select: { id: true },
+      });
+      if (!section) throw new BadRequestError('Section does not belong to this task project');
+    }
     if (data.sprintId) {
       const sprint = await prisma.sprint.findFirst({
         where: { id: data.sprintId, projectId: existingTask.projectId ?? undefined },
@@ -275,6 +320,7 @@ export const TaskMutation = {
     // (e.g. the frontend refetch after this mutation) sees fresh data.
     // The background job still handles stats/list/analytics invalidation.
     await TaskCache.invalidateTask(taskId);
+    await AccessControlCache.invalidateTaskEdit(taskId, userId);
 
     if (existingTask.workspaceId) {
       addInvalidateCacheJob({ type: 'analytics', workspaceId: existingTask.workspaceId }).catch(() => {});
@@ -292,12 +338,13 @@ export const TaskMutation = {
     if (data.recurrence !== undefined) {
       if (data.recurrence === null) {
         await prisma.taskRecurrence.deleteMany({ where: { taskId } });
+        task.recurrence = null;
       } else {
         const rec = data.recurrence;
         const anchor = task.dueDate && task.dueDate.getTime() > Date.now()
           ? task.dueDate
           : new Date();
-        await prisma.taskRecurrence.upsert({
+        const recurrenceRow = await prisma.taskRecurrence.upsert({
           where:  { taskId },
           create: {
             taskId, pattern: rec.pattern, interval: rec.interval ?? 1,
@@ -308,6 +355,7 @@ export const TaskMutation = {
             days: rec.days ?? undefined, endsAt: rec.endsAt ?? null,
           },
         });
+        task.recurrence = recurrenceRow;
       }
     }
 
@@ -363,11 +411,17 @@ export const TaskMutation = {
       await ProjectAccess.assertProjectNotArchived(existingTask.projectId);
     }
 
-    const wasCompleted = status === 'COMPLETED' && existingTask.status !== 'COMPLETED';
+    await refreshTaskStatus(taskId, existingTask);
+
+    const { wasCompleted, wasReopened } = computeStatusTransition(existingTask.status, status);
 
     const updated = await prisma.task.update({
       where:   { id: taskId },
-      data:    { status: status as any, ...(wasCompleted && { completedAt: new Date() }) },
+      data:    {
+        status: status as any,
+        ...(wasCompleted && { completedAt: new Date() }),
+        ...(wasReopened  && { completedAt: null }),
+      },
       include: taskFullInclude,
     });
 
@@ -375,6 +429,7 @@ export const TaskMutation = {
     // (e.g. the frontend refetch after this mutation) sees fresh data.
     // The background job still handles stats/list/analytics invalidation.
     await TaskCache.invalidateTask(taskId);
+    await AccessControlCache.invalidateTaskEdit(taskId, userId);
 
     if (existingTask.workspaceId) {
       addInvalidateCacheJob({ type: 'analytics', workspaceId: existingTask.workspaceId }).catch(() => {});

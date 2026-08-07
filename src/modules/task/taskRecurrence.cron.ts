@@ -55,7 +55,7 @@ export function computeNextDue(
 
 // ─── Scheduler run ───────────────────────────────────────────────────────────
 
-async function runTaskRecurrenceCron(): Promise<void> {
+export async function runTaskRecurrenceCron(): Promise<void> {
   const start = Date.now();
   let page = 0;
   let generated = 0;

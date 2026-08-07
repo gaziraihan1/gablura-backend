@@ -22,6 +22,8 @@ import {
   ProjectStatus,
   Priority,
   ProjectRole,
+  TaskStatus,
+  RecurrencePattern,
 } from "@prisma/client";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -311,6 +313,61 @@ describe("GET /api/v1/projects/:projectId", () => {
     const data = res.body.data ?? res.body;
     expect(data.id).toBe(project.id);
     expect(data.name).toBe("Detail Project");
+  });
+
+  it("200 — project detail tasks include recurrence", async () => {
+    const { user, workspace } = await createWorkspaceWithOwner();
+    const project = await createProject(workspace.id, user.id, {
+      name: "Recurrence Project",
+    });
+
+    // One recurring and one plain task, so both shapes can be asserted
+    const recurringTask = await prisma.task.create({
+      data: {
+        title: "Weekly Recurring Task",
+        status: TaskStatus.TODO,
+        priority: Priority.MEDIUM,
+        workspaceId: workspace.id,
+        createdById: user.id,
+        projectId: project.id,
+        recurrence: {
+          create: {
+            pattern: RecurrencePattern.WEEKLY,
+            interval: 2,
+            lastOccurredAt: new Date(),
+          },
+        },
+      },
+    });
+    const plainTask = await prisma.task.create({
+      data: {
+        title: "Plain Task",
+        status: TaskStatus.TODO,
+        priority: Priority.MEDIUM,
+        workspaceId: workspace.id,
+        createdById: user.id,
+        projectId: project.id,
+      },
+    });
+
+    const res = await request(app)
+      .get(`/api/v1/projects/${project.id}`)
+      .set(authHeaders(user));
+
+    expect(res.status).toBe(200);
+    const data = res.body.data ?? res.body;
+
+    // projectDetailInclude embeds the recurrence on each task object
+    const recurringInResponse = data.tasks.find((t: any) => t.id === recurringTask.id);
+    expect(recurringInResponse).toBeDefined();
+    expect(recurringInResponse.recurrence).toMatchObject({
+      pattern: "WEEKLY",
+      interval: 2,
+    });
+
+    const plainInResponse = data.tasks.find((t: any) => t.id === plainTask.id);
+    expect(plainInResponse).toBeDefined();
+    expect(plainInResponse.recurrence).toBeNull();
   });
 
   it("403 or 404 — non-member cannot view project", async () => {

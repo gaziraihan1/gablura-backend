@@ -43,6 +43,8 @@ export const taskFullInclude = {
   },
   labels: { include: { label: true } },
   project: { select: projectWithWorkspaceIdSelect },
+  sprint: { select: { id: true, name: true } },
+  milestone: { select: { id: true, title: true, status: true, progress: true } },
   recurrence: true,
   _count: {
     select: {
@@ -62,6 +64,8 @@ export const taskDetailInclude = {
   },
   labels: { include: { label: true } },
   project: { select: projectWithWorkspaceIdSelect },
+  sprint: { select: { id: true, name: true } },
+  milestone: { select: { id: true, title: true, status: true, progress: true } },
   recurrence: true,
   comments: {
     include: {

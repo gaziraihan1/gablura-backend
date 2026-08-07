@@ -119,7 +119,10 @@ export const updateTask = asyncHandler(async (req: AuthRequest, res: Response) =
 
   const task = await TaskMutation.updateTask(
     req.params.id, req.user!.id, parsed.data,
-    async ({ task }) => {
+    async ({ task, oldStatus, newStatus }) => {
+      if (newStatus === 'COMPLETED' && oldStatus && oldStatus !== 'COMPLETED') {
+        void TaskNotifications.notifyTaskCompleted({ taskId: task.id, taskTitle: task.title, userId: req.user!.id });
+      }
       const dates = new Set<Date>();
       if (oldTask?.dueDate) dates.add(oldTask.dueDate);
       if (task.dueDate)     dates.add(task.dueDate);

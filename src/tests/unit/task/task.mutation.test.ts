@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { TaskMutation } from "../../../modules/task/task.mutation.js";
+import { TaskMutation, computeStatusTransition, refreshTaskStatus } from "../../../modules/task/task.mutation.js";
 import { TaskAccess } from "../../../modules/task/task.access.js";
 import { prisma } from "../../../lib/prisma.js";
 import { ProjectAccess } from "../../../modules/project/project.access.js";
@@ -98,6 +98,7 @@ vi.mock("../../../lib/redis/cache.client.js", async (importOriginal) => {
     AnalyticsCache: { invalidateWorkspace: vi.fn() },
     WorkspaceCache: { invalidateWorkspace: vi.fn() },
     TaskCache: { invalidateTask: vi.fn() },
+    AccessControlCache: { invalidateTaskEdit: vi.fn() },
     CacheClient: { 
       ...actual.CacheClient,
       get: vi.fn(), 
@@ -114,6 +115,71 @@ vi.mock("../../../redis/redis.client.js", () => ({
     keys: vi.fn().mockResolvedValue([]),
   })),
 }));
+
+describe("computeStatusTransition", () => {
+  it("detects completion (TODO -> COMPLETED)", () => {
+    expect(computeStatusTransition("TODO", "COMPLETED")).toEqual({
+      wasCompleted: true,
+      wasReopened: false,
+    });
+  });
+
+  it("detects reopen (COMPLETED -> TODO)", () => {
+    expect(computeStatusTransition("COMPLETED", "TODO")).toEqual({
+      wasCompleted: false,
+      wasReopened: true,
+    });
+  });
+
+  it("no transition when the status is unchanged", () => {
+    expect(computeStatusTransition("TODO", "TODO")).toEqual({
+      wasCompleted: false,
+      wasReopened: false,
+    });
+  });
+
+  it("no transition when the next status is missing", () => {
+    expect(computeStatusTransition("TODO", undefined)).toEqual({
+      wasCompleted: false,
+      wasReopened: false,
+    });
+  });
+
+  it("no transition when the task is already completed", () => {
+    expect(computeStatusTransition("COMPLETED", "COMPLETED")).toEqual({
+      wasCompleted: false,
+      wasReopened: false,
+    });
+  });
+});
+
+describe("refreshTaskStatus", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("refreshes existingTask.status from the live DB row", async () => {
+    vi.mocked(prisma.task.findUnique).mockResolvedValue({ status: "COMPLETED" } as any);
+    const existing = { status: "TODO" };
+
+    await refreshTaskStatus("t1", existing);
+
+    expect(prisma.task.findUnique).toHaveBeenCalledWith({
+      where: { id: "t1" },
+      select: { status: true },
+    });
+    expect(existing.status).toBe("COMPLETED");
+  });
+
+  it("keeps existingTask.status when the DB row is missing", async () => {
+    vi.mocked(prisma.task.findUnique).mockResolvedValue(null);
+    const existing = { status: "TODO" };
+
+    await refreshTaskStatus("t1", existing);
+
+    expect(existing.status).toBe("TODO");
+  });
+});
 
 describe("TaskMutation", () => {
   beforeEach(() => {
@@ -372,6 +438,21 @@ describe("TaskMutation", () => {
       }));
     });
 
+    it("should clear completedAt when reopening a COMPLETED task", async () => {
+      vi.mocked(TaskAccess.checkEditPermission).mockResolvedValue({
+        canEdit: true,
+        task: { id: "t1", projectId: null, workspaceId: null, status: "COMPLETED", assignees: [] },
+      });
+      vi.mocked(prisma.task.findUnique).mockResolvedValue({ status: "COMPLETED" } as any);
+      vi.mocked(prisma.task.update).mockResolvedValue({ id: "t1", status: "TODO", completedAt: null } as any);
+
+      await TaskMutation.updateTask("t1", "u1", { status: "TODO" } as any);
+
+      expect(prisma.task.update).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({ status: "TODO", completedAt: null }),
+      }));
+    });
+
     it("should throw ForbiddenError if user cannot edit", async () => {
       vi.mocked(TaskAccess.checkEditPermission).mockResolvedValue({ canEdit: false, reason: "No access" });
 
@@ -394,6 +475,38 @@ describe("TaskMutation", () => {
         data: expect.objectContaining({ status: "COMPLETED" }),
       }));
       expect(TaskCache.invalidateTask).toHaveBeenCalledWith("t1");
+    });
+
+    it("should clear completedAt when reopening a COMPLETED task", async () => {
+      vi.mocked(TaskAccess.checkEditPermission).mockResolvedValue({
+        canEdit: true,
+        task: { id: "t1", projectId: null, workspaceId: null, status: "COMPLETED", assignees: [] },
+      });
+      vi.mocked(prisma.task.findUnique).mockResolvedValue({ status: "COMPLETED" } as any);
+      vi.mocked(prisma.task.update).mockResolvedValue({ id: "t1", status: "TODO", completedAt: null } as any);
+
+      await TaskMutation.updateTaskStatus("t1", "u1", "TODO");
+
+      expect(prisma.task.update).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({ status: "TODO", completedAt: null }),
+      }));
+    });
+
+    it("should trust the live DB status over a stale permission snapshot", async () => {
+      // The permission snapshot says TODO (stale), but the live DB row is
+      // COMPLETED — the fresh read must drive the transition decision.
+      vi.mocked(TaskAccess.checkEditPermission).mockResolvedValue({
+        canEdit: true,
+        task: { id: "t1", projectId: null, workspaceId: null, status: "TODO", assignees: [] },
+      });
+      vi.mocked(prisma.task.findUnique).mockResolvedValue({ status: "COMPLETED" } as any);
+      vi.mocked(prisma.task.update).mockResolvedValue({ id: "t1", status: "TODO", completedAt: null } as any);
+
+      await TaskMutation.updateTaskStatus("t1", "u1", "TODO");
+
+      expect(prisma.task.update).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({ status: "TODO", completedAt: null }),
+      }));
     });
   });
 

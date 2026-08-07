@@ -455,6 +455,66 @@ describe("PUT /api/v1/tasks/:id", () => {
     expect(res.body.data.timeTracking).toBeDefined();
   });
 
+  it("200 — sectionId can be set and cleared via PUT", async () => {
+    const { user, workspace } = await createWorkspaceWithOwner();
+    const project = await prisma.project.create({
+      data: {
+        name: "Sectioned Project",
+        slug: `sp-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        workspaceId: workspace.id,
+        createdById: user.id,
+      },
+    });
+    const section = await prisma.projectSection.create({
+      data: { name: "S-1", projectId: project.id },
+    });
+    const task = await createWorkspaceTask(workspace.id, user.id, {
+      title: "Sectioned Task",
+      projectId: project.id,
+    });
+
+    const setRes = await request(app)
+      .put(`/api/v1/tasks/${task.id}`)
+      .set(await authWithCsrfHeaders(user))
+      .send({ sectionId: section.id });
+
+    expect(setRes.status).toBe(200);
+    expect(setRes.body.data.sectionId).toBe(section.id);
+
+    const clearRes = await request(app)
+      .put(`/api/v1/tasks/${task.id}`)
+      .set(await authWithCsrfHeaders(user))
+      .send({ sectionId: null });
+
+    expect(clearRes.status).toBe(200);
+    expect(clearRes.body.data.sectionId).toBeNull();
+  });
+
+  it("200 — reopening a completed task via PUT clears completedAt", async () => {
+    const { user, workspace } = await createWorkspaceWithOwner();
+    const task = await createWorkspaceTask(workspace.id, user.id, {
+      status: TaskStatus.IN_PROGRESS,
+    });
+
+    const completeRes = await request(app)
+      .put(`/api/v1/tasks/${task.id}`)
+      .set(await authWithCsrfHeaders(user))
+      .send({ status: TaskStatus.COMPLETED });
+    expect(completeRes.status).toBe(200);
+    expect(completeRes.body.data.completedAt).not.toBeNull();
+
+    const reopenRes = await request(app)
+      .put(`/api/v1/tasks/${task.id}`)
+      .set(await authWithCsrfHeaders(user))
+      .send({ status: TaskStatus.TODO });
+    expect(reopenRes.status).toBe(200);
+    expect(reopenRes.body.data.completedAt).toBeNull();
+
+    const db = await prisma.task.findUnique({ where: { id: task.id } });
+    expect(db?.status).toBe(TaskStatus.TODO);
+    expect(db?.completedAt).toBeNull();
+  });
+
   it("200 — workspace ADMIN can update any task", async () => {
     const { user: owner, workspace } = await createWorkspaceWithOwner();
     const admin = await createUser();
@@ -558,6 +618,27 @@ describe("PATCH /api/v1/tasks/:id/status", () => {
     expect(res.status).toBe(200);
     const db = await prisma.task.findUnique({ where: { id: task.id } });
     expect(db?.completedAt).not.toBeNull();
+  });
+
+  it("200 — reopening a completed task via PATCH clears completedAt", async () => {
+    const { user, workspace } = await createWorkspaceWithOwner();
+    const task = await createWorkspaceTask(workspace.id, user.id, {
+      status: TaskStatus.IN_PROGRESS,
+    });
+
+    const completeRes = await request(app)
+      .patch(`/api/v1/tasks/${task.id}/status`)
+      .set(await authWithCsrfHeaders(user))
+      .send({ status: TaskStatus.COMPLETED });
+    expect(completeRes.status).toBe(200);
+    expect(completeRes.body.data.completedAt).not.toBeNull();
+
+    const reopenRes = await request(app)
+      .patch(`/api/v1/tasks/${task.id}/status`)
+      .set(await authWithCsrfHeaders(user))
+      .send({ status: TaskStatus.TODO });
+    expect(reopenRes.status).toBe(200);
+    expect(reopenRes.body.data.completedAt).toBeNull();
   });
 
   it("200 — IN_REVIEW status", async () => {

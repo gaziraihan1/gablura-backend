@@ -92,6 +92,7 @@ export const updateTaskSchema = z.object({
   startDate: z.coerce.date().nullable().optional(),
   estimatedHours: z.number().min(0).optional(),
   assigneeIds: z.array(z.string()).max(5).optional(),
+  sectionId: z.string().nullable().optional(),
   sprintId: z.string().nullable().optional(),
   milestoneId: z.string().nullable().optional(),
   labelIds: z.array(z.string()).optional(),
