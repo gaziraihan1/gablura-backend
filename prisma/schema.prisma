@@ -672,6 +672,8 @@ model Task {
   blockedBy     TaskDependency[] @relation("TaskBlockedBy")
   dependencies  TaskDependency[] @relation("TaskDependsOn")
   labels        TaskLabel[]
+  recurrenceId        String?
+  recurrenceDueDate   DateTime?
   recurrence    TaskRecurrence?
   timeEntries   TimeEntry[]
 
@@ -688,6 +690,7 @@ model Task {
   @@index([sprintId])
   @@index([sectionId])
   @@index([milestoneId])
+  @@unique([recurrenceId, recurrenceDueDate])
 }
 
 model TaskAssignee {
@@ -721,8 +724,9 @@ model TaskRecurrence {
   pattern  RecurrencePattern
   interval Int               @default(1)
   days     Json?
-  endsAt   DateTime?
-  task     Task              @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  endsAt         DateTime?
+  lastOccurredAt DateTime?
+  task           Task              @relation(fields: [taskId], references: [id], onDelete: Cascade)
 }
 
 model DailyTask {

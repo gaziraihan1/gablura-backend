@@ -10,6 +10,8 @@ export { getTimeStatus, getTimeStatusBatch } from './task.utils.js';
 
 export { default as taskRouter } from './task.routes.js';
 
+export { initTaskRecurrenceCrons } from './taskRecurrence.cron.js';
+
 export type {
   TaskStatus,
   TaskPriority,

@@ -43,6 +43,7 @@ export const taskFullInclude = {
   },
   labels: { include: { label: true } },
   project: { select: projectWithWorkspaceIdSelect },
+  recurrence: true,
   _count: {
     select: {
       comments: true,
@@ -61,6 +62,7 @@ export const taskDetailInclude = {
   },
   labels: { include: { label: true } },
   project: { select: projectWithWorkspaceIdSelect },
+  recurrence: true,
   comments: {
     include: {
       user: { select: createdBySelect },

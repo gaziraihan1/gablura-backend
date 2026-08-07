@@ -1,5 +1,5 @@
 import { prisma }          from '../../lib/prisma.js';
-import type { CreateTaskInput, UpdateTaskInput } from './task.types.js';
+import type { CreateTaskInput, UpdateTaskInput, RecurrenceInput } from './task.types.js';
 import { taskFullInclude } from './task.selects.js';
 import { TaskAccess }      from './task.access.js';
 import { getTimeStatus }   from './task.utils.js';
@@ -150,7 +150,28 @@ export const TaskMutation = {
 
     let task: any;
     try {
-      task = await prisma.task.create({ data: taskData, include: taskFullInclude });
+      if (data.recurrence) {
+        const recurrence = data.recurrence;
+        task = await prisma.$transaction(async (tx) => {
+          const created = await tx.task.create({ data: taskData, include: taskFullInclude });
+          const anchor = created.dueDate && created.dueDate.getTime() > Date.now()
+            ? created.dueDate
+            : new Date();
+          await tx.taskRecurrence.create({
+            data: {
+              taskId:         created.id,
+              pattern:        recurrence.pattern,
+              interval:       recurrence.interval ?? 1,
+              days:           recurrence.days ?? undefined,
+              endsAt:         recurrence.endsAt ?? null,
+              lastOccurredAt: anchor,
+            },
+          });
+          return created;
+        });
+      } else {
+        task = await prisma.task.create({ data: taskData, include: taskFullInclude });
+      }
     } catch (dbError) {
       if (!finalWorkspaceId) await rollbackPersonalQuota(data.createdById);
       else if (finalWorkspaceId) {
@@ -267,6 +288,29 @@ export const TaskMutation = {
       addInvalidateCacheJob({ type: 'access-control', taskId }).catch(() => {});
     }
 
+    // Recurrence changes (upsert or stop)
+    if (data.recurrence !== undefined) {
+      if (data.recurrence === null) {
+        await prisma.taskRecurrence.deleteMany({ where: { taskId } });
+      } else {
+        const rec = data.recurrence;
+        const anchor = task.dueDate && task.dueDate.getTime() > Date.now()
+          ? task.dueDate
+          : new Date();
+        await prisma.taskRecurrence.upsert({
+          where:  { taskId },
+          create: {
+            taskId, pattern: rec.pattern, interval: rec.interval ?? 1,
+            days: rec.days ?? undefined, endsAt: rec.endsAt ?? null, lastOccurredAt: anchor,
+          },
+          update: {
+            pattern: rec.pattern, interval: rec.interval ?? 1,
+            days: rec.days ?? undefined, endsAt: rec.endsAt ?? null,
+          },
+        });
+      }
+    }
+
     let addedAssigneeIds: string[] = [];
     if (data.assigneeIds !== undefined || data.labelIds !== undefined) {
       // Atomic replacement of assignees and labels within a transaction
@@ -373,6 +417,88 @@ export const TaskMutation = {
 
     if (onDeleted) {
       onDeleted({ task }).catch((err) => console.error('Post-deletion callback failed:', err));
+    }
+
+    return { success: true };
+  },
+
+  async upsertRecurrence(taskId: string, userId: string, data: RecurrenceInput, onUpserted?: (data: { task: any; recurrence: any }) => Promise<void>) {
+    const permission = await TaskAccess.checkEditPermission(taskId, userId);
+    if (!permission.canEdit) {
+      throw new ForbiddenError(permission.reason || 'You do not have permission to edit this task');
+    }
+    if (permission.task?.projectId) {
+      await ProjectAccess.assertProjectNotArchived(permission.task.projectId);
+    }
+
+    const taskInfo = await prisma.task.findUnique({
+      where:  { id: taskId },
+      select: { id: true, title: true, workspaceId: true, dueDate: true },
+    });
+
+    const anchor = taskInfo?.dueDate && taskInfo.dueDate.getTime() > Date.now()
+      ? taskInfo.dueDate
+      : new Date();
+
+    const recurrence = await prisma.taskRecurrence.upsert({
+      where:  { taskId },
+      create: {
+        taskId, pattern: data.pattern, interval: data.interval ?? 1,
+        days: data.days ?? undefined, endsAt: data.endsAt ?? null, lastOccurredAt: anchor,
+      },
+      update: {
+        pattern: data.pattern, interval: data.interval ?? 1,
+        days: data.days ?? undefined, endsAt: data.endsAt ?? null,
+      },
+    });
+
+    if (taskInfo?.workspaceId) {
+      addInvalidateCacheJob({ type: 'task', taskId, userId, workspaceId: taskInfo.workspaceId }).catch(() => {});
+      addInvalidateCacheJob({ type: 'calendar', userId, workspaceId: taskInfo.workspaceId }).catch(() => {});
+    } else {
+      addInvalidateCacheJob({ type: 'task', taskId, userId }).catch(() => {});
+      addInvalidateCacheJob({ type: 'calendar', userId }).catch(() => {});
+    }
+
+    if (onUpserted) {
+      onUpserted({ task: taskInfo, recurrence }).catch((err) =>
+        console.error('Post-recurrence-upsert callback failed:', err),
+      );
+    }
+
+    return recurrence;
+  },
+
+  async deleteRecurrence(taskId: string, userId: string, onDeleted?: (data: { task: any }) => Promise<void>) {
+    const permission = await TaskAccess.checkEditPermission(taskId, userId);
+    if (!permission.canEdit) {
+      throw new ForbiddenError(permission.reason || 'You do not have permission to edit this task');
+    }
+    if (permission.task?.projectId) {
+      await ProjectAccess.assertProjectNotArchived(permission.task.projectId);
+    }
+
+    const recurrence = await prisma.taskRecurrence.findUnique({ where: { taskId } });
+    if (!recurrence) throw new NotFoundError('Recurrence not found for this task');
+
+    await prisma.taskRecurrence.delete({ where: { taskId } });
+
+    const taskInfo = await prisma.task.findUnique({
+      where:  { id: taskId },
+      select: { id: true, title: true, workspaceId: true },
+    });
+    if (taskInfo?.workspaceId) {
+      addInvalidateCacheJob({ type: 'task', taskId, userId, workspaceId: taskInfo.workspaceId }).catch(() => {});
+      addInvalidateCacheJob({ type: 'calendar', userId, workspaceId: taskInfo.workspaceId }).catch(() => {});
+    } else {
+      addInvalidateCacheJob({ type: 'task', taskId, userId }).catch(() => {});
+      addInvalidateCacheJob({ type: 'calendar', userId }).catch(() => {});
+    }
+
+    if (onDeleted) {
+      onDeleted({ task: taskInfo }).catch((err) =>
+        console.error('Post-recurrence-delete callback failed:', err),
+      );
     }
 
     return { success: true };

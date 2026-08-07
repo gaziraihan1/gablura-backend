@@ -6,7 +6,7 @@ import { requireCsrfToken, getCsrfTokenHandler } from "./middleware/csrf.js";
 import { initSentry } from "./lib/sentry.js";
 
 import projectRoutes from "./modules/project/project.routes.js";
-import { taskRouter } from "./modules/task/index.js";
+import { taskRouter, initTaskRecurrenceCrons } from "./modules/task/index.js";
 import {
   dailyTaskRouter,
   initDailyTaskCrons,
@@ -156,6 +156,7 @@ initNotificationCrons();
 initDailyTaskCrons();
 initWellnessCrons();
 initBurnoutSignalCron();
+initTaskRecurrenceCrons();
 
 // Initialize queue workers
 initQueueWorkers().catch((err) => {

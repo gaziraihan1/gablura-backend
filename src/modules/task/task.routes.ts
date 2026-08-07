@@ -15,6 +15,8 @@ import {
   unlinkGitHubEntity,
   linkSlackMessage,
   unlinkSlackMessage,
+  upsertRecurrence,
+  deleteRecurrence,
 } from './task.controller.js';
 import { commentRouter } from '../comment/index.js';
 import {
@@ -37,6 +39,9 @@ router.get('/:id',          getTask);
 router.put('/:id',          updateTask);
 router.patch('/:id/status', updateTaskStatus);
 router.delete('/:id',       deleteTask);
+
+router.post('/:id/recurrence',   upsertRecurrence);
+router.delete('/:id/recurrence', deleteRecurrence);
 
 router.put('/:id/github-link', linkGitHubEntity);
 router.put('/:id/github-unlink', unlinkGitHubEntity);

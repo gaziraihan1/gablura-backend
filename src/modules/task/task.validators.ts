@@ -18,6 +18,14 @@ const taskIntentEnum = z.enum([
   "COMMUNICATION",
 ]);
 const energyTypeEnum = z.enum(["LOW", "MEDIUM", "HIGH"]);
+const recurrencePatternEnum = z.enum(["DAILY", "WEEKLY", "MONTHLY", "CUSTOM"]);
+
+export const recurrenceSchema = z.object({
+  pattern: recurrencePatternEnum,
+  interval: z.coerce.number().int().min(1).max(365).default(1),
+  days: z.array(z.coerce.number().int().min(0).max(6)).max(7).optional(),
+  endsAt: z.coerce.date().nullable().optional(),
+});
 
 export const getTasksQuerySchema = z.object({
   type: z.string().optional(),
@@ -72,6 +80,7 @@ export const createTaskSchema = z.object({
   energyType: energyTypeEnum.optional(),
   distractionCost: z.number().min(0).optional(),
   intent: taskIntentEnum.optional(),
+  recurrence: recurrenceSchema.optional(),
 });
 
 export const updateTaskSchema = z.object({
@@ -91,7 +100,10 @@ export const updateTaskSchema = z.object({
   energyType: energyTypeEnum.nullable().optional(),
   distractionCost: z.number().min(0).optional(),
   intent: taskIntentEnum.optional(),
+  recurrence: recurrenceSchema.nullable().optional(),
 });
+
+export const upsertRecurrenceSchema = recurrenceSchema;
 
 export const updateTaskStatusSchema = z.object({
   status: taskStatusEnum,
@@ -107,3 +119,4 @@ export type CreateTaskBody = z.infer<typeof createTaskSchema>;
 export type UpdateTaskBody = z.infer<typeof updateTaskSchema>;
 export type UpdateTaskStatusBody = z.infer<typeof updateTaskStatusSchema>;
 export type AddCommentBody = z.infer<typeof addCommentSchema>;
+export type UpsertRecurrenceBody = z.infer<typeof upsertRecurrenceSchema>;

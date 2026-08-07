@@ -17,6 +17,7 @@ import {
   createTaskSchema,
   updateTaskSchema,
   updateTaskStatusSchema,
+  upsertRecurrenceSchema,
 } from './task.validators.js';
 import { prisma } from '../../lib/prisma.js';
 
@@ -194,6 +195,48 @@ export const deleteTask = asyncHandler(async (req: AuthRequest, res: Response) =
 
   res.json({ success: true, message: 'Task deleted successfully' });
 });
+export const upsertRecurrence = asyncHandler(async (req: AuthRequest, res: Response) => {
+  const parsed = upsertRecurrenceSchema.safeParse(req.body);
+  if (!parsed.success) throw new ValidationError('Validation error', parsed.error.issues);
+
+  const recurrence = await TaskMutation.upsertRecurrence(
+    req.params.id, req.user!.id, parsed.data,
+    async ({ task, recurrence: rec }) => {
+      if (task?.workspaceId) {
+        const unit = rec.pattern === 'WEEKLY' ? 'week' : rec.pattern === 'MONTHLY' ? 'month' : 'day';
+        void TaskActivity.logUpdated({
+          taskId:      task.id,
+          taskTitle:   task.title,
+          userId:      req.user!.id,
+          workspaceId: task.workspaceId,
+          changes:     { recurrence: `${rec.pattern} every ${rec.interval} ${unit}${rec.interval > 1 ? 's' : ''}` },
+        });
+      }
+    },
+  );
+
+  res.json({ success: true, message: 'Recurrence updated', data: recurrence });
+});
+
+export const deleteRecurrence = asyncHandler(async (req: AuthRequest, res: Response) => {
+  await TaskMutation.deleteRecurrence(
+    req.params.id, req.user!.id,
+    async ({ task }) => {
+      if (task?.workspaceId) {
+        void TaskActivity.logUpdated({
+          taskId:      task.id,
+          taskTitle:   task.title,
+          userId:      req.user!.id,
+          workspaceId: task.workspaceId,
+          changes:     { recurrence: 'stopped' },
+        });
+      }
+    },
+  );
+
+  res.json({ success: true, message: 'Recurrence stopped' });
+});
+
 export const getPersonalQuota = asyncHandler(async (req: AuthRequest, res: Response) => {
   const info = await getPersonalQuotaInfo(req.user!.id);
   res.json({ success: true, data: info });

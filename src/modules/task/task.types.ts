@@ -2,6 +2,14 @@ export type TaskStatus   = 'TODO' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
 export type TaskPriority = 'URGENT' | 'HIGH' | 'MEDIUM' | 'LOW';
 export type TaskIntent   = 'EXECUTION' | 'PLANNING' | 'REVIEW' | 'LEARNING' | 'COMMUNICATION';
 export type EnergyType   = 'LOW' | 'MEDIUM' | 'HIGH';
+export type RecurrencePattern = 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'CUSTOM';
+
+export interface RecurrenceInput {
+  pattern:  RecurrencePattern;
+  interval?: number;
+  days?:     number[];
+  endsAt?:   Date | null;
+}
 
 export interface TaskFilterParams {
   userId:      string;
@@ -46,6 +54,7 @@ export interface CreateTaskInput {
   energyType?:      EnergyType;
   distractionCost?: number;
   intent?:          TaskIntent;
+  recurrence?:      RecurrenceInput;
   createdById:      string;
 }
 
@@ -67,6 +76,7 @@ export interface UpdateTaskInput {
   energyType?:       EnergyType | null;
   distractionCost?:  number;
   intent?:           TaskIntent;
+  recurrence?:       RecurrenceInput | null;
 }
 
 export interface TimeTracking {
