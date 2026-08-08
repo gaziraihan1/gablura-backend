@@ -97,6 +97,15 @@ describe('Storage API Contract Tests', () => {
 
   describe('Storage Write Operations', () => {
     it('POST /storage/:workspaceId/bulk-delete should return success', async () => {
+      // Verify workspace exists before creating files
+      const workspaceExists = await prisma.workspace.findUnique({
+        where: { id: testWorkspace.id }
+      });
+      
+      if (!workspaceExists) {
+        throw new Error(`Workspace ${testWorkspace.id} does not exist`);
+      }
+
       const files = await prisma.file.createMany({
         data: [
           {
@@ -136,6 +145,15 @@ describe('Storage API Contract Tests', () => {
     });
 
     it('DELETE /storage/files/:fileId should return success', async () => {
+      // Verify workspace exists before creating file
+      const workspaceExists = await prisma.workspace.findUnique({
+        where: { id: testWorkspace.id }
+      });
+      
+      if (!workspaceExists) {
+        throw new Error(`Workspace ${testWorkspace.id} does not exist`);
+      }
+
       const file = await prisma.file.create({
         data: {
           name: 'delete-me.txt',
@@ -156,6 +174,14 @@ describe('Storage API Contract Tests', () => {
     });
 
     it('POST /storage/:workspaceId/check-upload should return success', async () => {
+      // Verify workspace exists before making request
+      const workspaceExists = await prisma.workspace.findUnique({
+        where: { id: testWorkspace.id }
+      });
+      
+      if (!workspaceExists) {
+        throw new Error(`Workspace ${testWorkspace.id} does not exist`);
+      }
 
       const response = await request(app)
         .post(`/api/v1/storage/${testWorkspace.id}/check-upload`)

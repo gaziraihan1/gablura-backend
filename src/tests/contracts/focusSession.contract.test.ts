@@ -34,7 +34,7 @@ describe('FocusSession API Contract Tests', () => {
   const ensureUserExists = async () => {
     await prisma.user.upsert({
       where: { email: 'contract-test@example.com' },
-      update: { id: testUserId },
+      update: {}, // Don't update id field - it's the primary key
       create: {
         id: testUserId,
         email: 'contract-test@example.com',
