@@ -154,7 +154,10 @@ describe('changePassword', () => {
     expect(argon2.hash).toHaveBeenCalledWith(mockNewPassword);
     expect(prisma.user.update).toHaveBeenCalledWith({
       where: { id: mockUserId },
-      data: { password: '$argon2id$v=19$m=65536$t=3$p=4$newhash' },
+      data: {
+        password: '$argon2id$v=19$m=65536$t=3$p=4$newhash',
+        lastPasswordChange: expect.any(Date),
+      },
     });
     expect(mockRes.status).toHaveBeenCalledWith(200);
     expect(mockRes.json).toHaveBeenCalledWith({

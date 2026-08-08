@@ -122,6 +122,21 @@ describe('Billing API Contract Tests', () => {
         },
       });
 
+      // The Plan row is the single source of truth for pricing — a fresh
+      // test DB has no BUSINESS plan, so seed it (same pattern as the PRO
+      // fallback above) before attempting the upgrade.
+      const businessPlan = await prisma.plan.findFirst({ where: { name: 'BUSINESS' } });
+      if (!businessPlan) {
+        await prisma.plan.create({
+          data: {
+            name: 'BUSINESS',
+            displayName: 'Business Plan',
+            stripePriceIdMonthly: 'price_business_monthly',
+            stripePriceIdYearly: 'price_business_yearly',
+          },
+        });
+      }
+
       const response = await request(app)
         .post(`/api/v1/workspaces/${testWorkspace.id}/billing/change-plan`)
         .send({ newPlanName: 'BUSINESS' });

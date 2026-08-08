@@ -13,6 +13,7 @@ vi.mock("../../../lib/prisma.js", () => ({
       delete: vi.fn(),
       findUnique: vi.fn(),
       findFirst: vi.fn(),
+      updateMany: vi.fn(),
     },
     workspaceMember: {
       create: vi.fn(),
@@ -20,7 +21,9 @@ vi.mock("../../../lib/prisma.js", () => ({
       findFirst: vi.fn(),
       update: vi.fn(),
       findUnique: vi.fn(),
+      updateMany: vi.fn(),
     },
+    $transaction: vi.fn(),
     workspaceInvitation: {
       create: vi.fn(),
       findFirst: vi.fn(),
@@ -71,6 +74,15 @@ describe("WorkspaceMutation", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // assertNotSuspended (used by update/delete/invite/removeMember/role) reads
+    // workspace.deletedAt via findUnique. Only treat the workspace lookups as
+    // found; slug-uniqueness checks (create) must return null so the slug
+    // generator does not loop forever on a permanently-taken slug.
+    (prisma.workspace.findUnique as any).mockImplementation(async (args: any) => {
+      if (args?.select?.deletedAt) return { deletedAt: null } as any;
+      if (args?.select?.ownerId) return { deletedAt: null, ownerId: "ws-owner" } as any;
+      return null;
+    });
   });
 
   describe("create", () => {
@@ -238,6 +250,57 @@ describe("WorkspaceMutation", () => {
 
       await expect(WorkspaceMutation.updateMemberRole("ws-1", mockUser.id, "mem-1", "ADMIN"))
         .rejects.toThrow(ForbiddenError);
+    });
+
+    it("transfers ownership: promotes target, demotes previous owner, moves ownerId", async () => {
+      // $transaction runs the callback with the (mocked) prisma client as tx
+      (prisma as any).$transaction = vi.fn(async (cb: any) => cb(prisma));
+      vi.mocked(WorkspaceCache.invalidateWorkspace).mockResolvedValue(undefined as any);
+
+      vi.mocked(prisma.workspaceMember.findFirst).mockResolvedValue({
+        role: "OWNER",
+        userId: mockUser.id,
+        workspace: { name: "WS" },
+      } as any);
+      vi.mocked(prisma.workspaceMember.findUnique).mockResolvedValue({
+        id: "mem-2",
+        workspaceId: "ws-1",
+        role: "MEMBER",
+        userId: "user-2",
+      } as any);
+      vi.mocked(prisma.workspaceMember.update).mockResolvedValue({
+        id: "mem-2",
+        role: "OWNER",
+      } as any);
+      vi.mocked(prisma.workspaceMember.updateMany).mockResolvedValue({ count: 1 } as any);
+      vi.mocked(prisma.workspace.update).mockResolvedValue({
+        id: "ws-1",
+        ownerId: "user-2",
+      } as any);
+
+      const result = await WorkspaceMutation.updateMemberRole(
+        "ws-1",
+        mockUser.id,
+        "mem-2",
+        "OWNER" as any,
+      );
+
+      expect(prisma.workspaceMember.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: "mem-2" },
+          data: { role: "OWNER" },
+        }),
+      );
+      // Previous owner (mockUser.id) is demoted to ADMIN — single-owner invariant
+      expect(prisma.workspaceMember.updateMany).toHaveBeenCalledWith({
+        where: { workspaceId: "ws-1", userId: mockUser.id, role: "OWNER" },
+        data: { role: "ADMIN" },
+      });
+      expect(prisma.workspace.update).toHaveBeenCalledWith({
+        where: { id: "ws-1" },
+        data: { ownerId: "user-2" },
+      });
+      expect(result.role).toBe("OWNER");
     });
   });
 

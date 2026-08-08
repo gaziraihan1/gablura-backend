@@ -1134,19 +1134,50 @@ describe("owner/admin removal & role-change hardening", () => {
     expect(res.body.code).toBe("CANNOT_CHANGE_OWNER_ROLE");
   });
 
-  it("400 — OWNER role cannot be assigned via role updates", async () => {
+  it("200 — OWNER transfers ownership to another member (transfer journey)", async () => {
     const { user: owner, workspace } = await createWorkspaceWithOwner();
     const member = await createUser();
-    const memberRec = await addMemberToWorkspace(member.id, workspace.id, WorkspaceRole.MEMBER);
+    const memberRec = await addMemberToWorkspace(member.id, workspace.id, WorkspaceRole.ADMIN);
 
     const res = await request(app)
       .put(`/api/v1/workspaces/${workspace.id}/members/${memberRec.id}/role`)
       .set(authHeaders(owner))
       .send({ role: "OWNER" });
 
-    expect(res.status).toBe(400);
-    expect(res.body.code).toBe("OWNER_ROLE_NOT_ASSIGNABLE");
+    expect(res.status).toBe(200);
+    expect(res.body.data.role).toBe("OWNER");
+
+    // The new owner takes the workspace; the previous owner is demoted to
+    // ADMIN (still a member — no lockout).
+    const updated = await prisma.workspace.findUnique({
+      where: { id: workspace.id },
+      select: { ownerId: true },
+    });
+    expect(updated?.ownerId).toBe(member.id);
+
+    const oldOwnerRole = await prisma.workspaceMember.findFirst({
+      where: { workspaceId: workspace.id, userId: owner.id },
+      select: { role: true },
+    });
+    expect(oldOwnerRole?.role).toBe(WorkspaceRole.ADMIN);
   });
+
+  it("403 — a non-owner cannot assign OWNER", async () => {
+    const { user: owner, workspace } = await createWorkspaceWithOwner();
+    const admin = await createUser();
+    await addMemberToWorkspace(admin.id, workspace.id, WorkspaceRole.ADMIN);
+    const member = await createUser();
+    const memberRec = await addMemberToWorkspace(member.id, workspace.id, WorkspaceRole.MEMBER);
+
+    const res = await request(app)
+      .put(`/api/v1/workspaces/${workspace.id}/members/${memberRec.id}/role`)
+      .set(authHeaders(admin))
+      .send({ role: "OWNER" });
+
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe("FORBIDDEN");
+  });
+
 });
 
 describe("suspended workspace enforcement (G3/G5)", () => {

@@ -9,6 +9,7 @@ vi.mock("../../../lib/prisma.js", () => ({
     workspace: {
       findMany: vi.fn(),
       findFirst: vi.fn(),
+      findUnique: vi.fn(),
     },
     workspaceMember: {
       findMany: vi.fn(),
@@ -51,6 +52,9 @@ describe("WorkspaceQuery", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // assertNotSuspended (used by getMembers/getStats) reads workspace.deletedAt
+    // via findUnique — default to an active workspace.
+    vi.mocked(prisma.workspace.findUnique).mockResolvedValue({ deletedAt: null } as any);
   });
 
   describe("getUserWorkspaces", () => {
@@ -61,7 +65,7 @@ describe("WorkspaceQuery", () => {
       const result = await WorkspaceQuery.getUserWorkspaces(mockUser.id);
       
       expect(prisma.workspace.findMany).toHaveBeenCalledWith(expect.objectContaining({
-        where: { members: { some: { userId: mockUser.id } } },
+        where: { deletedAt: null, members: { some: { userId: mockUser.id } } },
       }));
       expect(result).toEqual(workspaces);
     });

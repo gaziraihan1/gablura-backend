@@ -53,6 +53,9 @@ import { getContactMessages } from '../../../modules/contact/contact.service.js'
 describe('Security Fixes', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // assertNotSuspended (added to removeMember/updateMemberRole) reads
+    // workspace.deletedAt via findUnique — default to an active workspace.
+    mockPrisma.workspace.findUnique.mockResolvedValue({ deletedAt: null, ownerId: "ws-owner" } as any);
   });
 
   // ──────────────────────────────────────────────────────────────────────────

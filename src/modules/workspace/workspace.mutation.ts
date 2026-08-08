@@ -280,25 +280,72 @@ if (invitation.workspaceId) {
     // Verify the member record belongs to this workspace
     const targetMember = await prisma.workspaceMember.findUnique({
       where: { id: memberId },
-      select: { workspaceId: true, role: true },
+      select: { workspaceId: true, role: true, userId: true },
     });
     if (!targetMember || targetMember.workspaceId !== workspaceId) {
       throw new NotFoundError("Member");
     }
 
-    // G2 hardening: ownership can only exist via workspace creation, and the
-    // owner's own role can never be changed (prevents owner lockout + deadlock).
-    if (role === "OWNER") {
-      throw new BadRequestError(
-        "Ownership cannot be assigned via role updates",
-        "OWNER_ROLE_NOT_ASSIGNABLE",
-      );
-    }
     if (targetMember.role === "OWNER") {
       throw new ForbiddenError(
         "Cannot change the workspace owner's role",
         "CANNOT_CHANGE_OWNER_ROLE",
       );
+    }
+
+    // Ownership transfer: the current owner can hand the workspace to any
+    // other member. The new owner is promoted, the previous owner is demoted
+    // to ADMIN (they stay a member, so there is no lockout), and the
+    // workspace's ownerId moves to the new owner. Exactly one OWNER exists
+    // at all times.
+    if (role === "OWNER") {
+      const transferTarget = await prisma.workspace.findUnique({
+        where: { id: workspaceId },
+        select: { ownerId: true, slug: true },
+      });
+      if (!transferTarget) throw new NotFoundError("Workspace");
+      if (transferTarget.ownerId === targetMember.userId) {
+        throw new ForbiddenError(
+          "This member already owns the workspace",
+          "ALREADY_OWNER",
+        );
+      }
+
+      const promoted = await prisma.$transaction(async (tx) => {
+        const member = await tx.workspaceMember.update({
+          where: { id: memberId },
+          data: { role: "OWNER" },
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                image: true,
+                notifications: true,
+              },
+            },
+          },
+        });
+        // Demote by the verified owner's member row (updaterId) rather than
+        // the possibly-stale workspace.ownerId column, so exactly one OWNER
+        // exists even if the ownerId record is inconsistent.
+        await tx.workspaceMember.updateMany({
+          where: { workspaceId, userId: updater.userId, role: "OWNER" },
+          data: { role: "ADMIN" },
+        });
+        await tx.workspace.update({
+          where: { id: workspaceId },
+          data: { ownerId: targetMember.userId },
+        });
+        return member;
+      });
+
+      await WorkspaceCache.invalidateWorkspace(workspaceId, transferTarget.slug).catch(() => {});
+      addInvalidateCacheJob({ type: "access-control", workspaceId }).catch(() => {});
+      if (onUpdated)
+        onUpdated({ member: promoted, workspaceName: updater.workspace?.name ?? "" }).catch(console.error);
+      return promoted;
     }
 
     const member = await prisma.workspaceMember.update({
