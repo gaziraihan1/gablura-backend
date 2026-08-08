@@ -8,7 +8,8 @@ import {
   createWorkspaceWithOwner,
   addMemberToWorkspace,
 } from "../factories/index.js";
-import { authHeaders, authWithCsrfHeaders } from "../helpers/auth.js";
+import { authHeaders, authWithCsrfHeaders, generateTestToken } from "../helpers/auth.js";
+import { getRedisClient } from "../../redis/redis.client.js";
 import { WorkspaceRole } from "@prisma/client";
 
 const BASE = "/api/v1/user";
@@ -354,5 +355,123 @@ describe("GET /api/v1/user/workspace-members", () => {
   it("401 — unauthenticated", async () => {
     const res = await request(app).get(`${BASE}/workspace-members`);
     expect(res.status).toBe(401);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PUT /api/v1/user/password + GET /api/v1/user/security
+// Password changes now stamp lastPasswordChange (password-age tracking).
+// ─────────────────────────────────────────────────────────────────────────────
+describe("password change & security settings (lastPasswordChange)", () => {
+  it("200 — changing the password records lastPasswordChange in security settings", async () => {
+    const user = await createUser();
+
+    // Before any change: lastPasswordChange is null
+    const before = await request(app)
+      .get(`${BASE}/security`)
+      .set(authHeaders(user));
+    expect(before.status).toBe(200);
+    expect(before.body.data.lastPasswordChange).toBeNull();
+
+    const res = await request(app)
+      .put(`${BASE}/password`)
+      .set(await authWithCsrfHeaders(user))
+      .send({ currentPassword: "TestPass1234!", newPassword: "NewPass5678!" });
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+
+    const after = await request(app)
+      .get(`${BASE}/security`)
+      .set(authHeaders(user));
+    expect(after.status).toBe(200);
+    expect(after.body.data.lastPasswordChange).toBeTruthy();
+    expect(new Date(after.body.data.lastPasswordChange).getTime()).toBeGreaterThan(0);
+  });
+
+  it("401 — a wrong current password does not stamp lastPasswordChange", async () => {
+    const user = await createUser();
+    const res = await request(app)
+      .put(`${BASE}/password`)
+      .set(await authWithCsrfHeaders(user))
+      .send({ currentPassword: "WrongPass!", newPassword: "NewPass5678!" });
+    expect(res.status).toBe(401);
+
+    const sec = await request(app)
+      .get(`${BASE}/security`)
+      .set(authHeaders(user));
+    expect(sec.body.data.lastPasswordChange).toBeNull();
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Active session management (Security page)
+// ─────────────────────────────────────────────────────────────────────────────
+describe("Sessions endpoints", () => {
+  it("GET /sessions — 200 with an array of sessions", async () => {
+    const user = await createUser();
+
+    const res = await request(app)
+      .get(`${BASE}/sessions`)
+      .set(authHeaders(user));
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(Array.isArray(res.body.data)).toBe(true);
+  });
+
+  it("GET /sessions — includes a tracked session with isCurrent true", async () => {
+    const user = await createUser();
+    const sessionId = "itest-session-1";
+    await getRedisClient().sadd(`user:sessions:${user.id}`, sessionId);
+    await getRedisClient().setex(
+      `session:metadata:${sessionId}`,
+      3600,
+      JSON.stringify({
+        deviceId: null,
+        ipAddress: "127.0.0.1",
+        userAgent:
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
+        lastActivity: Date.now(),
+      }),
+    );
+
+    const token = generateTestToken(user, { sessionId });
+    const res = await request(app)
+      .get(`${BASE}/sessions`)
+      .set({ Authorization: `Bearer ${token}` });
+
+    expect(res.status).toBe(200);
+    const session = res.body.data.find((s: any) => s.id === sessionId);
+    expect(session).toBeDefined();
+    expect(session.isCurrent).toBe(true);
+    expect(session.browser).toBe("Chrome");
+    expect(session.os).toBe("Windows");
+
+    // Cleanup
+    await getRedisClient().srem(`user:sessions:${user.id}`, sessionId);
+    await getRedisClient().del(`session:metadata:${sessionId}`);
+  });
+
+  it("DELETE /sessions — 200 revokes other sessions", async () => {
+    const user = await createUser();
+
+    const res = await request(app)
+      .delete(`${BASE}/sessions`)
+      .set(await authWithCsrfHeaders(user));
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+  });
+
+  it("DELETE /sessions/:id — 404 for a session that is not the user's", async () => {
+    const user = await createUser();
+
+    const res = await request(app)
+      .delete(`${BASE}/sessions/nonexistent-session`)
+      .set(await authWithCsrfHeaders(user));
+
+    expect(res.status).toBe(404);
   });
 });

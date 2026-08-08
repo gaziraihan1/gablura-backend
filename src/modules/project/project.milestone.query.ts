@@ -9,9 +9,12 @@ export const MilestoneQuery = {
     });
   },
 
-  async getById(id: string) {
-    const milestone = await prisma.projectMilestone.findUnique({
-      where:  { id },
+  async getById(id: string, projectId?: string) {
+    const milestone = await prisma.projectMilestone.findFirst({
+      where:  {
+        id,
+        ...(projectId ? { projectId } : {}),
+      },
       include: {
         dependsOn: true,
         dependencies: true,

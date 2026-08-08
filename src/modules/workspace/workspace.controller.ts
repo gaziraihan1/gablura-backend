@@ -12,6 +12,7 @@ import {
   inviteMemberSchema,
 } from "./workspace.validators.js";
 import { prisma } from "../../lib/prisma.js";
+import { TaskQuery } from "../task/task.query.js";
 import { asyncHandler, ValidationError } from "../../errors/index.js";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -76,6 +77,37 @@ export const getWorkspaceOverview = asyncHandler(
       req.user!.id,
     );
     res.json({ success: true, data: overview });
+  },
+);
+
+export const getWorkspaceTasks = asyncHandler(
+  async (req: AuthRequest, res: Response) => {
+    const { workspaceSlug } = req.params;
+    const limit = Math.min(Math.max(Number(req.query.limit) || 20, 1), 100);
+
+    // Reuses the existing public-or-member read gate (throws NotFound for
+    // workspaces the requesting user cannot view). Callers (dashboard
+    // TaskHighlights) iterate the user's own workspaces, so the requester is
+    // always a member; the TaskQuery workspace filter below is membership-
+    // scoped, so a non-member hitting a public workspace gets an empty list.
+    const workspace = (looksLikeId(workspaceSlug)
+      ? await WorkspaceQuery.getById(workspaceSlug, req.user!.id)
+      : await WorkspaceQuery.getBySlug(workspaceSlug, req.user!.id)) as
+      | { id: string }
+      | null;
+
+    if (!workspace) {
+      res.status(404).json({ success: false, message: "Workspace not found" });
+      return;
+    }
+
+    const result = await TaskQuery.getTasks(
+      { userId: req.user!.id, workspaceId: workspace.id },
+      { page: 1, pageSize: limit },
+      { sortBy: "createdAt", sortOrder: "desc" },
+    );
+
+    res.json({ success: true, data: result.data });
   },
 );
 

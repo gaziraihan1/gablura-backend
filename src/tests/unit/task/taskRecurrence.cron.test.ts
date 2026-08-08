@@ -10,6 +10,7 @@ vi.mock('../../../lib/prisma.js', () => ({
     task:          { createMany: vi.fn(), findFirst: vi.fn() },
     taskLabel:     { createMany: vi.fn() },
     taskAssignee:  { createMany: vi.fn() },
+    workspaceMember: { count: vi.fn() },
     $transaction:  vi.fn(),
   },
 }));
@@ -18,10 +19,27 @@ vi.mock('../../../queue/index.js', () => ({
   addInvalidateCacheJob: vi.fn(() => Promise.resolve()),
 }));
 
+vi.mock('../../../modules/task/task.quota.service.js', () => ({
+  resolveUserPlan: vi.fn().mockResolvedValue('FREE'),
+  resolveWorkspacePlan: vi.fn().mockResolvedValue('FREE'),
+  checkAndConsumePersonalQuota: vi.fn().mockResolvedValue({ allowed: true, remaining: 10 }),
+  checkAndConsumeWorkspaceQuota: vi.fn().mockResolvedValue({ allowed: true, remaining: 10 }),
+  rollbackPersonalQuota: vi.fn().mockResolvedValue(undefined),
+  rollbackWorkspaceQuota: vi.fn().mockResolvedValue(undefined),
+}));
+
 import cron from 'node-cron';
 import { prisma } from '../../../lib/prisma.js';
 import { addInvalidateCacheJob } from '../../../queue/index.js';
 import { initTaskRecurrenceCrons, computeNextDue } from '../../../modules/task/taskRecurrence.cron.js';
+import {
+  resolveUserPlan,
+  resolveWorkspacePlan,
+  checkAndConsumePersonalQuota,
+  checkAndConsumeWorkspaceQuota,
+  rollbackPersonalQuota,
+  rollbackWorkspaceQuota,
+} from '../../../modules/task/task.quota.service.js';
 
 describe('taskRecurrence.cron', () => {
   beforeEach(() => {
@@ -224,6 +242,148 @@ describe('taskRecurrence.cron', () => {
           where: { OR: [{ endsAt: null }, { endsAt: { gt: expect.any(Date) } }] },
         }),
       );
+    });
+
+    it('skips recurrences whose task project is archived', async () => {
+      const rec = {
+        ...baseRecurrence,
+        lastOccurredAt: new Date(Date.now() - 2 * 86400000),
+        task: { ...baseRecurrence.task, project: { status: 'ARCHIVED' } },
+      };
+      vi.mocked(prisma.taskRecurrence.findMany)
+        .mockResolvedValueOnce([rec] as any)
+        .mockResolvedValueOnce([] as any);
+
+      initTaskRecurrenceCrons();
+      const callback = vi.mocked(cron.schedule).mock.calls[0][1] as () => Promise<void>;
+      await callback();
+
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('skips recurrences whose workspace is soft-deleted', async () => {
+      const rec = {
+        ...baseRecurrence,
+        lastOccurredAt: new Date(Date.now() - 2 * 86400000),
+        task: { ...baseRecurrence.task, workspace: { deletedAt: new Date() } },
+      };
+      vi.mocked(prisma.taskRecurrence.findMany)
+        .mockResolvedValueOnce([rec] as any)
+        .mockResolvedValueOnce([] as any);
+
+      initTaskRecurrenceCrons();
+      const callback = vi.mocked(cron.schedule).mock.calls[0][1] as () => Promise<void>;
+      await callback();
+
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('consumes workspace quota when generating an instance', async () => {
+      const rec = { ...baseRecurrence, lastOccurredAt: new Date(Date.now() - 2 * 86400000) };
+      vi.mocked(prisma.taskRecurrence.findMany)
+        .mockResolvedValueOnce([rec] as any)
+        .mockResolvedValueOnce([] as any);
+      vi.mocked(prisma.workspaceMember.count).mockResolvedValue(5);
+      vi.mocked(prisma.$transaction).mockImplementation(async (fn: any) => fn(tx()));
+
+      initTaskRecurrenceCrons();
+      const callback = vi.mocked(cron.schedule).mock.calls[0][1] as () => Promise<void>;
+      await callback();
+
+      expect(resolveWorkspacePlan).toHaveBeenCalledWith('ws-1');
+      expect(prisma.workspaceMember.count).toHaveBeenCalledWith({ where: { workspaceId: 'ws-1' } });
+      expect(checkAndConsumeWorkspaceQuota).toHaveBeenCalledWith(
+        'u-1', 'ws-1', 'FREE', 5, { skipMinuteRateLimit: true },
+      );
+    });
+
+    it('skips generation (without advancing state) when the workspace quota is reached', async () => {
+      const rec = { ...baseRecurrence, lastOccurredAt: new Date(Date.now() - 2 * 86400000) };
+      vi.mocked(prisma.taskRecurrence.findMany)
+        .mockResolvedValueOnce([rec] as any)
+        .mockResolvedValueOnce([] as any);
+      vi.mocked(checkAndConsumeWorkspaceQuota).mockResolvedValueOnce({
+        allowed: false, reason: 'Daily workspace task limit reached',
+      } as any);
+
+      initTaskRecurrenceCrons();
+      const callback = vi.mocked(cron.schedule).mock.calls[0][1] as () => Promise<void>;
+      await callback();
+
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+      expect(prisma.taskRecurrence.update).not.toHaveBeenCalled();
+    });
+
+    it('consumes personal quota for personal recurring tasks', async () => {
+      const rec = {
+        ...baseRecurrence,
+        lastOccurredAt: new Date(Date.now() - 2 * 86400000),
+        task: { ...baseRecurrence.task, workspaceId: null },
+      };
+      vi.mocked(prisma.taskRecurrence.findMany)
+        .mockResolvedValueOnce([rec] as any)
+        .mockResolvedValueOnce([] as any);
+      vi.mocked(prisma.$transaction).mockImplementation(async (fn: any) => fn(tx()));
+
+      initTaskRecurrenceCrons();
+      const callback = vi.mocked(cron.schedule).mock.calls[0][1] as () => Promise<void>;
+      await callback();
+
+      expect(resolveUserPlan).toHaveBeenCalledWith('u-1');
+      expect(checkAndConsumePersonalQuota).toHaveBeenCalledWith('u-1', 'FREE');
+    });
+
+    it('skips personal generation (without advancing state) when the personal quota is reached', async () => {
+      const rec = {
+        ...baseRecurrence,
+        lastOccurredAt: new Date(Date.now() - 2 * 86400000),
+        task: { ...baseRecurrence.task, workspaceId: null },
+      };
+      vi.mocked(prisma.taskRecurrence.findMany)
+        .mockResolvedValueOnce([rec] as any)
+        .mockResolvedValueOnce([] as any);
+      vi.mocked(checkAndConsumePersonalQuota).mockResolvedValueOnce({
+        allowed: false, reason: 'Daily personal task limit reached',
+      } as any);
+
+      initTaskRecurrenceCrons();
+      const callback = vi.mocked(cron.schedule).mock.calls[0][1] as () => Promise<void>;
+      await callback();
+
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+      expect(prisma.taskRecurrence.update).not.toHaveBeenCalled();
+    });
+
+    it('refunds the quota when the insert was a duplicate (count 0)', async () => {
+      const rec = { ...baseRecurrence, lastOccurredAt: new Date(Date.now() - 2 * 86400000) };
+      vi.mocked(prisma.taskRecurrence.findMany)
+        .mockResolvedValueOnce([rec] as any)
+        .mockResolvedValueOnce([] as any);
+      const mockTx = tx();
+      mockTx.task.createMany.mockResolvedValue({ count: 0 });
+      vi.mocked(prisma.$transaction).mockImplementation(async (fn: any) => fn(mockTx));
+
+      initTaskRecurrenceCrons();
+      const callback = vi.mocked(cron.schedule).mock.calls[0][1] as () => Promise<void>;
+      await callback();
+
+      expect(rollbackWorkspaceQuota).toHaveBeenCalledWith('u-1', 'ws-1');
+    });
+
+    it('rolls back the quota when the transaction fails', async () => {
+      const rec = { ...baseRecurrence, lastOccurredAt: new Date(Date.now() - 2 * 86400000) };
+      vi.mocked(prisma.taskRecurrence.findMany)
+        .mockResolvedValueOnce([rec] as any)
+        .mockResolvedValueOnce([] as any);
+      vi.mocked(prisma.$transaction).mockRejectedValue(new Error('DB boom'));
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      initTaskRecurrenceCrons();
+      const callback = vi.mocked(cron.schedule).mock.calls[0][1] as () => Promise<void>;
+      await callback();
+
+      expect(rollbackWorkspaceQuota).toHaveBeenCalledWith('u-1', 'ws-1');
+      consoleSpy.mockRestore();
     });
   });
 });

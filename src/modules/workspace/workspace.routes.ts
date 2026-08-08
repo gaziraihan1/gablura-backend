@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import * as WorkspaceController from './workspace.controller.js';
 import { authenticate } from '../../middleware/auth.js';
+import { sessionTimeout } from '../../middleware/sessionTimeout.js';
 import {
   requireWorkspaceCreationSlot,
   requireMemberSlot,
@@ -13,11 +14,13 @@ const router = Router();
 
 router.get('/invitations/:token', WorkspaceController.getInvitation);
 router.use(authenticate);
+router.use(sessionTimeout);
 router.post('/invitations/:token/accept', WorkspaceController.acceptInvitation);
 
 router.get('/', WorkspaceController.getAllWorkspaces);
 router.post('/', requireWorkspaceCreationSlot, WorkspaceController.createWorkspace);
 router.get('/:slug/overview', WorkspaceController.getWorkspaceOverview);
+router.get('/:workspaceSlug/tasks', WorkspaceController.getWorkspaceTasks);
 router.get('/:slug', WorkspaceController.getWorkspace);
 router.put('/:id', WorkspaceController.updateWorkspace);
 router.delete('/:id', WorkspaceController.deleteWorkspace);

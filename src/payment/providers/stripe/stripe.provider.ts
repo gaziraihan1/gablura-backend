@@ -132,14 +132,21 @@ export class StripeProvider implements IPaymentProvider {
   async createCheckoutSession(
     params: CreateCheckoutParams,
   ): Promise<CheckoutResult> {
-    // Checkout sessions are typically short-lived and specific to a session, 
-    // so we don't cache the session URL itself, but we can cache the price lookup.
-    const priceEnvKey = `STRIPE_PRICE_${params.planName}_${params.billingCycle}`;
-    const priceId = process.env[priceEnvKey];
+    // Prefer the Plan row's price ID (the same IDs the webhook resolves the
+    // plan back from) so checkout and billing events always agree; fall back to
+    // the env var so local/dev setups without seeded price rows keep working.
+    const planRow = await prisma.plan.findUnique({
+      where: { name: params.planName },
+    });
+    const priceId =
+      (params.billingCycle === "YEARLY"
+        ? planRow?.stripePriceIdYearly
+        : planRow?.stripePriceIdMonthly) ??
+      process.env[`STRIPE_PRICE_${params.planName}_${params.billingCycle}`];
 
     if (!priceId) {
       throw new Error(
-        `[StripeProvider] No price configured for env var: ${priceEnvKey}`,
+        `[StripeProvider] No price configured for plan: ${params.planName} ${params.billingCycle}`,
       );
     }
 
@@ -150,13 +157,6 @@ export class StripeProvider implements IPaymentProvider {
       billingCycle: params.billingCycle,
       ...params.metadata,
     };
-
-    console.log("[StripeProvider] Creating checkout session with metadata:", JSON.stringify({
-      workspaceId: params.workspaceId,
-      planName: params.planName,
-      billingCycle: params.billingCycle,
-    }, null, 2));
-    console.log("[StripeProvider] Price ID:", priceId, "for plan:", params.planName, params.billingCycle);
 
     const session = await stripeClient.checkout.sessions.create({
       mode: "subscription",
@@ -171,9 +171,6 @@ export class StripeProvider implements IPaymentProvider {
       },
       metadata: sessionMetadata,
     });
-
-    console.log("[StripeProvider] Checkout session created:", session.id);
-    console.log("[StripeProvider] Subscription ID:", session.subscription);
 
     return { url: session.url! };
   }

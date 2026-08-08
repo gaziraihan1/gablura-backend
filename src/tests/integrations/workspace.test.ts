@@ -3,6 +3,7 @@ import request from "supertest";
 import { WorkspaceRole } from "@prisma/client";
 import {
   addMemberToWorkspace,
+  createTask,
   createUnverifiedUser,
   createUser,
   createWorkspaceWithOwner,
@@ -1053,5 +1054,258 @@ describe("POST /api/v1/workspaces/:id/leave", () => {
       `/api/v1/workspaces/${workspace.id}/leave`,
     );
     expect(res.status).toBe(401);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Ownership-safety hardening (G1/G2) + suspension (G3/G5) + duplicate accept (G6)
+// ─────────────────────────────────────────────────────────────────────────────
+describe("owner/admin removal & role-change hardening", () => {
+  it("403 — ADMIN cannot remove the OWNER", async () => {
+    const { user: owner, workspace } = await createWorkspaceWithOwner();
+    const admin = await createUser();
+    await addMemberToWorkspace(admin.id, workspace.id, WorkspaceRole.ADMIN);
+
+    const ownerMember = await prisma.workspaceMember.findFirst({
+      where: { workspaceId: workspace.id, userId: owner.id },
+    });
+
+    const res = await request(app)
+      .delete(`/api/v1/workspaces/${workspace.id}/members/${ownerMember!.id}`)
+      .set(authHeaders(admin));
+
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe("CANNOT_REMOVE_OWNER");
+  });
+
+  it("403 — ADMIN cannot remove another ADMIN", async () => {
+    const { workspace } = await createWorkspaceWithOwner();
+    const adminA = await createUser();
+    const adminB = await createUser();
+    await addMemberToWorkspace(adminA.id, workspace.id, WorkspaceRole.ADMIN);
+    const adminBMember = await addMemberToWorkspace(adminB.id, workspace.id, WorkspaceRole.ADMIN);
+
+    const res = await request(app)
+      .delete(`/api/v1/workspaces/${workspace.id}/members/${adminBMember.id}`)
+      .set(authHeaders(adminA));
+
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe("CANNOT_REMOVE_ADMIN");
+  });
+
+  it("200 — OWNER can remove an ADMIN", async () => {
+    const { user: owner, workspace } = await createWorkspaceWithOwner();
+    const admin = await createUser();
+    const adminMember = await addMemberToWorkspace(admin.id, workspace.id, WorkspaceRole.ADMIN);
+
+    const res = await request(app)
+      .delete(`/api/v1/workspaces/${workspace.id}/members/${adminMember.id}`)
+      .set(authHeaders(owner));
+
+    expect(res.status).toBe(200);
+  });
+
+  it("403 — OWNER cannot demote themselves (owner role is immutable)", async () => {
+    const { user: owner, workspace } = await createWorkspaceWithOwner();
+    const ownerMember = await prisma.workspaceMember.findFirst({
+      where: { workspaceId: workspace.id, userId: owner.id },
+    });
+
+    const res = await request(app)
+      .put(`/api/v1/workspaces/${workspace.id}/members/${ownerMember!.id}/role`)
+      .set(authHeaders(owner))
+      .send({ role: "MEMBER" });
+
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe("CANNOT_CHANGE_OWNER_ROLE");
+  });
+
+  it("403 — OWNER cannot demote another OWNER", async () => {
+    const { user: owner, workspace } = await createWorkspaceWithOwner();
+    const coOwner = await createUser();
+    const coOwnerMember = await addMemberToWorkspace(coOwner.id, workspace.id, WorkspaceRole.OWNER);
+
+    const res = await request(app)
+      .put(`/api/v1/workspaces/${workspace.id}/members/${coOwnerMember.id}/role`)
+      .set(authHeaders(owner))
+      .send({ role: "MEMBER" });
+
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe("CANNOT_CHANGE_OWNER_ROLE");
+  });
+
+  it("400 — OWNER role cannot be assigned via role updates", async () => {
+    const { user: owner, workspace } = await createWorkspaceWithOwner();
+    const member = await createUser();
+    const memberRec = await addMemberToWorkspace(member.id, workspace.id, WorkspaceRole.MEMBER);
+
+    const res = await request(app)
+      .put(`/api/v1/workspaces/${workspace.id}/members/${memberRec.id}/role`)
+      .set(authHeaders(owner))
+      .send({ role: "OWNER" });
+
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe("OWNER_ROLE_NOT_ASSIGNABLE");
+  });
+});
+
+describe("suspended workspace enforcement (G3/G5)", () => {
+  async function suspend(workspaceId: string) {
+    await prisma.workspace.update({
+      where: { id: workspaceId },
+      data: { deletedAt: new Date() },
+    });
+  }
+
+  it("404 — suspended workspace is not readable by slug", async () => {
+    const { user: owner, workspace } = await createWorkspaceWithOwner();
+    await suspend(workspace.id);
+
+    const res = await request(app)
+      .get(`/api/v1/workspaces/${workspace.slug}`)
+      .set(authHeaders(owner));
+
+    expect(res.status).toBe(404);
+  });
+
+  it("403 — suspended workspace cannot be updated", async () => {
+    const { user: owner, workspace } = await createWorkspaceWithOwner();
+    await suspend(workspace.id);
+
+    const res = await request(app)
+      .put(`/api/v1/workspaces/${workspace.id}`)
+      .set(authHeaders(owner))
+      .send({ name: "Renamed" });
+
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe("WORKSPACE_SUSPENDED");
+  });
+
+  it("403 — suspended workspace cannot be deleted", async () => {
+    const { user: owner, workspace } = await createWorkspaceWithOwner();
+    await suspend(workspace.id);
+
+    const res = await request(app)
+      .delete(`/api/v1/workspaces/${workspace.id}`)
+      .set(authHeaders(owner));
+
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe("WORKSPACE_SUSPENDED");
+  });
+
+  it("200 — suspended workspaces are excluded from the workspace list", async () => {
+    const owner = await createUser();
+    const suffix = Math.random().toString(36).slice(2, 8);
+
+    // Created via DB directly to avoid the FREE-plan workspace-creation quota
+    const ws1 = await prisma.workspace.create({
+      data: {
+        name: "Active Workspace",
+        slug: `active-ws-${suffix}`,
+        color: "#667eea",
+        plan: "FREE",
+        isPublic: false,
+        ownerId: owner.id,
+        members: { create: { userId: owner.id, role: "OWNER" } },
+      },
+    });
+    const ws2 = await prisma.workspace.create({
+      data: {
+        name: "Suspended Workspace",
+        slug: `suspended-ws-${suffix}`,
+        color: "#667eea",
+        plan: "FREE",
+        isPublic: false,
+        ownerId: owner.id,
+        members: { create: { userId: owner.id, role: "OWNER" } },
+      },
+    });
+
+    await suspend(ws2.id);
+
+    const listRes = await request(app)
+      .get("/api/v1/workspaces")
+      .set(authHeaders(owner));
+
+    expect(listRes.status).toBe(200);
+    const ids = listRes.body.data.map((w: any) => w.id);
+    expect(ids).toContain(ws1.id);
+    expect(ids).not.toContain(ws2.id);
+  });
+});
+
+describe("invitation duplicate acceptance (G6)", () => {
+  it("409 — accepting an invite as an existing member does not 500", async () => {
+    const { user: owner, workspace } = await createWorkspaceWithOwner();
+    const member = await createUser();
+    await addMemberToWorkspace(member.id, workspace.id, WorkspaceRole.MEMBER);
+
+    const invitation = await prisma.workspaceInvitation.create({
+      data: {
+        email: member.email,
+        role: "MEMBER",
+        token: `dup-accept-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        workspaceId: workspace.id,
+        invitedById: owner.id,
+        expiresAt: new Date(Date.now() + 86400000),
+      },
+    });
+
+    const res = await request(app)
+      .post(`/api/v1/workspaces/invitations/${invitation.token}/accept`)
+      .set(authHeaders(member));
+
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe("ALREADY_MEMBER");
+  });
+});
+
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/v1/workspaces/:workspaceSlug/tasks
+// (used by the dashboard TaskHighlights widget)
+// ─────────────────────────────────────────────────────────────────────────────
+describe("GET /api/v1/workspaces/:workspaceSlug/tasks", () => {
+  it("200 — returns the workspace's tasks", async () => {
+    const { user, workspace } = await createWorkspaceWithOwner();
+    await createTask(workspace.id, user.id, { title: "WS Task A" });
+    await createTask(workspace.id, user.id, { title: "WS Task B" });
+
+    const res = await request(app)
+      .get(`/api/v1/workspaces/${workspace.slug}/tasks?limit=20`)
+      .set(authHeaders(user));
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(Array.isArray(res.body.data)).toBe(true);
+    const titles = res.body.data.map((t: any) => t.title);
+    expect(titles).toContain("WS Task A");
+    expect(titles).toContain("WS Task B");
+  });
+
+  it("200 — respects the limit param", async () => {
+    const { user, workspace } = await createWorkspaceWithOwner();
+    await createTask(workspace.id, user.id, { title: "T1" });
+    await createTask(workspace.id, user.id, { title: "T2" });
+    await createTask(workspace.id, user.id, { title: "T3" });
+
+    const res = await request(app)
+      .get(`/api/v1/workspaces/${workspace.slug}/tasks?limit=2`)
+      .set(authHeaders(user));
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.length).toBeLessThanOrEqual(2);
+  });
+
+  it("404 — a non-member cannot read a private workspace's tasks", async () => {
+    const { workspace } = await createWorkspaceWithOwner();
+    const outsider = await createUser();
+
+    const res = await request(app)
+      .get(`/api/v1/workspaces/${workspace.slug}/tasks?limit=20`)
+      .set(authHeaders(outsider));
+
+    expect(res.status).toBe(404);
   });
 });

@@ -57,13 +57,21 @@ describe("SprintQuery", () => {
         name: "Sprint 1",
         project: { tasks: [] },
       };
-      (prisma.sprint.findUnique as any).mockResolvedValue(mockSprint);
+      (prisma.sprint.findFirst as any).mockResolvedValue(mockSprint);
       const result = await SprintQuery.getById("s1");
       expect(result).toEqual(mockSprint);
     });
 
+    it("should scope the lookup to the project when projectId is provided", async () => {
+      (prisma.sprint.findFirst as any).mockResolvedValue({ id: "s1" });
+      await SprintQuery.getById("s1", "p1");
+      expect(prisma.sprint.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: "s1", projectId: "p1" } }),
+      );
+    });
+
     it("should throw NotFoundError if sprint not found", async () => {
-      (prisma.sprint.findUnique as any).mockResolvedValue(null);
+      (prisma.sprint.findFirst as any).mockResolvedValue(null);
       await expect(SprintQuery.getById("nonexistent")).rejects.toThrow(NotFoundError);
     });
   });

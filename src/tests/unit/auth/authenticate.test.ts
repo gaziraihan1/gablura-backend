@@ -11,7 +11,7 @@ vi.mock("../../../lib/prisma.js", () => ({
 
 // Mock ioredis client — used by session binding and revocation in auth.ts
 const mockRedisGet = vi.fn(async (): Promise<string | null> => null);
-const mockRedisSetex = vi.fn(async () => "OK");
+const mockRedisSetex = vi.fn(async (_key: string, _ttl: number, _value: string) => "OK");
 
 vi.mock("../../../redis/redis.client.js", () => ({
   getRedisClient: vi.fn(() => ({
@@ -22,12 +22,16 @@ vi.mock("../../../redis/redis.client.js", () => ({
 }));
 
 vi.mock("../../../lib/auth/sessionBinding.js", () => ({
-  getClientIp:            vi.fn(() => "127.0.0.1"),
-  validateSessionBinding: vi.fn(() => ({ valid: true })),
+  getClientIp:                  vi.fn(() => "127.0.0.1"),
+  generateDeviceFingerprint:    vi.fn(() => "device-fp-123"),
+  looksLikeServerToServerRequest: vi.fn(() => false),
+  looksLikeServerToServerUA:    vi.fn(() => false),
+  validateSessionBinding:       vi.fn(() => ({ valid: true })),
 }));
 
 vi.mock("../../../lib/auth/tokenRevocation.js", () => ({
   isAccessTokenRevoked:   vi.fn(async () => false),
+  isSessionRevoked:       vi.fn(async () => false),
   revokeAllRefreshTokens: vi.fn(async () => {}),
 }));
 
@@ -39,6 +43,7 @@ vi.mock("../../../lib/redis/cache.client.js", () => ({
   CacheClient: {
     get: vi.fn(),
     set: vi.fn(),
+    delete: vi.fn(async () => {}),
   },
   CACHE_KEYS: {
     authResult: vi.fn((jti: string) => `auth:result:${jti}`),
@@ -291,6 +296,7 @@ describe("authenticate middleware", () => {
   it("returns 401 SESSION_HIJACK_DETECTED when session binding fails", async () => {
 
     const fakeMetadata = JSON.stringify({
+      deviceId: "bound-device-fp",
       ip: "1.2.3.4",
       userAgent: "OtherBrowser/1.0",
       lastActivity: Date.now(),
@@ -310,6 +316,157 @@ describe("authenticate middleware", () => {
     expect(err.statusCode).toBe(401);
     expect(err.code).toBe("SESSION_HIJACK_DETECTED");
     expect(revokeAllRefreshTokens).toHaveBeenCalledWith(mockUser.id);
+  });
+
+  it("binds a pending session (deviceId null) to the first browser request", async () => {
+    const fakeMetadata = JSON.stringify({
+      deviceId: null,
+      ipAddress: "10.0.0.1",
+      userAgent: "node",
+      lastActivity: Date.now(),
+    });
+    mockRedisGet.mockResolvedValueOnce(fakeMetadata);
+
+    const { auditLog } = await import("../../../lib/auth/auditLog.js");
+    const { revokeAllRefreshTokens } = await import("../../../lib/auth/tokenRevocation.js");
+
+    const next = makeNext();
+    const token = generateTestToken(mockUser, { sessionId: "pending-session" });
+    const req = makeReq(`Bearer ${token}`);
+    await authenticate(req, makeRes(), next);
+
+    // The request continues (no hijack error) and the user is attached
+    expect(vi.mocked(next).mock.calls[0][0]).toBeUndefined();
+    expect(req.user?.id).toBe(mockUser.id);
+
+    // The binding was adopted from the browser request and persisted
+    const metadataWrite = mockRedisSetex.mock.calls.find((c) =>
+      String(c[0]).includes("pending-session")
+    );
+    expect(metadataWrite).toBeDefined();
+    const saved = JSON.parse(metadataWrite![2]);
+    expect(saved.deviceId).toBe("device-fp-123");
+    expect(saved.ipAddress).toBe("127.0.0.1");
+
+    // Logged as a first-time bind, not a hijack; nothing revoked
+    expect(auditLog).toHaveBeenCalledWith("SESSION_BOUND", expect.any(Object));
+    expect(revokeAllRefreshTokens).not.toHaveBeenCalled();
+  });
+
+  it("still rejects when a bound session's device mismatches", async () => {
+    const fakeMetadata = JSON.stringify({
+      deviceId: "bound-device-fp",
+      ipAddress: "1.2.3.4",
+      userAgent: "Chrome/151",
+      lastActivity: Date.now(),
+    });
+    mockRedisGet.mockResolvedValueOnce(fakeMetadata);
+
+    const { auditLog } = await import("../../../lib/auth/auditLog.js");
+    const { validateSessionBinding } = await import("../../../lib/auth/sessionBinding.js");
+    vi.mocked(validateSessionBinding).mockReturnValueOnce({
+      valid: false,
+      reason: "DEVICE_MISMATCH",
+    });
+
+    const { revokeAllRefreshTokens } = await import("../../../lib/auth/tokenRevocation.js");
+    const { CacheClient } = await import("../../../lib/redis/cache.client.js");
+
+    const next = makeNext();
+    const token = generateTestToken(mockUser, { sessionId: "bound-session" });
+    await authenticate(makeReq(`Bearer ${token}`), makeRes(), next);
+
+    const err = getNextError(next);
+    expect(err.statusCode).toBe(401);
+    expect(err.code).toBe("SESSION_HIJACK_DETECTED");
+    expect(revokeAllRefreshTokens).toHaveBeenCalledWith(mockUser.id);
+    expect(CacheClient.delete).toHaveBeenCalledWith(expect.stringContaining("auth:result:"));
+    expect(auditLog).toHaveBeenCalledWith("SESSION_HIJACK_DETECTED", expect.any(Object));
+  });
+
+  it("skips binding enforcement for server-to-server requests (Next.js SSR)", async () => {
+    const fakeMetadata = JSON.stringify({
+      deviceId: null,
+      ipAddress: "127.0.0.1",
+      userAgent: "node",
+      lastActivity: Date.now(),
+    });
+    mockRedisGet.mockResolvedValueOnce(fakeMetadata);
+
+    const { looksLikeServerToServerRequest } = await import("../../../lib/auth/sessionBinding.js");
+    vi.mocked(looksLikeServerToServerRequest).mockReturnValueOnce(true);
+
+    const { auditLog } = await import("../../../lib/auth/auditLog.js");
+
+    const next = makeNext();
+    const token = generateTestToken(mockUser, { sessionId: "ssr-session" });
+    const req = makeReq(`Bearer ${token}`);
+    await authenticate(req, makeRes(), next);
+
+    // Request continues without hijacking...
+    expect(vi.mocked(next).mock.calls[0][0]).toBeUndefined();
+    expect(req.user?.id).toBe(mockUser.id);
+    // ...but the server request did NOT claim the binding (still pending)
+    expect(mockRedisSetex).not.toHaveBeenCalled();
+    expect(auditLog).not.toHaveBeenCalledWith("SESSION_BOUND", expect.any(Object));
+  });
+
+  it("skips binding for server-to-server requests even after the session is bound", async () => {
+    const fakeMetadata = JSON.stringify({
+      deviceId: "bound-browser-fp",
+      ipAddress: "127.0.0.1",
+      userAgent: "Mozilla/5.0 Chrome/151.0.0.0",
+      lastActivity: Date.now(),
+    });
+    mockRedisGet.mockResolvedValueOnce(fakeMetadata);
+
+    const { looksLikeServerToServerRequest } = await import("../../../lib/auth/sessionBinding.js");
+    vi.mocked(looksLikeServerToServerRequest).mockReturnValueOnce(true);
+
+    const { auditLog } = await import("../../../lib/auth/auditLog.js");
+    const { revokeAllRefreshTokens } = await import("../../../lib/auth/tokenRevocation.js");
+
+    const next = makeNext();
+    const token = generateTestToken(mockUser, { sessionId: "ssr-after-bind" });
+    const req = makeReq(`Bearer ${token}`);
+    await authenticate(req, makeRes(), next);
+
+    // No hijack, no re-adoption, nothing revoked
+    expect(vi.mocked(next).mock.calls[0][0]).toBeUndefined();
+    expect(req.user?.id).toBe(mockUser.id);
+    expect(revokeAllRefreshTokens).not.toHaveBeenCalled();
+    expect(auditLog).not.toHaveBeenCalled();
+    expect(mockRedisSetex).not.toHaveBeenCalled();
+  });
+
+  it("heals a stale server-created binding on the first browser request", async () => {
+    const fakeMetadata = JSON.stringify({
+      deviceId: "stale-server-fp",
+      ipAddress: "127.0.0.1",
+      userAgent: "node",
+      lastActivity: Date.now(),
+    });
+    mockRedisGet.mockResolvedValueOnce(fakeMetadata);
+
+    const { looksLikeServerToServerUA } = await import("../../../lib/auth/sessionBinding.js");
+    vi.mocked(looksLikeServerToServerUA).mockReturnValueOnce(true);
+
+    const { auditLog } = await import("../../../lib/auth/auditLog.js");
+
+    const next = makeNext();
+    const token = generateTestToken(mockUser, { sessionId: "stale-session" });
+    const req = makeReq(`Bearer ${token}`);
+    await authenticate(req, makeRes(), next);
+
+    // Request continues and the browser fingerprint replaces the stale one
+    expect(vi.mocked(next).mock.calls[0][0]).toBeUndefined();
+    const metadataWrite = mockRedisSetex.mock.calls.find((c) =>
+      String(c[0]).includes("stale-session")
+    );
+    expect(metadataWrite).toBeDefined();
+    const saved = JSON.parse(metadataWrite![2]);
+    expect(saved.deviceId).toBe("device-fp-123");
+    expect(auditLog).toHaveBeenCalledWith("SESSION_BOUND", expect.any(Object));
   });
 
   // ─── authorize() ────────────────────────────────────────────────────────────

@@ -3,6 +3,7 @@ import { getPaymentProvider } from "../../payment/provider.registry.js";
 import { BILLING_CACHE } from "../../redis/redis.client.js";
 import { UserCache, WorkspaceCache } from "../../lib/redis/cache.client.js";
 import { APP_URL, PLAN_LIMITS, PlanName } from "./plans.config.js";
+import { WorkspacePlan } from "@prisma/client";
 import {
   ForbiddenError,
   NotFoundError,
@@ -64,18 +65,10 @@ export const BillingService = {
     const { workspaceId, workspaceSlug, ownerId, planName, billingCycle } =
       input;
     
-    console.log("[BillingService] Creating checkout session with input:", JSON.stringify({
-      workspaceId,
-      workspaceSlug,
-      ownerId,
-      planName,
-      billingCycle,
-    }, null, 2));
-
     await assertOwner(workspaceId, ownerId);
 
     const existing = await BillingService.getWorkspaceSubscription(workspaceId);
-    console.log("[BillingService] Existing subscription:", existing ? JSON.stringify(existing) : 'None');
+
     
     if (existing?.planName === planName) {
       throw new ConflictError(
@@ -84,10 +77,27 @@ export const BillingService = {
     }
 
     const providerCustomerId = await ensureProviderCustomer(ownerId);
-    console.log("[BillingService] Provider customer ID:", providerCustomerId);
+
     
     const provider = getPaymentProvider();
-    console.log("[BillingService] Payment provider:", provider.name);
+
+
+    // One 7-day trial per customer — a user who cancels (or lets a trial lapse)
+    // and re-upgrades must not receive a fresh trial every time.
+    let trialDays: number | undefined = existing ? undefined : 7;
+    if (!existing) {
+      const trialUser = await prisma.user.findUnique({
+        where: { id: ownerId },
+        select: { stripeCustomerId: true },
+      });
+      if (trialUser?.stripeCustomerId) {
+        const priorSub = await prisma.subscription.findFirst({
+          where: { stripeCustomerId: trialUser.stripeCustomerId },
+          select: { id: true },
+        });
+        if (priorSub) trialDays = undefined;
+      }
+    }
 
 const checkoutParams = {
       workspaceId,
@@ -95,17 +105,17 @@ const checkoutParams = {
       providerCustomerId,
       planName,
       billingCycle,
-      trialDays: existing ? undefined : 7,
+      trialDays,
       successUrl: `${APP_URL}/dashboard/workspaces/${workspaceSlug}/billing/success?plan=${planName}&cycle=${billingCycle}`,
       cancelUrl: `${APP_URL}/dashboard/workspaces/${workspaceSlug}/billing/upgrade?canceled=true`,
       metadata: { workspaceId, ownerId, planName, billingCycle },
     };
     
-    console.log("[BillingService] Calling provider.createCheckoutSession with params:", JSON.stringify(checkoutParams, null, 2));
+
 
     const result = await provider.createCheckoutSession(checkoutParams);
     
-    console.log("[BillingService] Checkout session created, URL:", result.url);
+
     return result.url;
   },
 
@@ -181,13 +191,26 @@ const checkoutParams = {
     }
 
     const targetCycle = billingCycle ?? sub.billingCycle;
+
+    // Resolve the new price from the Plan row first (single source of truth —
+    // webhooks resolve the plan back from these same price IDs), then fall back
+    // to the provider env var so a missing DB row never hard-fails locally.
+    const newPlan = await prisma.plan.findUnique({
+      where: { name: newPlanName },
+    });
+    if (!newPlan) throw new BadRequestError(`Plan not found: ${newPlanName}`);
     const providerPrefix = (
       process.env.PAYMENT_PROVIDER ?? "STRIPE"
     ).toUpperCase();
-    const newPriceEnvKey = `${providerPrefix}_PRICE_${newPlanName}_${targetCycle}`;
-    const newPriceId = process.env[newPriceEnvKey];
+    const newPriceId =
+      (targetCycle === "YEARLY"
+        ? newPlan.stripePriceIdYearly
+        : newPlan.stripePriceIdMonthly) ??
+      process.env[`${providerPrefix}_PRICE_${newPlanName}_${targetCycle}`];
     if (!newPriceId)
-      throw new BadRequestError(`Price env var not set: ${newPriceEnvKey}`);
+      throw new BadRequestError(
+        `No price configured for ${newPlanName} ${targetCycle} (set the Plan row or ${providerPrefix}_PRICE_${newPlanName}_${targetCycle})`,
+      );
 
     const currentPlan = await prisma.plan.findUnique({
       where: { id: sub.planId },
@@ -202,6 +225,26 @@ const checkoutParams = {
       newProviderPriceId: newPriceId,
       isUpgrade,
       metadata: { workspaceId, planName: newPlanName, ownerId },
+    });
+
+    // Persist the change immediately so the app and the provider never diverge,
+    // even if the customer.subscription.updated webhook is delayed or lost.
+    // (The webhook later confirms/corrects this — same values, idempotent.)
+    await prisma.subscription.update({
+      where: { workspaceId },
+      data: {
+        planId: newPlan.id,
+        billingCycle: targetCycle,
+        stripePriceId: newPriceId,
+      },
+    });
+    await prisma.workspace.update({
+      where: { id: workspaceId },
+      data: {
+        plan: newPlanName as WorkspacePlan,
+        maxMembers: newPlan.maxMembersPerWs,
+        maxStorage: newPlan.maxStorageMb,
+      },
     });
 
     const workspace = await prisma.workspace.findUnique({
@@ -355,14 +398,24 @@ const checkoutParams = {
     return limits;
   },
 
-  async getUserWorkspaceCreationLimit(userId: string): Promise<number> {
-    const cached = await BILLING_CACHE.getUserWsLimit(userId);
-    if (cached !== null) return cached;
-
+  async getUserHighestPlan(userId: string): Promise<PlanName> {
     const ownedWorkspaces = await prisma.workspace.findMany({
       where: { ownerId: userId },
       select: { plan: true },
     });
+
+    let highestPlan: PlanName = "FREE";
+    for (const ws of ownedWorkspaces) {
+      if ((PLAN_RANK[ws.plan] ?? 0) > (PLAN_RANK[highestPlan] ?? 0))
+        highestPlan = ws.plan as PlanName;
+    }
+    return highestPlan;
+  },
+
+  async getUserWorkspaceCreationLimit(userId: string): Promise<number> {
+    const cached = await BILLING_CACHE.getUserWsLimit(userId);
+    if (cached !== null) return cached;
+
     const MAX_WORKSPACES: Record<string, number> = {
       FREE: PLAN_LIMITS.FREE.maxWorkspacesOwned,
       PRO: PLAN_LIMITS.PRO.maxWorkspacesOwned,
@@ -370,11 +423,7 @@ const checkoutParams = {
       ENTERPRISE: -1,
     };
 
-    let highestPlan = "FREE";
-    for (const ws of ownedWorkspaces) {
-      if ((PLAN_RANK[ws.plan] ?? 0) > (PLAN_RANK[highestPlan] ?? 0))
-        highestPlan = ws.plan;
-    }
+    const highestPlan = await BillingService.getUserHighestPlan(userId);
 
     const limit =
       MAX_WORKSPACES[highestPlan] ?? PLAN_LIMITS.FREE.maxWorkspacesOwned;

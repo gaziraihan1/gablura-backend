@@ -20,6 +20,7 @@ export const getSecuritySettings = async (req: AuthRequest, res: Response): Prom
       select: {
         twoFactorEnabled: true,
         emailVerified: true,
+        lastPasswordChange: true,
       },
     });
 
@@ -33,7 +34,7 @@ export const getSecuritySettings = async (req: AuthRequest, res: Response): Prom
       data: {
         twoFactorEnabled: user.twoFactorEnabled,
         emailVerified: user.emailVerified !== null,
-        lastPasswordChange: null,
+        lastPasswordChange: user.lastPasswordChange,
       },
     });
   } catch (error) {

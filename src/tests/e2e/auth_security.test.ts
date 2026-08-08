@@ -63,7 +63,10 @@ describe('🔐 Auth & Security Journeys', () => {
     expect(replayRes.status).toBe(401);
     expect(replayRes.body.code).toBe('TOKEN_REPLAY_DETECTED');
 
-    vi.restoreAllMocks();
+    // Restore only the rotateRefreshToken spy — a blanket restoreAllMocks
+    // here would wipe the implementations of unrelated factory mocks
+    // (refreshLock, redis.client) for every later test in this file.
+    (tokenRevocation.rotateRefreshToken as any).mockRestore();
   });
 
   it('should handle "Logout" lifecycle', async () => {
@@ -221,5 +224,62 @@ describe('🔐 Auth & Security Journeys', () => {
 
     expect(exchangeRes.status).toBe(401);
     expect(exchangeRes.body.code).toBe('INVALID_PROOF');
+  });
+  // ─────────────────────────────────────────────────────────────────────────
+  // Server-side session gates at refresh time (audit fixes G1/G2)
+  // ─────────────────────────────────────────────────────────────────────────
+  it('should reject refresh for a session revoked by max-sessions eviction', { timeout: 40000 }, async () => {
+    const user = await createUser();
+    const sessionId = 'session-revoked-e2e';
+
+    const { createTokenPair } = await import('../../lib/auth/backendToken.js');
+    const { storeRefreshToken, markSessionRevoked } = await import('../../lib/auth/tokenRevocation.js');
+    const { extractJti, parseExpiry, REFRESH_TOKEN_EXPIRY } = await import('../../lib/auth/backendToken.js');
+
+    const tokens = createTokenPair({ id: user.id, email: user.email, role: user.role, sessionId });
+    await storeRefreshToken(user.id, extractJti(tokens.refreshToken), parseExpiry(REFRESH_TOKEN_EXPIRY) / 1000);
+
+    // Evict: mark the session as revoked (tombstone)
+    await markSessionRevoked(sessionId);
+
+    // Heal the shared refreshLock mock in case a previous test's
+    // restoreAllMocks wiped its implementation.
+    const { acquireRefreshLock } = await import('../../lib/auth/refreshLock.js');
+    (acquireRefreshLock as any).mockResolvedValue?.(true);
+
+    const res = await request(app)
+      .post('/api/v1/auth/refresh')
+      .send({ refreshToken: tokens.refreshToken });
+
+    expect(res.status).toBe(401);
+    expect(res.body.code).toBe('TOKEN_REVOKED');
+  });
+
+  it('should reject refresh for a tracked session that went inactive', { timeout: 40000 }, async () => {
+    const user = await createUser();
+    const sessionId = 'session-inactive-e2e';
+
+    const { createTokenPair } = await import('../../lib/auth/backendToken.js');
+    const { storeRefreshToken } = await import('../../lib/auth/tokenRevocation.js');
+    const { extractJti, parseExpiry, REFRESH_TOKEN_EXPIRY } = await import('../../lib/auth/backendToken.js');
+    const { recordSessionCreation } = await import('../../middleware/sessionTimeout.js');
+    const { getRedisClient } = await import('../../redis/redis.client.js');
+    const { acquireRefreshLock } = await import('../../lib/auth/refreshLock.js');
+    (acquireRefreshLock as any).mockResolvedValue?.(true);
+
+    // Session was recorded at exchange time
+    await recordSessionCreation(sessionId);
+    // Then went inactive for 30 minutes → activity key expired
+    await getRedisClient().del(`session:activity:${sessionId}`);
+
+    const tokens = createTokenPair({ id: user.id, email: user.email, role: user.role, sessionId });
+    await storeRefreshToken(user.id, extractJti(tokens.refreshToken), parseExpiry(REFRESH_TOKEN_EXPIRY) / 1000);
+
+    const res = await request(app)
+      .post('/api/v1/auth/refresh')
+      .send({ refreshToken: tokens.refreshToken });
+
+    expect(res.status).toBe(401);
+    expect(res.body.code).toBe('SESSION_TIMEOUT');
   });
 });

@@ -46,6 +46,12 @@ vi.mock("../../../lib/prisma.js", () => ({
     projectSection: {
       findFirst: vi.fn(),
     },
+    sprint: {
+      findFirst: vi.fn(),
+    },
+    projectMilestone: {
+      findFirst: vi.fn(),
+    },
     workspace: {
       findUnique: vi.fn(),
     },
@@ -451,6 +457,67 @@ describe("TaskMutation", () => {
       expect(prisma.task.update).toHaveBeenCalledWith(expect.objectContaining({
         data: expect.objectContaining({ status: "TODO", completedAt: null }),
       }));
+    });
+
+    it("should throw BadRequestError when sprintId is set on a personal task (no project)", async () => {
+      vi.mocked(TaskAccess.checkEditPermission).mockResolvedValue({
+        canEdit: true,
+        task: { id: "t1", projectId: null, workspaceId: null, status: "TODO", assignees: [] },
+      });
+      await expect(
+        TaskMutation.updateTask("t1", "u1", { sprintId: "s-1" } as any),
+      ).rejects.toThrow(BadRequestError);
+      expect(prisma.sprint.findFirst).not.toHaveBeenCalled();
+    });
+
+    it("should throw BadRequestError when sprintId belongs to another project", async () => {
+      vi.mocked(TaskAccess.checkEditPermission).mockResolvedValue({
+        canEdit: true,
+        task: { id: "t1", projectId: "p1", workspaceId: "ws1", status: "TODO", assignees: [] },
+      });
+      vi.mocked(prisma.sprint.findFirst).mockResolvedValue(null);
+      await expect(
+        TaskMutation.updateTask("t1", "u1", { sprintId: "s-other" } as any),
+      ).rejects.toThrow(BadRequestError);
+    });
+
+    it("should accept sprintId when it belongs to the task project", async () => {
+      vi.mocked(TaskAccess.checkEditPermission).mockResolvedValue({
+        canEdit: true,
+        task: { id: "t1", projectId: "p1", workspaceId: "ws1", status: "TODO", assignees: [] },
+      });
+      vi.mocked(prisma.sprint.findFirst).mockResolvedValue({ id: "s-1" } as any);
+      vi.mocked(prisma.task.update).mockResolvedValue({ id: "t1", sprintId: "s-1" } as any);
+      await TaskMutation.updateTask("t1", "u1", { sprintId: "s-1" } as any);
+      expect(prisma.sprint.findFirst).toHaveBeenCalledWith({
+        where: { id: "s-1", projectId: "p1" },
+        select: { id: true },
+      });
+      expect(prisma.task.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ sprintId: "s-1" }) }),
+      );
+    });
+
+    it("should throw BadRequestError when milestoneId is set on a personal task (no project)", async () => {
+      vi.mocked(TaskAccess.checkEditPermission).mockResolvedValue({
+        canEdit: true,
+        task: { id: "t1", projectId: null, workspaceId: null, status: "TODO", assignees: [] },
+      });
+      await expect(
+        TaskMutation.updateTask("t1", "u1", { milestoneId: "m-1" } as any),
+      ).rejects.toThrow(BadRequestError);
+      expect(prisma.projectMilestone.findFirst).not.toHaveBeenCalled();
+    });
+
+    it("should throw BadRequestError when milestoneId belongs to another project", async () => {
+      vi.mocked(TaskAccess.checkEditPermission).mockResolvedValue({
+        canEdit: true,
+        task: { id: "t1", projectId: "p1", workspaceId: "ws1", status: "TODO", assignees: [] },
+      });
+      vi.mocked(prisma.projectMilestone.findFirst).mockResolvedValue(null);
+      await expect(
+        TaskMutation.updateTask("t1", "u1", { milestoneId: "m-other" } as any),
+      ).rejects.toThrow(BadRequestError);
     });
 
     it("should throw ForbiddenError if user cannot edit", async () => {

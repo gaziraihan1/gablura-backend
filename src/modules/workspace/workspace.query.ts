@@ -13,7 +13,7 @@ import { NotFoundError, ForbiddenError } from "../../errors/AppError.js";
 export const WorkspaceQuery = {
   async getUserWorkspaces(userId: string, limit: number = 50) {
     return prisma.workspace.findMany({
-      where: { members: { some: { userId } } },
+      where: { members: { some: { userId } }, deletedAt: null },
       include: workspaceListInclude,
       orderBy: { updatedAt: "desc" },
       take: limit,
@@ -24,12 +24,16 @@ export const WorkspaceQuery = {
     // Try cache first
     const cacheKey = CACHE_KEYS.workspaceBySlug(slug);
     const cached = await CacheClient.get(cacheKey);
-    if (cached) return cached;
+    if (cached) {
+      if ((cached as any).deletedAt) throw new NotFoundError("Workspace");
+      return cached;
+    }
 
     // Fetch from database
     const workspace = await prisma.workspace.findFirst({
       where: {
         slug,
+        deletedAt: null,
         OR: [
           { isPublic: true },
           { members: { some: { userId } } },
@@ -47,11 +51,15 @@ if (!workspace) throw new NotFoundError("Workspace");
   async getById(id: string, userId: string) {
     const cacheKey = CACHE_KEYS.workspaceById(id);
     const cached = await CacheClient.get(cacheKey);
-    if (cached) return cached;
+    if (cached) {
+      if ((cached as any).deletedAt) throw new NotFoundError("Workspace");
+      return cached;
+    }
 
     const workspace = await prisma.workspace.findFirst({
       where: {
         id,
+        deletedAt: null,
         OR: [
           { isPublic: true },
           { members: { some: { userId } } },
@@ -68,6 +76,7 @@ if (!workspace) throw new NotFoundError("Workspace");
 
   async getMembers(workspaceId: string, userId: string) {
     await WorkspaceAccess.assertMember(workspaceId, userId);
+    await WorkspaceAccess.assertNotSuspended(workspaceId);
     return prisma.workspaceMember.findMany({
       where: { workspaceId },
       include: {
@@ -79,6 +88,7 @@ if (!workspace) throw new NotFoundError("Workspace");
 
   async getStats(workspaceId: string, userId: string): Promise<WorkspaceStats> {
   await WorkspaceAccess.assertViewer(workspaceId, userId); // relaxed
+  await WorkspaceAccess.assertNotSuspended(workspaceId);
   return WorkspaceQuery.computeStats(workspaceId);
 },
 
@@ -86,7 +96,12 @@ if (!workspace) throw new NotFoundError("Workspace");
     // Try cache first
     const cacheKey = CACHE_KEYS.workspaceOverview(slug);
     const cached = await CacheClient.get(cacheKey);
-    if (cached) return cached;
+    if (cached) {
+      if ((cached as any)?.workspace?.deletedAt) {
+        throw new ForbiddenError("This workspace has been suspended", "WORKSPACE_SUSPENDED");
+      }
+      return cached;
+    }
 
     const isId = /^[a-z0-9]{20,}$/i.test(slug);
 

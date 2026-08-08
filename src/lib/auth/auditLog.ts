@@ -1,3 +1,6 @@
+import { Prisma } from "@prisma/client";
+import { prisma } from "../prisma.js";
+
 export type AuditEventType =
   | "LOGIN_SUCCESS"
   | "LOGIN_FAILED"
@@ -17,7 +20,11 @@ export type AuditEventType =
   | "PERMISSION_DENIED"
   | "EMAIL_NOT_VERIFIED"
   // Session security events
+  | "SESSION_BOUND"
   | "SESSION_HIJACK_DETECTED"
+  | "SESSION_TIMEOUT"
+  | "SESSION_REVOKED"
+  | "SESSIONS_REVOKED"
   | "MAX_SESSIONS_REACHED"
   | "DEVICE_MISMATCH"
   | "SUSPICIOUS_IP_CHANGE"
@@ -85,7 +92,11 @@ const SEVERITY: Record<AuditEventType, AuditEvent["severity"]> = {
 
   // Session security
   SESSION_HIJACK_DETECTED: "critical",
+  SESSION_BOUND: "info",
+  SESSION_TIMEOUT: "info",
   MAX_SESSIONS_REACHED: "warn",
+  SESSION_REVOKED: "info",
+  SESSIONS_REVOKED: "info",
   DEVICE_MISMATCH: "warn",
   SUSPICIOUS_IP_CHANGE: "warn",
 
@@ -137,5 +148,35 @@ export function auditLog(
     console.info(`[AUDIT:INFO] ${output}`);
   }
 
-  // Production: await prisma.auditLog.create({ data: entry });
+  // Persist to the database (fire-and-forget — audit logging must never
+  // block or throw for the caller). Requires the AuditLog table (migration
+  // add_audit_log); failures are logged but non-fatal.
+  try {
+    void prisma.auditLog
+      .create({
+        data: {
+          event: entry.event,
+          severity: entry.severity,
+          userId: entry.userId ?? null,
+          email: entry.email ?? null,
+          ip: entry.ip ?? null,
+          userAgent: entry.userAgent ?? null,
+          sessionId: entry.sessionId ?? null,
+          jti: entry.jti ?? null,
+          reason: entry.reason ?? null,
+          meta: (entry.meta ?? undefined) as Prisma.InputJsonValue | undefined,
+          timestamp: new Date(entry.timestamp),
+        },
+      })
+      .catch((err) => {
+        if (process.env.NODE_ENV !== "test") {
+          console.error(
+            "[AuditLog] Failed to persist audit event:",
+            err?.message ?? err,
+          );
+        }
+      });
+  } catch (err) {
+    // Never propagate — audit logging is best-effort
+  }
 }

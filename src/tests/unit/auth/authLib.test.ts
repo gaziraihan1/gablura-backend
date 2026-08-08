@@ -40,6 +40,8 @@ import { auditLog, AuditEventType } from "../../../lib/auth/auditLog.js";
 import {
   generateDeviceFingerprint,
   getClientIp,
+  looksLikeServerToServerRequest,
+  looksLikeServerToServerUA,
   createSessionMetadata,
   validateSessionBinding,
   SessionMetadata,
@@ -335,8 +337,13 @@ describe("sessionBinding", () => {
     it("returns 'unknown' when no IP source is available", () => {
       const req = mockReq({});
       delete req.headers["x-forwarded-for"];
-      req.socket.remoteAddress = undefined;
+      (req.socket as { remoteAddress?: string }).remoteAddress = undefined;
       expect(getClientIp(req)).toBe("unknown");
+    });
+
+    it("normalizes IPv4-mapped IPv6 addresses", () => {
+      const req = mockReq({ remoteAddress: "::ffff:127.0.0.1" });
+      expect(getClientIp(req)).toBe("127.0.0.1");
     });
 
     it("returns single x-forwarded-for IP without splitting", () => {
@@ -352,7 +359,8 @@ describe("sessionBinding", () => {
       const req = mockReq();
       const meta = createSessionMetadata(req);
 
-      expect(meta.deviceId).toMatch(/^[a-f0-9]{32}$/);
+      // Binding is always deferred until the first browser request
+      expect(meta.deviceId).toBeNull();
       expect(meta.ipAddress).toBe("127.0.0.1");
       expect(meta.userAgent).toBe("TestAgent/1.0");
       expect(meta.lastActivity).toBeTypeOf("number");
@@ -365,6 +373,19 @@ describe("sessionBinding", () => {
       expect(meta.userAgent).toBe("unknown");
     });
 
+    it("leaves binding pending (deviceId null) for server-to-server requests", () => {
+      const req = mockReq({ headers: { "user-agent": "node" } });
+      const meta = createSessionMetadata(req);
+      expect(meta.deviceId).toBeNull();
+      expect(meta.userAgent).toBe("node");
+    });
+
+    it("always defers binding (the exchange never carries browser headers)", () => {
+      const req = mockReq();
+      const meta = createSessionMetadata(req);
+      expect(meta.deviceId).toBeNull();
+    });
+
     it("extracts IP from x-forwarded-for", () => {
       const req = mockReq({
         headers: { "x-forwarded-for": "5.5.5.5" },
@@ -374,10 +395,62 @@ describe("sessionBinding", () => {
     });
   });
 
+  describe("looksLikeServerToServerRequest", () => {
+    it("returns true when no user-agent is present", () => {
+      const req = mockReq({ headers: { "user-agent": undefined } });
+      expect(looksLikeServerToServerRequest(req)).toBe(true);
+    });
+
+    it("returns true for Node runtime user-agents (undici fetch)", () => {
+      expect(looksLikeServerToServerRequest(mockReq({ headers: { "user-agent": "node" } }))).toBe(true);
+      expect(looksLikeServerToServerRequest(mockReq({ headers: { "user-agent": "undici" } }))).toBe(true);
+      expect(looksLikeServerToServerRequest(mockReq({ headers: { "user-agent": "axios/1.7.0" } }))).toBe(true);
+    });
+
+    it("returns true for a browser UA without accept headers (conservative pending)", () => {
+      const req = mockReq({
+        headers: {
+          "user-agent": "Mozilla/5.0 Chrome/151.0.0.0",
+          "accept-language": undefined,
+          "accept-encoding": undefined,
+        },
+      });
+      expect(looksLikeServerToServerRequest(req)).toBe(true);
+    });
+
+    it("returns false for a real browser request", () => {
+      const req = mockReq({
+        headers: {
+          "user-agent": "Mozilla/5.0 (Windows NT 10.0) Chrome/151.0.0.0",
+          "accept-language": "en-US,en;q=0.9",
+          "accept-encoding": "gzip, deflate, br, zstd",
+        },
+      });
+      expect(looksLikeServerToServerRequest(req)).toBe(false);
+    });
+  });
+
+  describe("looksLikeServerToServerUA", () => {
+    it("returns true for empty user-agents", () => {
+      expect(looksLikeServerToServerUA("")).toBe(true);
+    });
+
+    it("returns true for server runtimes", () => {
+      expect(looksLikeServerToServerUA("node")).toBe(true);
+      expect(looksLikeServerToServerUA("undici")).toBe(true);
+      expect(looksLikeServerToServerUA("curl/8.1.2")).toBe(true);
+      expect(looksLikeServerToServerUA("node-superagent/4.1.1")).toBe(true);
+    });
+
+    it("returns false for browser user-agents", () => {
+      expect(looksLikeServerToServerUA("Mozilla/5.0 (Windows NT 10.0) Chrome/151.0.0.0")).toBe(false);
+    });
+  });
+
   describe("validateSessionBinding", () => {
     it("returns valid for matching device and IP", () => {
       const req = mockReq();
-      const meta = createSessionMetadata(req);
+      const meta = { ...createSessionMetadata(req), deviceId: generateDeviceFingerprint(req) };
       const result = validateSessionBinding(req, meta);
       expect(result.valid).toBe(true);
       expect(result.reason).toBeUndefined();
@@ -385,7 +458,7 @@ describe("sessionBinding", () => {
 
     it("returns invalid with DEVICE_MISMATCH on different user-agent", () => {
       const req1 = mockReq({ headers: { "user-agent": "AgentA/1.0" } });
-      const meta = createSessionMetadata(req1);
+      const meta = { ...createSessionMetadata(req1), deviceId: generateDeviceFingerprint(req1) };
 
       const req2 = mockReq({ headers: { "user-agent": "AgentB/1.0" } });
       const result = validateSessionBinding(req2, meta);
@@ -396,7 +469,7 @@ describe("sessionBinding", () => {
 
     it("returns invalid with DEVICE_MISMATCH on different language", () => {
       const req1 = mockReq({ headers: { "accept-language": "en" } });
-      const meta = createSessionMetadata(req1);
+      const meta = { ...createSessionMetadata(req1), deviceId: generateDeviceFingerprint(req1) };
 
       const req2 = mockReq({ headers: { "accept-language": "fr" } });
       const result = validateSessionBinding(req2, meta);
@@ -407,7 +480,7 @@ describe("sessionBinding", () => {
 
     it("returns invalid with SUSPICIOUS_IP_CHANGE when IP changed within 5 min", () => {
       const req1 = mockReq({ remoteAddress: "1.1.1.1" });
-      const meta = createSessionMetadata(req1);
+      const meta = { ...createSessionMetadata(req1), deviceId: generateDeviceFingerprint(req1) };
       meta.lastActivity = Date.now() - 60_000; // 1 minute ago
 
       const req2 = mockReq({ remoteAddress: "2.2.2.2" });
@@ -419,7 +492,7 @@ describe("sessionBinding", () => {
 
     it("allows IP change after 5 minutes", () => {
       const req1 = mockReq({ remoteAddress: "1.1.1.1" });
-      const meta = createSessionMetadata(req1);
+      const meta = { ...createSessionMetadata(req1), deviceId: generateDeviceFingerprint(req1) };
       meta.lastActivity = Date.now() - 600_000; // 10 minutes ago
 
       const req2 = mockReq({ remoteAddress: "2.2.2.2" });
@@ -433,7 +506,7 @@ describe("sessionBinding", () => {
         headers: { "user-agent": "AgentA/1.0" },
         remoteAddress: "1.1.1.1",
       });
-      const meta = createSessionMetadata(req1);
+      const meta = { ...createSessionMetadata(req1), deviceId: generateDeviceFingerprint(req1) };
 
       const req2 = mockReq({
         headers: { "user-agent": "AgentB/1.0" },
@@ -447,7 +520,7 @@ describe("sessionBinding", () => {
 
     it("allows IP change at exactly 5 minute boundary", () => {
       const req1 = mockReq({ remoteAddress: "1.1.1.1" });
-      const meta = createSessionMetadata(req1);
+      const meta = { ...createSessionMetadata(req1), deviceId: generateDeviceFingerprint(req1) };
       meta.lastActivity = Date.now() - 5 * 60 * 1000; // exactly 5 min ago
 
       const req2 = mockReq({ remoteAddress: "2.2.2.2" });
@@ -799,7 +872,7 @@ describe("sessionManager", () => {
       mockRedis.sadd.mockResolvedValueOnce(1);
       mockRedis.expire.mockResolvedValueOnce(1);
 
-      await trackUserSession("user1", "sess1", "token");
+      await trackUserSession("user1", "sess1");
 
       expect(mockRedis.sadd).toHaveBeenCalledWith(
         "user:sessions:user1",
@@ -824,7 +897,7 @@ describe("sessionManager", () => {
       mockRedis.sadd.mockResolvedValueOnce(1);
       mockRedis.expire.mockResolvedValueOnce(1);
 
-      await trackUserSession("user1", "sess-new", "token");
+      await trackUserSession("user1", "sess-new");
 
       expect(mockRedis.srem).toHaveBeenCalledWith(
         "user:sessions:user1",
@@ -852,7 +925,7 @@ describe("sessionManager", () => {
       mockRedis.sadd.mockResolvedValueOnce(1);
       mockRedis.expire.mockResolvedValueOnce(1);
 
-      await trackUserSession("user1", "s6", "token");
+      await trackUserSession("user1", "s6");
 
       // MAX_SESSIONS_REACHED has severity "warn" → logged via console.warn
       expect(warnSpy).toHaveBeenCalledWith(
@@ -865,7 +938,7 @@ describe("sessionManager", () => {
       mockRedis.sadd.mockResolvedValueOnce(1);
       mockRedis.expire.mockResolvedValueOnce(1);
 
-      await trackUserSession("user1", "s3", "token");
+      await trackUserSession("user1", "s3");
 
       expect(mockRedis.srem).not.toHaveBeenCalled();
       expect(mockRedis.del).not.toHaveBeenCalled();
@@ -874,7 +947,7 @@ describe("sessionManager", () => {
     it("handles Redis error gracefully", async () => {
       mockRedis.smembers.mockRejectedValueOnce(new Error("REDIS DOWN"));
 
-      await trackUserSession("user1", "s1", "token");
+      await trackUserSession("user1", "s1");
 
       expect(errorSpy).toHaveBeenCalledWith(
         expect.stringContaining(

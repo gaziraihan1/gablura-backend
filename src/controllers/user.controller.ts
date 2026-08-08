@@ -265,7 +265,7 @@ export const changePassword = async (req: AuthRequest, res: Response): Promise<v
     // Update password
     await prisma.user.update({
       where: { id: req.user.id },
-      data: { password: hashedPassword },
+      data: { password: hashedPassword, lastPasswordChange: new Date() },
     });
 
     // Invalidate user cache

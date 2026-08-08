@@ -296,15 +296,17 @@ export const TaskMutation = {
       if (!section) throw new BadRequestError('Section does not belong to this task project');
     }
     if (data.sprintId) {
+      if (!existingTask.projectId) throw new BadRequestError('Sprint requires a project');
       const sprint = await prisma.sprint.findFirst({
-        where: { id: data.sprintId, projectId: existingTask.projectId ?? undefined },
+        where: { id: data.sprintId, projectId: existingTask.projectId },
         select: { id: true },
       });
       if (!sprint) throw new BadRequestError('Sprint does not belong to this task project');
     }
     if (data.milestoneId) {
+      if (!existingTask.projectId) throw new BadRequestError('Milestone requires a project');
       const milestone = await prisma.projectMilestone.findFirst({
-        where: { id: data.milestoneId, projectId: existingTask.projectId ?? undefined },
+        where: { id: data.milestoneId, projectId: existingTask.projectId },
         select: { id: true },
       });
       if (!milestone) throw new BadRequestError('Milestone does not belong to this task project');

@@ -40,6 +40,7 @@ import { contactRouter } from "./modules/contact/index.js";
 import { jobRouter } from "./modules/job/index.js";
 
 import { authenticate } from "./middleware/auth.js";
+import { sessionTimeout } from "./middleware/sessionTimeout.js";
 import {
   projectAnnouncementRouter,
   workspaceAnnouncementRouter,
@@ -229,7 +230,7 @@ app.get("/api/v1/debug/auth", (req: Request, res: Response) => {
 // CRITICAL: CSRF Token Endpoint - NO CSRF PROTECTION
 // This must come BEFORE other authenticated routes
 // ============================================================================
-app.get("/api/v1/csrf-token", authenticate, getCsrfTokenHandler);
+app.get("/api/v1/csrf-token", authenticate, sessionTimeout, getCsrfTokenHandler);
 
 // ============================================================================
 // Public Routes (No Auth, No CSRF)
@@ -246,12 +247,14 @@ app.use("/api/v1/auth", logoutRoutes); // Auth routes handle their own CSRF
 app.use(
   "/api/v1/workspaces/:workspaceSlug/projects/:projectId/announcements",
   authenticate,
+  sessionTimeout,
   requireCsrfToken(),
   projectAnnouncementRouter,
 );
 app.use(
   "/api/v1/workspaces/:workspaceSlug/announcements",
   authenticate,
+  sessionTimeout,
   requireCsrfToken(),
   workspaceAnnouncementRouter,
 );
@@ -259,51 +262,56 @@ app.use("/api/v1/workspaces", workspaceRouter); // Has its own auth middleware i
 app.use(
   "/api/v1/workspaces/:workspaceId/billing",
   authenticate,
+  sessionTimeout,
   requireCsrfToken(),
   billingRouter,
 );
 app.use(
   "/api/v1/announcements",
   authenticate,
+  sessionTimeout,
   requireCsrfToken(),
   announcementRouter,
 );
-app.use("/api/v1/admin/resources", authenticate, requireCsrfToken(),adminResourceRouter ); // Admin routes for resources
+app.use("/api/v1/admin/resources", authenticate, sessionTimeout, requireCsrfToken(),adminResourceRouter ); // Admin routes for resources
 app.use("/api/v1/resources", publicResourceRouter ); // Public routes for resources (if any)
-app.use("/api/v1/projects", authenticate, requireCsrfToken(), projectRoutes);
-app.use("/api/v1/user/integrations", authenticate, requireCsrfToken(), integrationRouter);
-app.use("/api/v1/workspace-integrations", authenticate, requireCsrfToken(), workspaceIntegrationRouter);
-app.use("/api/v1/tasks", authenticate, requireCsrfToken(), taskRouter);
-app.use("/api/v1/daily-tasks", authenticate, requireCsrfToken(), dailyTaskRouter);
-app.use("/api/v1/activities", authenticate, requireCsrfToken(), activityRouter);
-app.use("/api/v1/user", authenticate, requireCsrfToken(), userRoutes);
+app.use("/api/v1/projects", authenticate, sessionTimeout, requireCsrfToken(), projectRoutes);
+app.use("/api/v1/user/integrations", authenticate, sessionTimeout, requireCsrfToken(), integrationRouter);
+app.use("/api/v1/workspace-integrations", authenticate, sessionTimeout, requireCsrfToken(), workspaceIntegrationRouter);
+app.use("/api/v1/tasks", authenticate, sessionTimeout, requireCsrfToken(), taskRouter);
+app.use("/api/v1/daily-tasks", authenticate, sessionTimeout, requireCsrfToken(), dailyTaskRouter);
+app.use("/api/v1/activities", authenticate, sessionTimeout, requireCsrfToken(), activityRouter);
+app.use("/api/v1/user", authenticate, sessionTimeout, requireCsrfToken(), userRoutes);
 app.use("/api/v1/api-keys", apiKeyRouter);
-app.use("/api/v1/upload", authenticate, requireCsrfToken(), uploadRoutes);
-app.use("/api/v1/labels", authenticate, requireCsrfToken(), labelRouter);
-app.use("/api/v1/calendar", authenticate, requireCsrfToken(), calendarRouter);
+app.use("/api/v1/upload", authenticate, sessionTimeout, requireCsrfToken(), uploadRoutes);
+app.use("/api/v1/labels", authenticate, sessionTimeout, requireCsrfToken(), labelRouter);
+app.use("/api/v1/calendar", authenticate, sessionTimeout, requireCsrfToken(), calendarRouter);
 app.use(
   "/api/v1/focus-sessions",
   authenticate,
+  sessionTimeout,
   requireCsrfToken(),
   focusSessionRouter,
 );
-app.use("/api/v1/storage", authenticate, requireCsrfToken(), storageRouter);
-app.use("/api/v1/analytics", authenticate, requireCsrfToken(), analyticsRouter);
+app.use("/api/v1/storage", authenticate, sessionTimeout, requireCsrfToken(), storageRouter);
+app.use("/api/v1/analytics", authenticate, sessionTimeout, requireCsrfToken(), analyticsRouter);
 app.use(
   "/api/v1/file-management",
   authenticate,
+  sessionTimeout,
   requireCsrfToken(),
   fileManagementRouter,
 );
 app.use(
   "/api/v1/workspace-usage",
   authenticate,
+  sessionTimeout,
   requireCsrfToken(),
   workspaceUsageRouter,
 );
-app.use("/api/v1/meetings", authenticate, requireCsrfToken(), meetingRoutes);
-app.use("/api/v1/features", authenticate, requireCsrfToken(), featureRouter);
-app.use("/api/v1/admin", authenticate, requireCsrfToken(), requireFocuraAdmin, adminRouter);
+app.use("/api/v1/meetings", authenticate, sessionTimeout, requireCsrfToken(), meetingRoutes);
+app.use("/api/v1/features", authenticate, sessionTimeout, requireCsrfToken(), featureRouter);
+app.use("/api/v1/admin", authenticate, sessionTimeout, requireCsrfToken(), requireFocuraAdmin, adminRouter);
 
 app.use(notFoundHandler);  // catches unmatched routes → forwards to errorHandler
 app.use(errorHandler); 

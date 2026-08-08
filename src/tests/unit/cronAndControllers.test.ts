@@ -204,7 +204,7 @@ vi.mock('../../utils/email.js', () => ({ sendEmail: vi.fn() }));
 vi.mock('../../lib/sentry.js', () => ({ captureException: vi.fn() }));
 vi.mock('../../services/slug.service.js', () => ({ generateSlug: vi.fn().mockResolvedValue('test-slug') }));
 vi.mock('../../config/admin.config.js', () => ({ adminEmails: [] }));
-vi.mock('../../lib/redis/redis.pubsub.js', () => ({ getPublisher: mockGetPublisher }));
+vi.mock('../../lib/redis/redis.pubsub.js', () => ({ getPublisher: mockGetPublisher, getSubscriber: vi.fn(), subscribe: vi.fn() }));
 vi.mock('../../lib/sse/sse.channels.js', () => ({
   userChannel: (userId: string) => `sse:user:${userId}`,
 }));
@@ -739,7 +739,7 @@ describe('notification.helpers.ts', () => {
       });
       mockPublisherObj.publish.mockResolvedValue(1);
 
-      await notifyUser({ userId: 'u1', type: 'SYSTEM', title: 'S', message: 'M' });
+      await notifyUser({ userId: 'u1', type: 'PROJECT_UPDATE', title: 'S', message: 'M' });
       expect(mockPrisma.notification.create).toHaveBeenCalled();
     });
   });
@@ -779,7 +779,7 @@ describe('notification.helpers.ts', () => {
       ]);
       mockPrisma.notification.createManyAndReturn.mockResolvedValue([]);
       await notifyTaskAssignees({
-        taskId: 't1', senderId: 'u1', type: 'TASK_UPDATED', title: 'U',
+        taskId: 't1', senderId: 'u1', type: 'TASK_ASSIGNED', title: 'U',
         message: 'Updated', excludeUserId: 'u1',
       });
       expect(mockPrisma.taskAssignee.findMany).toHaveBeenCalledWith({
@@ -810,7 +810,7 @@ describe('notification.helpers.ts', () => {
       mockPrisma.workspaceMember.findMany.mockResolvedValue([{ userId: 'u1' }, { userId: 'u2' }]);
       mockPrisma.notification.createManyAndReturn.mockResolvedValue([]);
       await notifyWorkspaceMembers({
-        workspaceId: 'w1', senderId: 'u1', type: 'WORKSPACE_UPDATED', title: 'U',
+        workspaceId: 'w1', senderId: 'u1', type: 'ROLE_UPDATED', title: 'U',
         message: 'Updated', excludeUserId: 'u1',
       });
       expect(mockPrisma.workspaceMember.findMany).toHaveBeenCalled();
@@ -820,7 +820,7 @@ describe('notification.helpers.ts', () => {
       mockPrisma.workspaceMember.findMany.mockResolvedValue([{ userId: 'u1' }]);
       mockPrisma.notification.createManyAndReturn.mockResolvedValue([]);
       await notifyWorkspaceMembers({
-        workspaceId: 'w1', senderId: 's1', type: 'WORKSPACE_CREATED', title: 'C', message: 'Created',
+        workspaceId: 'w1', senderId: 's1', type: 'MEMBER_JOINED', title: 'C', message: 'Created',
       });
       expect(mockPrisma.notification.createManyAndReturn).toHaveBeenCalled();
     });
@@ -828,7 +828,7 @@ describe('notification.helpers.ts', () => {
     it('handles empty member list', async () => {
       mockPrisma.workspaceMember.findMany.mockResolvedValue([]);
       await notifyWorkspaceMembers({
-        workspaceId: 'w1', senderId: 's1', type: 'WORKSPACE_UPDATED', title: 'U', message: 'Updated',
+        workspaceId: 'w1', senderId: 's1', type: 'ROLE_UPDATED', title: 'U', message: 'Updated',
       });
       expect(mockPrisma.notification.createManyAndReturn).not.toHaveBeenCalled();
     });

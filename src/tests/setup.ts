@@ -17,6 +17,8 @@ vi.mock('node-cron', () => ({
 // ── MOCK: ioredis ─────────────────────────────────────────────────────────────
 const redisStore = new Map<string, string>();
 
+const redisSetStore = new Map<string, Set<string>>();
+
 const createInMemoryRedisMock = () => {
   const mock = {
     get:    vi.fn(async (key: string) => redisStore.get(key) ?? null),
@@ -25,7 +27,11 @@ const createInMemoryRedisMock = () => {
     setex:  vi.fn(async (key: string, _ttl: number, value: string) => { redisStore.set(key, value); return 'OK'; }),
     del:    vi.fn(async (...keys: string[]) => {
       let deleted = 0;
-      for (const key of keys) if (redisStore.delete(key)) deleted++;
+      for (const key of keys) {
+        // A key can live in the string store, the set store, or both.
+        deleted += redisStore.delete(key) ? 1 : 0;
+        deleted += redisSetStore.delete(key) ? 1 : 0;
+      }
       return deleted;
     }),
     keys:   vi.fn(async (pattern: string) => {
@@ -51,9 +57,19 @@ const createInMemoryRedisMock = () => {
     zcard:  vi.fn().mockResolvedValue(0),
     zadd:   vi.fn().mockResolvedValue(1),
     expire: vi.fn().mockResolvedValue(1),
-    sadd:   vi.fn().mockResolvedValue(1),
-    srem:   vi.fn().mockResolvedValue(1),
-    smembers: vi.fn().mockResolvedValue([]),
+    sadd:   vi.fn(async (key: string, member: string) => {
+      if (!redisSetStore.has(key)) redisSetStore.set(key, new Set());
+      redisSetStore.get(key)!.add(member);
+      return 1;
+    }),
+    srem:   vi.fn(async (key: string, member: string) => {
+      const set = redisSetStore.get(key);
+      if (!set) return 0;
+      const had = set.delete(member);
+      if (set.size === 0) redisSetStore.delete(key);
+      return had ? 1 : 0;
+    }),
+    smembers: vi.fn(async (key: string) => [...(redisSetStore.get(key) ?? [])]),
     zremrangebyscore: vi.fn().mockResolvedValue(0),
     eval:   vi.fn().mockResolvedValue(1),
     pipeline: vi.fn().mockReturnValue({
@@ -133,6 +149,8 @@ vi.mock('../lib/redis.js', () => ({
 // ── MOCK: tokenRevocation ─────────────────────────────────────────────────────
 vi.mock('../lib/auth/tokenRevocation.js', () => ({
   isAccessTokenRevoked:   vi.fn().mockResolvedValue(false),
+  isSessionRevoked:       vi.fn().mockResolvedValue(false),
+  markSessionRevoked:     vi.fn().mockResolvedValue(undefined),
   revokeAccessToken:      vi.fn().mockResolvedValue(undefined),
   revokeAllRefreshTokens: vi.fn().mockResolvedValue(undefined),
   storeRefreshToken:      vi.fn().mockResolvedValue(undefined),
@@ -227,8 +245,8 @@ const ALL_TABLES = [
   'File', 'Activity', 'Notification',
   'Task', 'Label', 'FeatureRequest', 'Announcement', 'Meeting', 'Project',
   'JobPosting', 'Invoice', 'Subscription', 'Payment', 'UsageRecord', 'BillingEvent',
-  'WorkspaceInvitation', 'WorkspaceMember', 'Workspace', 'RefreshToken',
-  'Session', 'Account', 'VerificationToken', 'PasswordResetToken',
+  'WorkspaceInvitation', 'WorkspaceMember', 'Workspace',
+  'Account', 'VerificationToken', 'PasswordResetToken',
   // popular_resources and product_updates have RESTRICT FKs to User — must come before User
   'ContactMessage', 'TemplateList', 'SubscribeList', 'Integration',
   'popular_resources', 'product_updates',

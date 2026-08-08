@@ -39,9 +39,13 @@ export async function mutateSoftDeleteWorkspace(
     },
     select: {
       name:  true,
+      slug:  true,
       owner: { select: { email: true, name: true } },
     },
   });
+
+  // Invalidate metadata caches so the suspension applies immediately
+  WorkspaceCache.invalidateWorkspace(workspaceId, ws.slug).catch(() => {});
 
   return {
     ownerEmail:    ws.owner.email,
@@ -58,6 +62,7 @@ export async function mutateHardDeleteWorkspace(
     where:  { id: workspaceId },
     select: {
       name:  true,
+      slug:  true,
       owner: { select: { id: true, email: true, name: true } },
     },
   });
@@ -65,6 +70,9 @@ export async function mutateHardDeleteWorkspace(
   if (!ws) throw new Error("NOT_FOUND: Workspace not found");
 
   await prisma.workspace.delete({ where: { id: workspaceId } });
+
+  // Invalidate metadata caches so the deleted workspace disappears immediately
+  WorkspaceCache.invalidateWorkspace(workspaceId, ws.slug).catch(() => {});
 
   return {
     ownerEmail:    ws.owner.email,

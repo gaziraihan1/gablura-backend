@@ -5,7 +5,7 @@ import { NotFoundError, BadRequestError } from "../../../errors/index.js";
 
 vi.mock("../../../lib/prisma.js", () => ({
   prisma: {
-    projectSection: { create: vi.fn(), update: vi.fn(), delete: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn() },
+    projectSection: { create: vi.fn(), update: vi.fn(), delete: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn() },
     $transaction: vi.fn((updates: any[]) => Promise.all(updates)),
   },
 }));
@@ -130,6 +130,9 @@ describe("SectionMutation", () => {
   describe("reorder", () => {
     it("should reorder sections in a transaction", async () => {
       const sectionIds = ["sec1", "sec2", "sec3"];
+      (prisma.projectSection.findMany as any).mockResolvedValue([
+        { id: "sec1" }, { id: "sec2" }, { id: "sec3" },
+      ]);
       (prisma.projectSection.update as any).mockResolvedValue({});
       await SectionMutation.reorder("p1", sectionIds, "u1");
       expect(prisma.$transaction).toHaveBeenCalled();
@@ -141,6 +144,19 @@ describe("SectionMutation", () => {
       expect(prisma.projectSection.update).toHaveBeenNthCalledWith(1, { where: { id: "sec1" }, data: { position: 0 } });
       expect(prisma.projectSection.update).toHaveBeenNthCalledWith(2, { where: { id: "sec2" }, data: { position: 1 } });
       expect(prisma.projectSection.update).toHaveBeenNthCalledWith(3, { where: { id: "sec3" }, data: { position: 2 } });
+    });
+
+    it("should reject a section that does not belong to the project", async () => {
+      (prisma.projectSection.findMany as any).mockResolvedValue([{ id: "sec1" }, { id: "sec2" }]);
+      await expect(
+        SectionMutation.reorder("p1", ["sec1", "sec-foreign"], "u1"),
+      ).rejects.toThrow(BadRequestError);
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it("should reject an empty sectionIds array", async () => {
+      await expect(SectionMutation.reorder("p1", [], "u1")).rejects.toThrow(BadRequestError);
+      expect(prisma.$transaction).not.toHaveBeenCalled();
     });
   });
 });

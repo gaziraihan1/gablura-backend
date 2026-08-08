@@ -5,7 +5,7 @@ import { NotFoundError } from "../../../errors/index.js";
 
 vi.mock("../../../lib/prisma.js", () => ({
   prisma: {
-    projectMilestone: { findMany: vi.fn(), findUnique: vi.fn() },
+    projectMilestone: { findMany: vi.fn(), findFirst: vi.fn(), findUnique: vi.fn() },
   },
 }));
 
@@ -31,14 +31,22 @@ describe("MilestoneQuery", () => {
   describe("getById", () => {
     it("should return milestone with dependencies", async () => {
       const mock = { id: "m1", dependsOn: { id: "m2" }, dependencies: [{ id: "m3" }] };
-      (prisma.projectMilestone.findUnique as any).mockResolvedValue(mock);
+      (prisma.projectMilestone.findFirst as any).mockResolvedValue(mock);
       const result = await MilestoneQuery.getById("m1");
       expect(result.dependsOn).toBeDefined();
       expect(result.dependencies).toHaveLength(1);
     });
 
+    it("should scope the lookup to the project when projectId is provided", async () => {
+      (prisma.projectMilestone.findFirst as any).mockResolvedValue({ id: "m1" });
+      await MilestoneQuery.getById("m1", "p1");
+      expect(prisma.projectMilestone.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: "m1", projectId: "p1" } }),
+      );
+    });
+
     it("should throw NotFoundError if not found", async () => {
-      (prisma.projectMilestone.findUnique as any).mockResolvedValue(null);
+      (prisma.projectMilestone.findFirst as any).mockResolvedValue(null);
       await expect(MilestoneQuery.getById("nonexistent")).rejects.toThrow(NotFoundError);
     });
   });

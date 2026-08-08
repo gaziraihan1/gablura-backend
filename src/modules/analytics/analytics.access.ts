@@ -26,11 +26,12 @@ export const AnalyticsAccess = {
 
     if (!workspace) throw new NotFoundError('Workspace');
 
+    // Membership/role first so non-members can't probe the workspace's plan tier.
+    await this.assertWorkspaceAdminOrOwner(userId, workspaceId);
+
     if (workspace.plan === 'FREE') {
       throw new PlanLimitError('Upgrade your workspace plan to access analytics');
     }
-
-    await this.assertWorkspaceAdminOrOwner(userId, workspaceId);
   },
 
   async assertBusinessOnlyAccess(userId: string, workspaceId: string) {
@@ -56,10 +57,6 @@ export const AnalyticsAccess = {
 
     if (!workspace) throw new NotFoundError('Workspace');
 
-    if (workspace.plan === 'FREE') {
-      throw new PlanLimitError('Upgrade your workspace plan to access analytics');
-    }
-
     const member = await prisma.workspaceMember.findUnique({
       where: { userId_workspaceId: { userId, workspaceId } },
       select: { role: true },
@@ -83,6 +80,11 @@ export const AnalyticsAccess = {
       if (!isProjectManager) {
         throw new ForbiddenError('Analytics access is restricted to workspace admins, owners, or project managers');
       }
+    }
+
+    // Plan check last so non-members can't probe the workspace's plan tier.
+    if (workspace.plan === 'FREE') {
+      throw new PlanLimitError('Upgrade your workspace plan to access analytics');
     }
   },
 

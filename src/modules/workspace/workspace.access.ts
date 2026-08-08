@@ -55,6 +55,17 @@ export const WorkspaceAccess = {
     return member;
   },
 
+  async assertNotSuspended(workspaceId: string) {
+    const workspace = await prisma.workspace.findUnique({
+      where: { id: workspaceId },
+      select: { deletedAt: true },
+    });
+    if (!workspace) throw new NotFoundError("Workspace");
+    if (workspace.deletedAt) {
+      throw new ForbiddenError("This workspace has been suspended", "WORKSPACE_SUSPENDED");
+    }
+  },
+
   async assertOwner(workspaceId: string, userId: string) {
     const cacheKey = CACHE_KEYS.workspaceOwner(workspaceId, userId);
     const workspace = await CacheClient.getOrSet(

@@ -4,8 +4,8 @@ import fs from "fs";
 import path from "path";
 import { prisma } from "../lib/prisma.js";
 import { getRedisClient } from "../redis/redis.client.js";
-import { getClientIp, SessionMetadata, validateSessionBinding } from "../lib/auth/sessionBinding.js";
-import { revokeAllRefreshTokens, isAccessTokenRevoked } from "../lib/auth/tokenRevocation.js";
+import { getClientIp, generateDeviceFingerprint, looksLikeServerToServerRequest, looksLikeServerToServerUA, SessionMetadata, validateSessionBinding } from "../lib/auth/sessionBinding.js";
+import { revokeAllRefreshTokens, isAccessTokenRevoked, isSessionRevoked } from "../lib/auth/tokenRevocation.js";
 import { auditLog } from "../lib/auth/auditLog.js";
 import { AccountBannedError, EmailNotVerifiedError, ForbiddenError, InvalidTokenError, SessionHijackError, TokenExpiredError, TokenRevokedError, UnauthorizedError } from "../errors/AppError.js";
 import { setUserContext, addBreadcrumb, captureException } from "../lib/sentry.js";
@@ -127,6 +127,14 @@ export const authenticate = async (
       }
     }
  
+    // 5.5. Session revocation check (max-sessions eviction tombstone)
+    if (decoded.sessionId) {
+      const sessionWasRevoked = await isSessionRevoked(decoded.sessionId);
+      if (sessionWasRevoked) {
+        return next(new TokenRevokedError());
+      }
+    }
+
     // 6. Session binding validation (Redis)
     if (decoded.sessionId) {
       const redis = getRedisClient();
@@ -134,25 +142,67 @@ export const authenticate = async (
       const storedMetadata = await redis.get(metadataKey);
  
       if (storedMetadata) {
-        const metadata: SessionMetadata = JSON.parse(storedMetadata);
-        const bindingValidation = validateSessionBinding(req, metadata);
- 
-        if (!bindingValidation.valid) {
-          // Revoke all tokens and log the suspicious activity before erroring
-          await revokeAllRefreshTokens(decoded.sub);
-          auditLog("SESSION_HIJACK_DETECTED", {
-            userId: decoded.sub,
-            sessionId: decoded.sessionId,
-            reason: bindingValidation.reason,
-            ip: getClientIp(req),
-            userAgent: req.headers["user-agent"],
-          });
-          return next(new SessionHijackError(bindingValidation.reason));
+                        const metadata: SessionMetadata = JSON.parse(storedMetadata);
+
+        // The Next.js server legitimately calls this API with the user's
+        // access token (SSR data hydration via lib/api/server.ts). Those
+        // server-to-server requests carry no browser headers and can never be
+        // device-bound — skip binding enforcement for them entirely, and never
+        // let them claim the binding ahead of the real browser.
+        // Trade-off: a stolen token used through a runtime-style client (curl,
+        // undici, axios) also bypasses device binding — the real boundary stays
+        // the RS256 tokens + HMAC exchange proof + revocation.
+        if (!looksLikeServerToServerRequest(req)) {
+          // A session minted by the server-to-server token exchange has no
+          // browser binding (deviceId === null), or the stored binding was
+          // created by a server process (runtime user-agent). Adopt the
+          // fingerprint of the first real browser request instead of rejecting
+          // it — otherwise every fresh session false-positives as a
+          // DEVICE_MISMATCH and the user is logged out immediately after login.
+          if (
+            metadata.deviceId == null ||
+            looksLikeServerToServerUA(metadata.userAgent)
+          ) {
+            // Trust boundary: the exchange happened server-to-server, so the
+            // first real browser request claims the device binding. This keeps
+            // legitimate logins working; the security boundary remains the
+            // RS256 tokens + HMAC exchange proof, and all later requests are
+            // bound.
+            metadata.deviceId = generateDeviceFingerprint(req);
+            metadata.ipAddress = getClientIp(req);
+            metadata.userAgent = req.headers["user-agent"] || "unknown";
+            metadata.lastActivity = Date.now();
+            auditLog("SESSION_BOUND", {
+              userId: decoded.sub,
+              sessionId: decoded.sessionId,
+              ip: metadata.ipAddress,
+              userAgent: metadata.userAgent,
+            });
+          } else {
+            const bindingValidation = validateSessionBinding(req, metadata);
+
+            if (!bindingValidation.valid) {
+              // Revoke all tokens, drop the cached auth result, and log the
+              // suspicious activity before erroring.
+              await revokeAllRefreshTokens(decoded.sub);
+              if (decoded.jti) {
+                await CacheClient.delete(CACHE_KEYS.authResult(decoded.jti));
+              }
+              auditLog("SESSION_HIJACK_DETECTED", {
+                userId: decoded.sub,
+                sessionId: decoded.sessionId,
+                reason: bindingValidation.reason,
+                ip: getClientIp(req),
+                userAgent: req.headers["user-agent"],
+              });
+              return next(new SessionHijackError(bindingValidation.reason));
+            }
+          }
+
+          // Bump lastActivity
+          metadata.lastActivity = Date.now();
+          await redis.setex(metadataKey, 7 * 24 * 60 * 60, JSON.stringify(metadata));
         }
- 
-        // Bump lastActivity
-        metadata.lastActivity = Date.now();
-        await redis.setex(metadataKey, 7 * 24 * 60 * 60, JSON.stringify(metadata));
       }
     }
  

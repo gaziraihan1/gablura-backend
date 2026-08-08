@@ -224,6 +224,7 @@ model User {
   lastLoginAt             DateTime?
   twoFactorSecret         String?
   twoFactorEnabled        Boolean                  @default(false)
+  lastPasswordChange       DateTime?
   stripeCustomerId        String?                  @unique
   banReason               String?
   bannedAt                DateTime?
@@ -251,8 +252,6 @@ model User {
   createdProjects         Project[]                @relation("ProjectCreator")
   projectFavorites        ProjectFavorite[]
   projectMembers          ProjectMember[]
-  refresh_token           RefreshToken[]
-  sessions                Session[]
   systemEvents            SystemCalendarEvent[]
   createdTasks            Task[]                   @relation("TaskCreator")
   assignedTasks           TaskAssignee[]
@@ -351,17 +350,6 @@ model Account {
   @@index([userId])
 }
 
-model Session {
-  id           String   @id @default(cuid())
-  sessionToken String   @unique
-  userId       String
-  expires      DateTime
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-  @@index([expires])
-}
-
 model VerificationToken {
   identifier String
   token      String   @unique
@@ -378,20 +366,6 @@ model PasswordResetToken {
   createdAt DateTime @default(now())
 
   @@unique([email, token])
-}
-
-model RefreshToken {
-  id           String   @id @default(cuid())
-  userId       String
-  tokenHash    String
-  revoked      Boolean  @default(false)
-  replacedById String?
-  expiresAt    DateTime
-  createdAt    DateTime @default(now())
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-  @@index([tokenHash])
 }
 
 model WorkspaceMember {
@@ -968,6 +942,25 @@ model BurnoutSignal {
   user                 User        @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, weekStart])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  event     String
+  severity  String
+  userId    String?
+  email     String?
+  ip        String?
+  userAgent String?
+  sessionId String?
+  jti       String?
+  reason    String?
+  meta      Json?
+  timestamp DateTime @default(now())
+
+  @@index([event])
+  @@index([userId])
+  @@index([timestamp])
 }
 
 model Label {

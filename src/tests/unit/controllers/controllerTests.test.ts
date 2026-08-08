@@ -36,19 +36,19 @@ const {
   mockRedisSetex: vi.fn(async () => 'OK'),
   mockRedisDel: vi.fn(async () => 1),
   mockRedisExists: vi.fn(async () => 1),
-  mockPipelineExec: vi.fn(async () => []),
-  mockCacheClientGet: vi.fn(async () => null),
-  mockCacheClientSet: vi.fn(async () => 'OK'),
-  mockUserCacheInvalidateProfile: vi.fn(async () => undefined),
-  mockArgon2Verify: vi.fn(async () => true),
-  mockArgon2Hash: vi.fn(async () => '$argon2id$v=19$m=65536,t=3,p=4$hashed'),
-  mockAddSendNotificationJob: vi.fn(async () => ({})),
-  mockLimitApiRequest: vi.fn(async () => ({
+  mockPipelineExec: vi.fn(async (..._args: any[]) => [] as any),
+  mockCacheClientGet: vi.fn(async (..._args: any[]) => null),
+  mockCacheClientSet: vi.fn(async (..._args: any[]) => 'OK'),
+  mockUserCacheInvalidateProfile: vi.fn(async (..._args: any[]) => undefined),
+  mockArgon2Verify: vi.fn(async (..._args: any[]) => true),
+  mockArgon2Hash: vi.fn(async (..._args: any[]) => '$argon2id$v=19$m=65536,t=3,p=4$hashed'),
+  mockAddSendNotificationJob: vi.fn(async (..._args: any[]) => ({})),
+  mockLimitApiRequest: vi.fn(async (..._args: any[]) => ({
     success: true,
     limit: 60,
     remaining: 59,
     reset: Date.now() + 60000,
-  })),
+  }) as any),
 }));
 
 // ─── Mock: prisma ────────────────────────────────────────────────────────────
@@ -640,7 +640,7 @@ describe('User Controller', () => {
       expect(mockArgon2Hash).toHaveBeenCalledWith('newpass123');
       expect(mockPrismaUserUpdate).toHaveBeenCalledWith({
         where: { id: 'user-1' },
-        data: { password: '$argon2id$v=19$newhash' },
+        data: { password: '$argon2id$v=19$newhash', lastPasswordChange: expect.any(Date) },
       });
       expect(mockUserCacheInvalidateProfile).toHaveBeenCalledWith('user-1');
     });
@@ -952,23 +952,26 @@ describe('Session Timeout Middleware', () => {
       expect(next).toHaveBeenCalled();
     });
 
-    it('returns 401 when absolute timeout expired', async () => {
+    it('fails open when the session is untracked (absolute timeout lapsed)', async () => {
+      // The session:created key is gone, so the session is treated as
+      // untracked and the middleware fails open (token lifetimes still bound
+      // it) instead of force-logging-out.
       mockRedisExists.mockResolvedValueOnce(0);
-      const req = createReq({ user: { id: 'u1', email: 'e', role: 'r', tokenJti: 'jti-1' } }) as any;
+      const req = createReq({ user: { id: 'u1', email: 'e', role: 'r', sessionId: 'sess-1', tokenJti: 'jti-1' } }) as any;
       const res = createRes() as any;
 
       await sessionTimeout(req, res, next);
 
-      expect(res._status).toBe(401);
-      expect(res._body.code).toBe('SESSION_TIMEOUT');
-      expect(res._body.message).toContain('expired');
+      expect(next).toHaveBeenCalled();
+      // No error JSON was written — the middleware failed open.
+      expect(res._body).toBeNull();
     });
 
     it('returns 401 when session is inactive', async () => {
       mockRedisExists
         .mockResolvedValueOnce(1)
         .mockResolvedValueOnce(0);
-      const req = createReq({ user: { id: 'u1', email: 'e', role: 'r', tokenJti: 'jti-1' } }) as any;
+      const req = createReq({ user: { id: 'u1', email: 'e', role: 'r', sessionId: 'sess-1', tokenJti: 'jti-1' } }) as any;
       const res = createRes() as any;
 
       await sessionTimeout(req, res, next);
@@ -983,7 +986,7 @@ describe('Session Timeout Middleware', () => {
         .mockResolvedValueOnce(1);
       mockRedisSetex.mockResolvedValueOnce('OK');
 
-      const req = createReq({ user: { id: 'u1', email: 'e', role: 'r', tokenJti: 'jti-1' } }) as any;
+      const req = createReq({ user: { id: 'u1', email: 'e', role: 'r', sessionId: 'sess-1', tokenJti: 'jti-1' } }) as any;
       const res = createRes() as any;
 
       await sessionTimeout(req, res, next);

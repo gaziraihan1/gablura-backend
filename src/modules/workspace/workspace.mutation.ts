@@ -66,6 +66,7 @@ export const WorkspaceMutation = {
     onUpdated?: OnWorkspaceUpdated,
   ) {
     await WorkspaceAccess.assertAdmin(workspaceId, userId);
+    await WorkspaceAccess.assertNotSuspended(workspaceId);
     const workspace = await prisma.workspace.update({
       where: { id: workspaceId },
       data: input,
@@ -81,6 +82,7 @@ export const WorkspaceMutation = {
 
   async delete(workspaceId: string, userId: string) {
     await WorkspaceAccess.assertOwner(workspaceId, userId);
+    await WorkspaceAccess.assertNotSuspended(workspaceId);
 
     // Get workspace slug before deleting
     const workspace = await prisma.workspace.findUnique({
@@ -103,7 +105,9 @@ export const WorkspaceMutation = {
     email: string,
     role: WorkspaceRole,
     onInvited?: OnMemberInvited,
-  ) {      await WorkspaceAccess.assertAdmin(workspaceId, inviterId); // already throws ForbiddenError
+  ) {
+    await WorkspaceAccess.assertAdmin(workspaceId, inviterId); // already throws ForbiddenError
+    await WorkspaceAccess.assertNotSuspended(workspaceId);
 
     // Parallelize independent duplicate-check queries
     const [existing, member] = await Promise.all([
@@ -170,14 +174,28 @@ export const WorkspaceMutation = {
     if (user?.email !== invitation.email)
       throw new BadRequestError("This invitation was sent to a different email address", "EMAIL_MISMATCH");
 
+    // Ownership can only exist via workspace creation — never via invitations.
+    if (invitation.role === "OWNER") {
+      throw new BadRequestError("Invalid invitation role", "INVALID_INVITATION_ROLE");
+    }
 
-    await prisma.workspaceMember.create({
-      data: {
-        userId,
-        workspaceId: invitation.workspaceId,
-        role: invitation.role,
-      },
-    });
+    try {
+      await prisma.workspaceMember.create({
+        data: {
+          userId,
+          workspaceId: invitation.workspaceId,
+          role: invitation.role,
+        },
+      });
+    } catch (err: any) {
+      if (err?.code === "P2002") {
+        throw new ConflictError(
+          "You are already a member of this workspace",
+          "ALREADY_MEMBER",
+        );
+      }
+      throw err;
+    }
     await prisma.workspaceInvitation.update({
       where: { id: invitation.id },
       data: { status: "ACCEPTED" },
@@ -208,7 +226,8 @@ if (invitation.workspaceId) {
     memberId: string,
     onRemoved?: OnMemberRemoved,
   ) {
-    await WorkspaceAccess.assertAdmin(workspaceId, removerId); // throws ForbiddenError
+    const remover = await WorkspaceAccess.assertAdmin(workspaceId, removerId); // throws ForbiddenError
+    await WorkspaceAccess.assertNotSuspended(workspaceId);
 
     const member = await prisma.workspaceMember.findUnique({
       where: { id: memberId },
@@ -219,6 +238,20 @@ if (invitation.workspaceId) {
     });
     if (!member) throw new NotFoundError("Member");
     if (member.workspaceId !== workspaceId) throw new NotFoundError("Member");
+
+    // G1 hardening: the owner can never be removed, and only the OWNER can
+    // remove an ADMIN (prevents admin-only takeover / owner lockout).
+    const workspace = await prisma.workspace.findUnique({
+      where: { id: workspaceId },
+      select: { ownerId: true },
+    });
+    if (!workspace) throw new NotFoundError("Workspace");
+    if (member.role === "OWNER" || member.userId === workspace.ownerId) {
+      throw new ForbiddenError("Cannot remove the workspace owner", "CANNOT_REMOVE_OWNER");
+    }
+    if (remover.role === "ADMIN" && member.role === "ADMIN") {
+      throw new ForbiddenError("Only the workspace owner can remove admins", "CANNOT_REMOVE_ADMIN");
+    }
 
     await prisma.workspaceMember.delete({ where: { id: memberId } });
     addInvalidateCacheJob({ type: 'access-control', workspaceId }).catch(() => {});
@@ -242,14 +275,30 @@ if (invitation.workspaceId) {
       include: { workspace: { select: { name: true } } },
     });
     if (!updater) throw new ForbiddenError("Only the workspace owner can change roles");
+    await WorkspaceAccess.assertNotSuspended(workspaceId);
 
     // Verify the member record belongs to this workspace
     const targetMember = await prisma.workspaceMember.findUnique({
       where: { id: memberId },
-      select: { workspaceId: true },
+      select: { workspaceId: true, role: true },
     });
     if (!targetMember || targetMember.workspaceId !== workspaceId) {
       throw new NotFoundError("Member");
+    }
+
+    // G2 hardening: ownership can only exist via workspace creation, and the
+    // owner's own role can never be changed (prevents owner lockout + deadlock).
+    if (role === "OWNER") {
+      throw new BadRequestError(
+        "Ownership cannot be assigned via role updates",
+        "OWNER_ROLE_NOT_ASSIGNABLE",
+      );
+    }
+    if (targetMember.role === "OWNER") {
+      throw new ForbiddenError(
+        "Cannot change the workspace owner's role",
+        "CANNOT_CHANGE_OWNER_ROLE",
+      );
     }
 
     const member = await prisma.workspaceMember.update({
@@ -280,6 +329,7 @@ if (invitation.workspaceId) {
       where: { workspaceId, userId },
     });
     if (!member) throw new BadRequestError("You are not a member of this workspace", "NOT_MEMBER");
+   await WorkspaceAccess.assertNotSuspended(workspaceId);
     if (member.role === "OWNER")
       throw new BadRequestError("Transfer ownership before leaving", "OWNER_CANNOT_LEAVE");
 

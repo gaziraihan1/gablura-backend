@@ -225,6 +225,7 @@ export async function checkAndConsumeWorkspaceQuota(
   workspaceId: string,
   plan: WorkspacePlan,
   memberCount: number,
+  opts?: { skipMinuteRateLimit?: boolean },
 ): Promise<QuotaCheckResult> {
   const redis = getRedisClient();
   const limits = workspaceLimits(plan, memberCount);
@@ -235,7 +236,7 @@ export async function checkAndConsumeWorkspaceQuota(
     return { allowed: true, remaining: null, resetAt, limit: null, usedToday: 0, isUnlimited: true };
   }
 
-  if (limits.perMinute !== null) {
+  if (limits.perMinute !== null && !opts?.skipMinuteRateLimit) {
     const rateCheck = await checkAndRecordMinuteWindow(workspaceId, limits.perMinute);
     if (!rateCheck.allowed) {
       return {

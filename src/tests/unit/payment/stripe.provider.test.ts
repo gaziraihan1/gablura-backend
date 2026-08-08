@@ -50,6 +50,7 @@ vi.mock("../../../lib/prisma.js", () => {
     prisma: {
       plan: {
         findFirst: vi.fn(),
+        findUnique: vi.fn(),
       },
     },
   };
@@ -71,6 +72,10 @@ describe("StripeProvider", () => {
       CACHE_KEYS.stripeCustomer("test@example.com"),
       `api:stripe:portal:cus_123`
     );
+
+    // createCheckoutSession resolves the price from the Plan row first and
+    // falls back to env vars; a null row exercises the env fallback.
+    vi.mocked(prisma.plan.findUnique).mockResolvedValue(null as any);
 
     provider = new StripeProvider();
     stripeMock = getStripeMock();
@@ -148,7 +153,7 @@ describe("StripeProvider", () => {
       expect(result).toEqual({ url: "https://checkout.stripe.com/pay/cs_test_123" });
     });
 
-    it("should throw error if price ID is not configured in env", async () => {
+    it("should throw error if no price is configured (Plan row nor env)", async () => {
       delete process.env.STRIPE_PRICE_PRO_MONTHLY;
       
       await expect(
@@ -163,7 +168,36 @@ describe("StripeProvider", () => {
           trialDays: 0,
           metadata: {},
         })
-      ).rejects.toThrow("[StripeProvider] No price configured for env var: STRIPE_PRICE_PRO_MONTHLY");
+      ).rejects.toThrow("[StripeProvider] No price configured for plan: PRO MONTHLY");
+    });
+
+    it("prefers the Plan row price ID over the env var", async () => {
+      vi.mocked(prisma.plan.findUnique).mockResolvedValue({
+        name: "PRO",
+        stripePriceIdMonthly: "price_db_mo",
+        stripePriceIdYearly: null,
+      } as any);
+
+      const mockSession = { url: "https://checkout.stripe.com/pay/cs_test_db" };
+      stripeMock.checkout.sessions.create.mockResolvedValue(mockSession);
+
+      await provider.createCheckoutSession({
+        providerCustomerId: "cus_123",
+        planName: "PRO",
+        billingCycle: "MONTHLY",
+        successUrl: "ok",
+        cancelUrl: "cancel",
+        workspaceId: "ws",
+        ownerId: "u",
+        trialDays: 0,
+        metadata: {},
+      });
+
+      expect(stripeMock.checkout.sessions.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          line_items: [{ price: "price_db_mo", quantity: 1 }],
+        })
+      );
     });
   });
 

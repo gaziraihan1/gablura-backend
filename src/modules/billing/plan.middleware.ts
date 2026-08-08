@@ -6,6 +6,7 @@ import { Response, NextFunction } from "express";
 import { prisma } from "../../lib/prisma.js";
 import { AuthRequest } from "../../middleware/auth.js";
 import { BillingService } from "./billing.service.js";
+import { PLAN_LIMITS, PlanName } from "./plans.config.js";
 import { PlanLimitError } from "../../errors/AppError.js";
 
 // ---------------------------------------------------------------------------
@@ -96,7 +97,10 @@ export const requireMemberSlot = planGuard(async (req) => {
 
 /** Block file uploads that exceed the workspace plan's per-file size limit. */
 export const requireFileSizeLimit = planGuard(async (req) => {
-  const { workspaceId } = req.params;
+  const workspaceId = req.params?.workspaceId ?? req.body?.workspaceId;
+  // Profile-avatar uploads carry no workspaceId. The upload controller rejects
+  // workspace uploads that omit it, so a missing ID can never store a file.
+  if (!workspaceId) return { allowed: true };
   const limits = await BillingService.getWorkspacePlanLimits(workspaceId);
   const fileSizeMb = Number(req.headers["content-length"] ?? 0) / (1024 * 1024);
 
@@ -149,9 +153,26 @@ export const requireProjectSlot = planGuard(async (req) => {
   return { allowed: true };
 });
 
-/** Block access to workspace analytics on FREE plan. */
+/** Block access to workspace analytics on FREE plan (or for non-members). */
 export const requireAnalyticsAccess = planGuard(async (req) => {
   const { workspaceId } = req.params;
+  const userId = req.user?.id;
+  if (!userId || !workspaceId) {
+    return { allowed: false, reason: "Authentication required" };
+  }
+
+  // Membership/role first so non-members can't probe the workspace's plan tier.
+  const member = await prisma.workspaceMember.findUnique({
+    where: { userId_workspaceId: { userId, workspaceId } },
+    select: { role: true },
+  });
+  if (!member || (member.role !== "ADMIN" && member.role !== "OWNER")) {
+    return {
+      allowed: false,
+      reason: "Analytics access is restricted to workspace admins and owners",
+    };
+  }
+
   const limits = await BillingService.getWorkspacePlanLimits(workspaceId);
   if (!limits.analyticsAccess) {
     return {
@@ -166,6 +187,25 @@ export const requireAnalyticsAccess = planGuard(async (req) => {
 export const requireApiAccess = planGuard(async (req) => {
   const { workspaceId } = req.params;
   const limits = await BillingService.getWorkspacePlanLimits(workspaceId);
+  if (!limits.apiAccess) {
+    return {
+      allowed: false,
+      reason: "API access requires a Business workspace plan.",
+    };
+  }
+  return { allowed: true };
+});
+
+/**
+ * User-level API guard — API keys are user-scoped (not workspace-scoped), so
+ * this checks the user's highest owned-workspace plan instead of a single
+ * workspaceId. Mount on POST /api/v1/api-keys (API key creation).
+ */
+export const requireApiAccessForUser = planGuard(async (req) => {
+  const userId = req.user?.id;
+  if (!userId) return { allowed: false, reason: "Authentication required" };
+  const highestPlan = await BillingService.getUserHighestPlan(userId);
+  const limits = PLAN_LIMITS[highestPlan as PlanName] ?? PLAN_LIMITS.FREE;
   if (!limits.apiAccess) {
     return {
       allowed: false,

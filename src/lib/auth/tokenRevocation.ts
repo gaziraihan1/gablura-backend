@@ -130,3 +130,27 @@ export async function consumeSseToken(jti: string): Promise<string | null> {
     return null;
   }
 }
+
+export async function markSessionRevoked(sessionId: string): Promise<void> {
+  try {
+    await getRedisClient().setex(
+      `focura:session:revoked:${sessionId}`,
+      7 * 24 * 60 * 60,
+      "1",
+    );
+  } catch (err) {
+    console.error("[TokenRevocation] Failed to mark session revoked:", err);
+  }
+}
+
+export async function isSessionRevoked(sessionId: string): Promise<boolean> {
+  try {
+    const val = await getRedisClient().get(
+      `focura:session:revoked:${sessionId}`,
+    );
+    return val === "1";
+  } catch (err) {
+    console.error("[TokenRevocation] Failed to check revoked session:", err);
+    return false;
+  }
+}

@@ -26,7 +26,9 @@ const fileFilter = (
 export const upload = multer({
   storage,
   limits: {
-    fileSize: 10 * 1024 * 1024, 
+    // Hard safety cap at the largest plan allowance (BUSINESS = 100 MB).
+    // Per-workspace plan limits are enforced by requireFileSizeLimit.
+    fileSize: 100 * 1024 * 1024,
   },
   fileFilter,
 });

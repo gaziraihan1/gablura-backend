@@ -7,6 +7,7 @@ import {
   requireMeetingSlot,
   requireAnalyticsAccess,
   requireApiAccess,
+  requireApiAccessForUser,
   requireWorkspaceCreationSlot,
 } from '../../../src/modules/billing/plan.middleware.js';
 
@@ -132,6 +133,40 @@ describe('requireMemberSlot', () => {
 // requireFileSizeLimit
 // ─────────────────────────────────────────────────────────────────────────────
 describe('requireFileSizeLimit', () => {
+  it('allows uploads when workspaceId is missing (profile uploads / controller-enforced)', async () => {
+    const req = mockReq({
+      headers: { 'content-length': '99999999' },
+    });
+    const res = mockRes();
+    const next = mockNext();
+
+    await requireFileSizeLimit(req, res, next);
+
+    expect(next).toHaveBeenCalledWith();
+  });
+
+  it('resolves workspaceId from the request body (multipart uploads)', async () => {
+    vi.spyOn(BillingService, 'getWorkspacePlanLimits').mockResolvedValue({
+      maxFileSizeMb: 1,
+    } as any);
+
+    const req = mockReq({
+      body: { workspaceId: 'ws-body' },
+      headers: { 'content-length': `${5 * 1024 * 1024}` },
+    });
+    const res = mockRes();
+    const next = mockNext();
+
+    await requireFileSizeLimit(req, res, next);
+
+    expect(BillingService.getWorkspacePlanLimits).toHaveBeenCalledWith('ws-body');
+    expect(next).toHaveBeenCalled();
+
+    const error = getError(next);
+    expect(error).toBeInstanceOf(Error);
+    expect(error.code).toBe('PLAN_LIMIT_EXCEEDED');
+  });
+
   it('blocks large file upload', async () => {
     vi.spyOn(BillingService, 'getWorkspacePlanLimits').mockResolvedValue({
       maxFileSizeMb: 1,
@@ -184,7 +219,10 @@ describe('requireMeetingSlot', () => {
 // requireAnalyticsAccess
 // ─────────────────────────────────────────────────────────────────────────────
 describe('requireAnalyticsAccess', () => {
-  it('blocks when analytics disabled', async () => {
+  it('blocks when analytics disabled (member)', async () => {
+    vi.spyOn(prisma.workspaceMember, 'findUnique').mockResolvedValue({
+      role: 'OWNER',
+    } as any);
     vi.spyOn(BillingService, 'getWorkspacePlanLimits').mockResolvedValue({
       analyticsAccess: false,
     } as any);
@@ -201,11 +239,77 @@ describe('requireAnalyticsAccess', () => {
     expect(error).toBeInstanceOf(Error);
     expect(error.code).toBe('PLAN_LIMIT_EXCEEDED');
   });
+
+  it('blocks non-members before checking the plan tier', async () => {
+    vi.spyOn(prisma.workspaceMember, 'findUnique').mockResolvedValue(null as any);
+    const planSpy = vi.spyOn(BillingService, 'getWorkspacePlanLimits');
+
+    const req = mockReq({ params: { workspaceId: 'ws-1' } });
+    const res = mockRes();
+    const next = mockNext();
+
+    await requireAnalyticsAccess(req, res, next);
+
+    expect(next).toHaveBeenCalled();
+
+    const error = getError(next);
+    expect(error).toBeInstanceOf(Error);
+    expect(error.code).toBe('PLAN_LIMIT_EXCEEDED');
+    // The plan tier must not be queried for non-members (no tier probing)
+    expect(planSpy).not.toHaveBeenCalled();
+  });
+
+  it('allows admins/owners on plans with analytics enabled', async () => {
+    vi.spyOn(prisma.workspaceMember, 'findUnique').mockResolvedValue({
+      role: 'ADMIN',
+    } as any);
+    vi.spyOn(BillingService, 'getWorkspacePlanLimits').mockResolvedValue({
+      analyticsAccess: true,
+    } as any);
+
+    const req = mockReq({ params: { workspaceId: 'ws-1' } });
+    const res = mockRes();
+    const next = mockNext();
+
+    await requireAnalyticsAccess(req, res, next);
+
+    expect(next).toHaveBeenCalledWith();
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // requireApiAccess
 // ─────────────────────────────────────────────────────────────────────────────
+describe('requireApiAccessForUser', () => {
+  it('blocks API-key creation when the user has no Business workspace', async () => {
+    vi.spyOn(BillingService, 'getUserHighestPlan').mockResolvedValue('PRO' as any);
+
+    const req = mockReq();
+    const res = mockRes();
+    const next = mockNext();
+
+    await requireApiAccessForUser(req, res, next);
+
+    expect(next).toHaveBeenCalled();
+
+    const error = getError(next);
+    expect(error).toBeInstanceOf(Error);
+    expect(error.code).toBe('PLAN_LIMIT_EXCEEDED');
+  });
+
+  it('allows API-key creation for Business users', async () => {
+    vi.spyOn(BillingService, 'getUserHighestPlan').mockResolvedValue('BUSINESS' as any);
+
+    const req = mockReq();
+    const res = mockRes();
+    const next = mockNext();
+
+    await requireApiAccessForUser(req, res, next);
+
+    expect(next).toHaveBeenCalledWith();
+  });
+});
+
 describe('requireApiAccess', () => {
   it('blocks when API access disabled', async () => {
     vi.spyOn(BillingService, 'getWorkspacePlanLimits').mockResolvedValue({

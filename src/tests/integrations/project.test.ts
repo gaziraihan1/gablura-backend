@@ -891,3 +891,92 @@ describe("Project Caching", () => {
     expect(res2.body.data).toEqual(res1.body.data);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// M1 sub-resource reads are membership-gated (sections/sprints/milestones/views)
+// ─────────────────────────────────────────────────────────────────────────────
+describe("M1 sub-resource reads are membership-gated", () => {
+  it("404 — non-member cannot read sections/sprints/milestones/views", async () => {
+    const { user, workspace } = await createWorkspaceWithOwner();
+    const project = await createProject(workspace.id, user.id, { name: "Gated Project" });
+    const outsider = await createUser();
+
+    const sprint = await prisma.sprint.create({
+      data: {
+        name: "Sprint 1",
+        projectId: project.id,
+        startDate: new Date(),
+        endDate: new Date(Date.now() + 7 * 86400000),
+      },
+    });
+    const milestone = await prisma.projectMilestone.create({
+      data: { title: "M1", projectId: project.id },
+    });
+
+    const paths = [
+      `/api/v1/projects/${project.id}/sections`,
+      `/api/v1/projects/${project.id}/sprints`,
+      `/api/v1/projects/${project.id}/sprints/active`,
+      `/api/v1/projects/${project.id}/sprints/${sprint.id}`,
+      `/api/v1/projects/${project.id}/milestones`,
+      `/api/v1/projects/${project.id}/milestones/${milestone.id}`,
+      `/api/v1/projects/${project.id}/views`,
+    ];
+
+    for (const path of paths) {
+      const res = await request(app).get(path).set(authHeaders(outsider));
+      expect(res.status).toBe(404);
+    }
+  });
+
+  it("200 — workspace member can read sections/sprints/milestones/views", async () => {
+    const { user, workspace } = await createWorkspaceWithOwner();
+    const project = await createProject(workspace.id, user.id, { name: "Member Project" });
+
+    await prisma.sprint.create({
+      data: { name: "S1", projectId: project.id, startDate: new Date(), endDate: new Date(Date.now() + 7 * 86400000) },
+    });
+    await prisma.projectMilestone.create({
+      data: { title: "M1", projectId: project.id },
+    });
+    await prisma.projectView.create({
+      data: { name: "V1", type: "LIST", projectId: project.id, createdById: user.id },
+    });
+
+    const paths = [
+      `/api/v1/projects/${project.id}/sections`,
+      `/api/v1/projects/${project.id}/sprints`,
+      `/api/v1/projects/${project.id}/milestones`,
+      `/api/v1/projects/${project.id}/views`,
+    ];
+
+    for (const path of paths) {
+      const res = await request(app).get(path).set(authHeaders(user));
+      expect(res.status).toBe(200);
+    }
+  });
+
+  it("404 — member cannot read a sprint/milestone of another project via its id", async () => {
+    const { user: owner, workspace } = await createWorkspaceWithOwner();
+    const projectA = await createProject(workspace.id, owner.id, { name: "Project A" });
+    const projectB = await createProject(workspace.id, owner.id, { name: "Project B" });
+
+    const sprintA = await prisma.sprint.create({
+      data: { name: "SA", projectId: projectA.id, startDate: new Date(), endDate: new Date(Date.now() + 7 * 86400000) },
+    });
+    const milestoneA = await prisma.projectMilestone.create({
+      data: { title: "MA", projectId: projectA.id },
+    });
+
+    // Same user, member of both projects — but the URL projectId (B) must match
+    const sprintRes = await request(app)
+      .get(`/api/v1/projects/${projectB.id}/sprints/${sprintA.id}`)
+      .set(authHeaders(owner));
+    expect(sprintRes.status).toBe(404);
+
+    const milestoneRes = await request(app)
+      .get(`/api/v1/projects/${projectB.id}/milestones/${milestoneA.id}`)
+      .set(authHeaders(owner));
+    expect(milestoneRes.status).toBe(404);
+  });
+});

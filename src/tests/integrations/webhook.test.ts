@@ -100,6 +100,7 @@ describe("Stripe Webhook Integration", () => {
       apiAccess: false,
       customBranding: false,
       advancedReports: false,
+      businessOnlyAccess: false,
       maxWorkspacesOwned: 0,
       monthlyPriceCents: 0,
       yearlyPriceCents: 0,

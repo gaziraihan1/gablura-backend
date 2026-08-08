@@ -61,18 +61,21 @@ async function updateSessionActivity(sessionId: string): Promise<boolean> {
 }
 
 /**
- * Check if session is valid
+ * Whether a session was explicitly recorded by the exchange flow.
+ * Untracked/legacy sessions (or sessions whose 7-day absolute lifetime
+ * elapsed) are still bounded by their token lifetimes (15m access / 7d
+ * refresh), so we fail open for them instead of force-logging-out every
+ * existing user at rollout.
  */
-async function isSessionValid(sessionId: string): Promise<boolean> {
+export async function isSessionTracked(sessionId: string): Promise<boolean> {
   try {
     const redis = getRedisClient();
-    const createdKey = `${SESSION_CREATED_PREFIX}${sessionId}`;
-    
-    // Check if absolute timeout expired
-    const exists = await redis.exists(createdKey);
-    return exists === 1;
+    return (await redis.exists(`${SESSION_CREATED_PREFIX}${sessionId}`)) === 1;
   } catch (error) {
-    console.error('❌ Failed to check session validity:', error);
+    console.error('❌ Failed to check session tracking:', error);
+    // Fail open: treat as untracked when Redis is unavailable (consistent
+    // with isAccessTokenRevoked failing open) so a Redis blip doesn't 401
+    // every authenticated request.
     return false;
   }
 }
@@ -80,7 +83,7 @@ async function isSessionValid(sessionId: string): Promise<boolean> {
 /**
  * Check if session is inactive
  */
-async function isSessionInactive(sessionId: string): Promise<boolean> {
+export async function isSessionInactive(sessionId: string): Promise<boolean> {
   try {
     const redis = getRedisClient();
     const activityKey = `${SESSION_ACTIVITY_PREFIX}${sessionId}`;
@@ -106,21 +109,17 @@ export const sessionTimeout = async (
   next: NextFunction
 ) => {
   try {
-    const sessionId = req.user?.tokenJti;
+    const sessionId = req.user?.sessionId;
 
     if (!sessionId) {
       return next();
     }
 
-    // Check absolute timeout
-    const isValid = await isSessionValid(sessionId);
-    if (!isValid) {
-      console.log(`⏰ Session expired (absolute): ${sessionId}`);
-      return res.status(401).json({
-        success: false,
-        code: 'SESSION_TIMEOUT',
-        message: 'Session expired. Please log in again.',
-      });
+    // Only enforce inactivity for sessions recorded by the exchange flow;
+    // untracked sessions are bounded by their 15m access / 7d refresh tokens.
+    const tracked = await isSessionTracked(sessionId);
+    if (!tracked) {
+      return next();
     }
 
     // Check inactivity timeout

@@ -16,9 +16,12 @@ export const SprintQuery = {
     });
   },
 
-  async getById(id: string) {
-    const sprint = await prisma.sprint.findUnique({
-      where: { id },
+  async getById(id: string, projectId?: string) {
+    const sprint = await prisma.sprint.findFirst({
+      where: {
+        id,
+        ...(projectId ? { projectId } : {}),
+      },
       include: {
         project: {
           select: {

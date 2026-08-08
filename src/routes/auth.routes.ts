@@ -13,7 +13,16 @@ import {
   rotateRefreshToken,
   revokeAccessToken,
   revokeAllRefreshTokens,
+  isSessionRevoked,
 } from "../lib/auth/tokenRevocation.js";
+import { createSessionMetadata } from "../lib/auth/sessionBinding.js";
+import { trackUserSession, revokeUserSession } from "../lib/auth/sessionManager.js";
+import {
+  recordSessionCreation,
+  invalidateSession,
+  isSessionTracked,
+  isSessionInactive,
+} from "../middleware/sessionTimeout.js";
 import { auditLog } from "../lib/auth/auditLog.js";
 import { acquireRefreshLock, releaseRefreshLock } from "../lib/auth/refreshLock.js";
 import { getClientIp } from "../lib/auth/sessionBinding.js";
@@ -159,6 +168,23 @@ router.post(
       parseExpiry(REFRESH_TOKEN_EXPIRY) / 1000,
     );
 
+    // Record the session so the server can enforce inactivity timeout,
+    // absolute timeout, session binding (device/IP), and max concurrent
+    // sessions. Best-effort: the tokens are already issued and the rest of
+    // the auth stack fails open on Redis, so a Redis outage must never turn
+    // a successful exchange into a 500.
+    try {
+      await recordSessionCreation(sessionId);
+      await getRedisClient().setex(
+        `session:metadata:${sessionId}`,
+        7 * 24 * 60 * 60,
+        JSON.stringify(createSessionMetadata(req)),
+      );
+      await trackUserSession(user.id, sessionId);
+    } catch (err) {
+      console.warn("[Exchange] Failed to record session (non-fatal):", err);
+    }
+
     const tokenPayload = {
       accessToken: tokens.accessToken,
       refreshToken: tokens.refreshToken,
@@ -230,6 +256,38 @@ router.post(
       // Check if we already processed this exact token (replay deduplication)
       const cachedResponse = await getCachedRefreshResponse(refreshReplayCacheKey);
       if (cachedResponse) return res.json(JSON.parse(cachedResponse));
+
+      // Server-side session gates: a session that was evicted (max sessions)
+      // or idle (inactivity timeout) cannot be resurrected via its refresh
+      // token, even though the token itself has not expired.
+      if (decoded.sessionId) {
+        if (await isSessionRevoked(decoded.sessionId)) {
+          auditLog("TOKEN_REVOKED", {
+            userId: decoded.id,
+            jti: decoded.jti,
+            ip,
+            sessionId: decoded.sessionId,
+            reason: "Session revoked (max sessions reached)",
+          });
+          throw new UnauthorizedError(
+            "Session revoked. Please log in again.",
+            "TOKEN_REVOKED",
+          );
+        }
+        const tracked = await isSessionTracked(decoded.sessionId);
+        if (tracked && (await isSessionInactive(decoded.sessionId))) {
+          auditLog("SESSION_TIMEOUT", {
+            userId: decoded.id,
+            ip,
+            sessionId: decoded.sessionId,
+            reason: "Inactivity timeout at refresh",
+          });
+          throw new UnauthorizedError(
+            "Session expired due to inactivity. Please log in again.",
+            "SESSION_TIMEOUT",
+          );
+        }
+      }
 
       const tokens = createTokenPair({
         id: decoded.id,
@@ -316,6 +374,10 @@ router.post("/logout", async (req, res) => {
   try {
     if (tokenJti) await revokeAccessToken(tokenJti, 900);
     if (logoutAll && userId) await revokeAllRefreshTokens(userId);
+    if (sessionId) {
+      await invalidateSession(sessionId);
+      if (userId) await revokeUserSession(userId, sessionId);
+    }
   } catch (err) {
     console.error("Token revocation error during logout:", err);
   }

@@ -245,16 +245,7 @@ async function handleSubscriptionUpserted(event: NormalisedSubscriptionEvent) {
   const workspaceId = event.metadata?.workspaceId;
   const ownerId = event.metadata?.ownerId;
 
-  console.log("[Webhook] ===== SUBSCRIPTION UPSERT START =====");
-  console.log("[Webhook] Event type:", event.type);
-  console.log("[Webhook] Provider event ID:", event.providerEventId);
-  console.log("[Webhook] Provider subscription ID:", event.providerSubscriptionId);
-  console.log("[Webhook] Subscription upsert payload:", JSON.stringify({
-    workspaceId,
-    planName:               event.planName,
-    providerSubscriptionId: event.providerSubscriptionId,
-    status:                 event.status,
-  }, null, 2));
+  console.log(`[Webhook] Processing subscription event: ${event.type} for workspace ${workspaceId ?? "(unknown)"}`);
 
   if (!workspaceId) {
   console.error("[Webhook] ❌ CRITICAL: Subscription event missing workspaceId metadata");
@@ -360,7 +351,7 @@ async function handleSubscriptionUpserted(event: NormalisedSubscriptionEvent) {
       }
     }
 
-    console.log("[Webhook] ===== SUBSCRIPTION UPSERT COMPLETED SUCCESSFULLY =====");
+
   } catch (error) {
     console.error(`[Webhook] ❌ Error during subscription upsert for workspace ${workspaceId}:`, error);
     console.error("[Webhook] Error details:", error instanceof Error ? error.message : String(error));
@@ -480,11 +471,7 @@ async function handleInvoiceUpsert(event: NormalisedInvoiceEvent) {
 // ---------------------------------------------------------------------------
 
 async function upsertInvoice(event: NormalisedInvoiceEvent) {
-  console.log("[Webhook] Invoice upsert payload:", JSON.stringify({
-    providerInvoiceId: event.providerInvoiceId,
-    providerSubscriptionId: event.providerSubscriptionId,
-    status: event.status,
-  }, null, 2));
+  console.log(`[Webhook] Invoice event: ${event.status} ${event.providerInvoiceId}`);
 
   // 1. Try metadata first (fastest — always set by Paddle via customData)
   let workspaceId: string | undefined = event.metadata?.workspaceId || undefined;
@@ -558,11 +545,14 @@ async function upsertInvoice(event: NormalisedInvoiceEvent) {
       ...(workspaceId && { workspaceId }),
       ...(payerId     && { payerId }),
       status:          event.status as InvoiceStatus,
+      amountDue:       event.amountDue,
       amountPaid:      event.amountPaid,
       amountRemaining: event.amountRemaining,
       invoicePdf:      event.invoicePdfUrl  ?? undefined,
       hostedUrl:       event.hostedInvoiceUrl ?? undefined,
-      paidAt:          event.paidAt         ?? undefined,
+      // A later failure (e.g. a dunning retry) must clear a previously recorded
+      // payment so the invoice is never shown as paid when it isn't.
+      paidAt:          event.status === "PAID" ? (event.paidAt ?? undefined) : null,
       attemptCount:    event.attemptCount,
     },
   });

@@ -36,6 +36,16 @@ vi.mock('../../../errors/index.js', async () => {
   return actual;
 });
 
+vi.mock('../../../modules/project/project.access.js', () => ({
+  ProjectAccess: {
+    assertProjectAccess: vi.fn().mockResolvedValue({ id: 'p1' }),
+    assertProjectAdminAccess: vi.fn().mockResolvedValue({ id: 'p1' }),
+    assertProjectNotArchived: vi.fn().mockResolvedValue(undefined),
+    isProjectAdmin: vi.fn().mockResolvedValue(false),
+  },
+}));
+import { ProjectAccess } from '../../../modules/project/project.access.js';
+
 // ── Project modules ──────────────────────────────────────────────────────────
 
 vi.mock('../../../modules/project/project.query.js', () => ({
@@ -856,6 +866,7 @@ describe('getProjectSections', () => {
 
     await getProjectSections(req, res, next);
 
+    expect(ProjectAccess.assertProjectAccess).toHaveBeenCalledWith('user1', 'p1');
     expect(SectionQuery.getByProject).toHaveBeenCalledWith('p1');
     expect(res.json).toHaveBeenCalledWith({ success: true, data: sections });
   });
@@ -1234,13 +1245,14 @@ describe('getSprintById', () => {
     const sprint = { id: 'sprint1', name: 'Sprint 1' };
     (SprintQuery.getById as any).mockResolvedValue(sprint);
 
-    const req = mockRequest({ sprintId: 'sprint1' });
+    const req = mockRequest({ projectId: 'p1', sprintId: 'sprint1' });
     const res = mockResponse();
     const next = mockNext();
 
     await getSprintById(req, res, next);
 
-    expect(SprintQuery.getById).toHaveBeenCalledWith('sprint1');
+    expect(ProjectAccess.assertProjectAccess).toHaveBeenCalledWith('user1', 'p1');
+    expect(SprintQuery.getById).toHaveBeenCalledWith('sprint1', 'p1');
     expect(res.json).toHaveBeenCalledWith({ success: true, data: sprint });
   });
 
@@ -1248,7 +1260,7 @@ describe('getSprintById', () => {
     const error = new Error('Not found');
     (SprintQuery.getById as any).mockRejectedValue(error);
 
-    const req = mockRequest({ sprintId: 'nonexistent' });
+    const req = mockRequest({ projectId: 'p1', sprintId: 'nonexistent' });
     const res = mockResponse();
     const next = mockNext();
 
@@ -1636,13 +1648,14 @@ describe('getMilestoneById', () => {
     const milestone = { id: 'm1', title: 'Milestone 1' };
     (MilestoneQuery.getById as any).mockResolvedValue(milestone);
 
-    const req = mockRequest({ milestoneId: 'm1' });
+    const req = mockRequest({ projectId: 'p1', milestoneId: 'm1' });
     const res = mockResponse();
     const next = mockNext();
 
     await getMilestoneById(req, res, next);
 
-    expect(MilestoneQuery.getById).toHaveBeenCalledWith('m1');
+    expect(ProjectAccess.assertProjectAccess).toHaveBeenCalledWith('user1', 'p1');
+    expect(MilestoneQuery.getById).toHaveBeenCalledWith('m1', 'p1');
     expect(res.json).toHaveBeenCalledWith({ success: true, data: milestone });
   });
 
@@ -1650,7 +1663,7 @@ describe('getMilestoneById', () => {
     const error = new Error('Not found');
     (MilestoneQuery.getById as any).mockRejectedValue(error);
 
-    const req = mockRequest({ milestoneId: 'nonexistent' });
+    const req = mockRequest({ projectId: 'p1', milestoneId: 'nonexistent' });
     const res = mockResponse();
     const next = mockNext();
 

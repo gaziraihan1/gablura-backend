@@ -6,6 +6,8 @@
 
 import { Router } from "express";
 import { authenticate } from "../../middleware/auth.js";
+import { sessionTimeout } from "../../middleware/sessionTimeout.js";
+import { requireApiAccessForUser } from "../billing/index.js";
 import * as ApiKeyController from "./apikey.controller.js";
 import { asyncHandler } from "../../errors/asyncHandler.js";
 
@@ -14,6 +16,7 @@ const router = Router();
 // ─── All routes require authentication ───────────────────────────────────────
 
 router.use(authenticate);
+router.use(sessionTimeout);
 
 // ─── Routes ──────────────────────────────────────────────────────────────────
 
@@ -28,7 +31,9 @@ router.get("/", asyncHandler(ApiKeyController.getApiKeys));
  * Create a new API key
  * Body: { name: string, expiresInDays?: number }
  */
-router.post("/", asyncHandler(ApiKeyController.createApiKey));
+// API keys require a Business workspace plan (checked against the user's
+// highest owned-workspace plan, since keys are user-scoped).
+router.post("/", requireApiAccessForUser, asyncHandler(ApiKeyController.createApiKey));
 
 /**
  * PATCH /api/v1/api-keys/:id/toggle

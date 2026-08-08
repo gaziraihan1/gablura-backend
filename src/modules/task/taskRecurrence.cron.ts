@@ -1,6 +1,14 @@
 import cron from 'node-cron';
 import { prisma } from '../../lib/prisma.js';
 import { addInvalidateCacheJob } from '../../queue/index.js';
+import {
+  resolveUserPlan,
+  resolveWorkspacePlan,
+  checkAndConsumePersonalQuota,
+  checkAndConsumeWorkspaceQuota,
+  rollbackPersonalQuota,
+  rollbackWorkspaceQuota,
+} from './task.quota.service.js';
 
 const BATCH_SIZE = 50;
 
@@ -95,6 +103,8 @@ export async function runTaskRecurrenceCron(): Promise<void> {
             intent:          true,
             dueDate:         true,
             startDate:       true,
+            project:         { select: { status: true } },
+            workspace:       { select: { deletedAt: true } },
             labels:          { select: { labelId: true } },
             assignees:       { select: { userId: true } },
           },
@@ -109,6 +119,11 @@ export async function runTaskRecurrenceCron(): Promise<void> {
 
     for (const rec of recurrences) {
       const task = rec.task;
+
+      // Never regenerate instances for archived projects or soft-deleted workspaces.
+      if (task.project && task.project.status === 'ARCHIVED') continue;
+      if (task.workspace && task.workspace.deletedAt) continue;
+
       const now = Date.now();
       // State cursor: lastOccurredAt, else the anchor task's future due date,
       // else "now" (legacy rows created before the state field existed).
@@ -119,11 +134,43 @@ export async function runTaskRecurrenceCron(): Promise<void> {
       const nextDue = computeNextDue(cursor, rec.pattern, rec.interval, rec.days as number[] | null);
       if (nextDue.getTime() > now) continue; // not due yet
 
+      let quotaConsumed = false;
       try {
+        // Plan-gate generated instances like a manual task creation would: consume
+        // the daily quota (skipping the interactive per-minute burst cap, which is
+        // meant for humans, not a scheduled batch). When the limit is reached the
+        // cycle is skipped WITHOUT advancing lastOccurredAt, so the next run retries
+        // against a fresh quota window. Quota resolution can hit Redis — it stays
+        // inside the per-recurrence try so a hiccup isolates this recurrence rather
+        // than aborting the whole run.
+        if (task.workspaceId) {
+          const [plan, memberCount] = await Promise.all([
+            resolveWorkspacePlan(task.workspaceId),
+            prisma.workspaceMember.count({ where: { workspaceId: task.workspaceId } }),
+          ]);
+          const quota = await checkAndConsumeWorkspaceQuota(
+            task.createdById, task.workspaceId, plan, memberCount,
+            { skipMinuteRateLimit: true },
+          );
+          if (!quota.allowed) {
+            console.warn(`Recurring task cron: workspace quota reached for ${task.workspaceId} - ${quota.reason}`);
+            continue;
+          }
+          quotaConsumed = true;
+        } else {
+          const plan = await resolveUserPlan(task.createdById);
+          const quota = await checkAndConsumePersonalQuota(task.createdById, plan);
+          if (!quota.allowed) {
+            console.warn(`Recurring task cron: personal quota reached for ${task.createdById} - ${quota.reason}`);
+            continue;
+          }
+          quotaConsumed = true;
+        }
+
         // Idempotent by construction: the @@unique([recurrenceId, recurrenceDueDate])
         // constraint + skipDuplicates means re-running this cron (restart, overlap,
         // manual trigger) can never create a duplicate instance.
-        await prisma.$transaction(async (tx) => {
+        const result = await prisma.$transaction(async (tx) => {
           // Idempotency guard: createMany + skipDuplicates. The
           // @@unique([recurrenceId, recurrenceDueDate]) constraint means a second
           // run (restart, overlap, manual trigger) simply skips the insert.
@@ -183,11 +230,23 @@ export async function runTaskRecurrenceCron(): Promise<void> {
             where: { id: rec.id },
             data:  { lastOccurredAt: nextDue },
           });
+
+          return { count };
         });
+        // A duplicate insert (cron overlap/restart) created no new instance —
+        // refund the quota that was just consumed.
+        if (result.count === 0 && quotaConsumed) {
+          if (task.workspaceId) await rollbackWorkspaceQuota(task.createdById, task.workspaceId);
+          else await rollbackPersonalQuota(task.createdById);
+        }
         generated += 1;
         if (task.workspaceId) workspaceIds.add(task.workspaceId);
         else personalUserIds.add(task.createdById);
       } catch (error) {
+        if (quotaConsumed) {
+          if (task.workspaceId) await rollbackWorkspaceQuota(task.createdById, task.workspaceId);
+          else await rollbackPersonalQuota(task.createdById);
+        }
         console.error(`Recurring task generation failed for recurrence ${rec.id}:`, error);
       }
     }

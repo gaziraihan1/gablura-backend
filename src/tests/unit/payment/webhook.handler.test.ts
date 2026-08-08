@@ -321,6 +321,54 @@ describe("webhook.handler", () => {
       expect(mockRes.json).toHaveBeenCalledWith({ received: true });
     });
 
+    it("clears a previously recorded paidAt when an invoice update is not paid", async () => {
+      const mockEvent = {
+        providerEventId: "evt_inv_update",
+        type: "INVOICE_UPDATED",
+        raw: {},
+        metadata: { workspaceId: "ws_123", ownerId: "user_123" },
+        providerInvoiceId: "txn_upd",
+        providerCustomerId: null,
+        providerSubscriptionId: null,
+        providerPaymentId: null,
+        amountDue: 1000,
+        amountPaid: 0,
+        amountRemaining: 1000,
+        currency: "usd",
+        status: "OPEN",
+        invoiceNumber: null,
+        invoicePdfUrl: null,
+        hostedInvoiceUrl: null,
+        periodStart: null,
+        periodEnd: null,
+        dueDate: null,
+        paidAt: null,
+        attemptCount: 2,
+        paymentMethodType: null,
+        cardLast4: null,
+        lineItems: [],
+      };
+
+      vi.mocked(getPaymentProvider).mockReturnValue({
+        verifyAndParseWebhook: vi.fn().mockResolvedValue(mockEvent),
+      } as any);
+
+      vi.mocked(prisma.billingEvent.findUnique).mockResolvedValue(null);
+      vi.mocked(prisma.billingEvent.upsert).mockResolvedValue({ id: "billing_inv_upd" } as any);
+      vi.mocked(prisma.subscription.findFirst).mockResolvedValue(null);
+      vi.mocked(prisma.workspace.findUnique).mockResolvedValue({ ownerId: "user_123" } as any);
+      vi.mocked(prisma.invoice.upsert).mockResolvedValue({} as any);
+
+      await webhookHandler(mockReq, mockRes);
+
+      expect(prisma.invoice.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          update: expect.objectContaining({ paidAt: null }),
+        })
+      );
+      expect(mockRes.json).toHaveBeenCalledWith({ received: true });
+    });
+
     it("processes INVOICE_CREATED event", async () => {
       const mockEvent = {
         providerEventId: "evt_inv_created",

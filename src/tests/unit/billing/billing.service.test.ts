@@ -1,9 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { BillingService } from "../../../modules/billing/billing.service.js";
 import { prisma } from "../../../lib/prisma.js";
 import { getPaymentProvider } from "../../../payment/provider.registry.js";
 import { BILLING_CACHE } from "../../../redis/redis.client.js";
-import { ForbiddenError, NotFoundError, ConflictError } from "../../../errors/index.js";
+import { ForbiddenError, NotFoundError, ConflictError, BadRequestError } from "../../../errors/index.js";
 import type { Workspace, User, Subscription } from "@prisma/client";
 import type { WorkspaceSubscriptionResponse, CreateCheckoutInput } from "../../../modules/billing/billing.types.js";
 
@@ -11,14 +11,18 @@ vi.mock("../../../lib/prisma.js", () => ({
   prisma: {
     user: {
       findUniqueOrThrow: vi.fn(),
+      findUnique: vi.fn(),
       update: vi.fn(),
     },
     workspace: {
       findUniqueOrThrow: vi.fn(),
       findUnique: vi.fn(),
+      update: vi.fn(),
+      findMany: vi.fn(),
     },
     subscription: {
       findUnique: vi.fn(),
+      findFirst: vi.fn(),
       update: vi.fn(),
     },
     plan: {
@@ -257,6 +261,165 @@ describe("BillingService", () => {
       } as unknown as Subscription);
 
       await expect(BillingService.reactivateSubscription("ws-123", "user-123")).rejects.toThrow(NotFoundError);
+    });
+  });
+
+  describe("createCheckoutSession — trial eligibility", () => {
+    it("grants a 7-day trial on the very first checkout (no customer yet)", async () => {
+      const input: CreateCheckoutInput = {
+        workspaceId: "ws-123",
+        workspaceSlug: "test-ws",
+        ownerId: "user-123",
+        planName: "PRO",
+        billingCycle: "MONTHLY",
+      };
+
+      vi.mocked(prisma.workspace.findUniqueOrThrow).mockResolvedValue({ ownerId: "user-123" } as unknown as Workspace);
+      vi.spyOn(BillingService, "getWorkspaceSubscription").mockResolvedValue(null);
+      vi.mocked(prisma.user.findUniqueOrThrow).mockResolvedValue({
+        id: "user-123",
+        email: "test@example.com",
+        stripeCustomerId: null,
+      } as unknown as User);
+      vi.mocked(prisma.user.findUnique).mockResolvedValue({
+        stripeCustomerId: null,
+      } as any);
+      mockProvider.createCustomer.mockResolvedValue({ providerCustomerId: "cus_new" });
+      mockProvider.createCheckoutSession.mockResolvedValue({ url: "https://checkout.url" });
+
+      await BillingService.createCheckoutSession(input);
+
+      expect(mockProvider.createCheckoutSession).toHaveBeenCalledWith(
+        expect.objectContaining({ trialDays: 7 }),
+      );
+    });
+
+    it("does not grant a repeat trial when the customer has subscribed before", async () => {
+      const input: CreateCheckoutInput = {
+        workspaceId: "ws-123",
+        workspaceSlug: "test-ws",
+        ownerId: "user-123",
+        planName: "PRO",
+        billingCycle: "MONTHLY",
+      };
+
+      vi.mocked(prisma.workspace.findUniqueOrThrow).mockResolvedValue({ ownerId: "user-123" } as unknown as Workspace);
+      vi.spyOn(BillingService, "getWorkspaceSubscription").mockResolvedValue(null);
+      vi.mocked(prisma.user.findUniqueOrThrow).mockResolvedValue({
+        id: "user-123",
+        email: "test@example.com",
+        stripeCustomerId: "cus_123",
+      } as unknown as User);
+      // Returning customer with a prior subscription → no fresh trial
+      vi.mocked(prisma.user.findUnique).mockResolvedValue({
+        stripeCustomerId: "cus_123",
+      } as any);
+      vi.mocked(prisma.subscription.findFirst).mockResolvedValue({
+        id: "sub_old",
+      } as any);
+      mockProvider.createCheckoutSession.mockResolvedValue({ url: "https://checkout.url" });
+
+      await BillingService.createCheckoutSession(input);
+
+      expect(mockProvider.createCheckoutSession).toHaveBeenCalledWith(
+        expect.objectContaining({ trialDays: undefined }),
+      );
+    });
+  });
+
+  describe("changePlan — provider + DB persistence", () => {
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
+    it("persists the plan, limits, and price to the DB after the provider change succeeds", async () => {
+      const input = {
+        workspaceId: "ws-123",
+        ownerId: "user-123",
+        newPlanName: "BUSINESS" as const,
+        billingCycle: "MONTHLY" as const,
+      };
+
+      vi.mocked(prisma.workspace.findUniqueOrThrow).mockResolvedValue({ ownerId: "user-123" } as unknown as Workspace);
+      vi.mocked(prisma.subscription.findUnique).mockResolvedValue({
+        workspaceId: "ws-123",
+        planId: "plan_pro",
+        billingCycle: "MONTHLY",
+        status: "ACTIVE",
+        stripeSubscriptionId: "sub_stripe",
+      } as unknown as Subscription);
+
+      // plan.findUnique is called once for the target plan (by name) and once
+      // for the current plan (by id).
+      vi.mocked(prisma.plan.findUnique).mockImplementation((({ where }: any) => {
+        if (where?.name === "BUSINESS") {
+          return Promise.resolve({
+            id: "plan_biz",
+            name: "BUSINESS",
+            maxMembersPerWs: 100,
+            maxStorageMb: 102400,
+            stripePriceIdMonthly: "price_biz_m",
+            stripePriceIdYearly: null,
+          } as any);
+        }
+        if (where?.id === "plan_pro") {
+          return Promise.resolve({ id: "plan_pro", name: "PRO" } as any);
+        }
+        return Promise.resolve(null);
+      }) as any);
+
+      vi.mocked(prisma.workspace.findUnique).mockResolvedValue({ slug: "test-ws" } as unknown as Workspace);
+      mockProvider.changePlan.mockResolvedValue(undefined);
+
+      await BillingService.changePlan(input);
+
+      expect(mockProvider.changePlan).toHaveBeenCalledWith(
+        expect.objectContaining({ newProviderPriceId: "price_biz_m" }),
+      );
+      expect(prisma.subscription.update).toHaveBeenCalledWith({
+        where: { workspaceId: "ws-123" },
+        data: {
+          planId: "plan_biz",
+          billingCycle: "MONTHLY",
+          stripePriceId: "price_biz_m",
+        },
+      });
+      expect(prisma.workspace.update).toHaveBeenCalledWith({
+        where: { id: "ws-123" },
+        data: {
+          plan: "BUSINESS",
+          maxMembers: 100,
+          maxStorage: 102400,
+        },
+      });
+      expect(BILLING_CACHE.invalidateWorkspace).toHaveBeenCalled();
+    });
+
+    it("throws BadRequestError when the Plan row has no price and no env var is set", async () => {
+      const input = {
+        workspaceId: "ws-123",
+        ownerId: "user-123",
+        newPlanName: "BUSINESS" as const,
+        billingCycle: "MONTHLY" as const,
+      };
+
+      vi.mocked(prisma.workspace.findUniqueOrThrow).mockResolvedValue({ ownerId: "user-123" } as unknown as Workspace);
+      vi.mocked(prisma.subscription.findUnique).mockResolvedValue({
+        workspaceId: "ws-123",
+        planId: "plan_pro",
+        billingCycle: "MONTHLY",
+        status: "ACTIVE",
+        stripeSubscriptionId: "sub_stripe",
+      } as unknown as Subscription);
+      vi.mocked(prisma.plan.findUnique).mockResolvedValue({
+        id: "plan_biz",
+        name: "BUSINESS",
+        stripePriceIdMonthly: null,
+        stripePriceIdYearly: null,
+      } as any);
+      delete process.env.STRIPE_PRICE_BUSINESS_MONTHLY;
+
+      await expect(BillingService.changePlan(input)).rejects.toThrow(BadRequestError);
     });
   });
 });

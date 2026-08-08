@@ -1,12 +1,19 @@
 import { Request, Response, NextFunction } from "express";
 import { getRedisClient } from "../redis/redis.client.js";
 
-export const rateLimitMiddleware = (max = 100, windowSeconds = 60) => {
+export const rateLimitMiddleware = (
+  max = 100,
+  windowSeconds = 60,
+  keyFn?: (req: Request) => string | undefined,
+) => {
   return async (req: Request, res: Response, next: NextFunction) => {
     const ip = (req.headers["x-forwarded-for"] as string)?.split(",")[0].trim()
       || req.ip
       || "unknown";
-    const key = `rl:backend:${ip}`;
+    // Per-user keying (used on 2FA endpoints) beats per-IP: an attacker who
+    // rotates IPs still hits the same user bucket once the target id is known.
+    const userKey = keyFn?.(req);
+    const key = userKey ? `rl:user:${userKey}` : `rl:backend:${ip}`;
 
     try {
       const redis = getRedisClient();

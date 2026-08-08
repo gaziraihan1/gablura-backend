@@ -13,6 +13,7 @@ import { ProjectViewMutation } from "./project.view.mutation.js";
 import { FavoriteQuery } from "./project.favorite.query.js";
 import { FavoriteMutation } from "./project.favorite.mutation.js";
 import { asyncHandler, ValidationError } from "../../errors/index.js";
+import { ProjectAccess } from "./project.access.js";
 import {
   createProjectSchema,
   updateProjectSchema,
@@ -178,6 +179,7 @@ export const removeProjectMember = asyncHandler(
 
 export const getProjectSections = asyncHandler(
   async (req: AuthRequest, res: Response) => {
+    await ProjectAccess.assertProjectAccess(req.user!.id, req.params.projectId);
     const sections = await SectionQuery.getByProject(req.params.projectId);
     res.json({ success: true, data: sections });
   },
@@ -232,6 +234,7 @@ export const reorderProjectSections = asyncHandler(
 
 export const getProjectSprints = asyncHandler(
   async (req: AuthRequest, res: Response) => {
+    await ProjectAccess.assertProjectAccess(req.user!.id, req.params.projectId);
     const data = await SprintQuery.getSprintStats(req.params.projectId);
     res.json({ success: true, data });
   },
@@ -239,6 +242,7 @@ export const getProjectSprints = asyncHandler(
 
 export const getActiveSprint = asyncHandler(
   async (req: AuthRequest, res: Response) => {
+    await ProjectAccess.assertProjectAccess(req.user!.id, req.params.projectId);
     const sprint = await SprintQuery.getActiveSprint(req.params.projectId);
     res.json({ success: true, data: sprint });
   },
@@ -246,7 +250,8 @@ export const getActiveSprint = asyncHandler(
 
 export const getSprintById = asyncHandler(
   async (req: AuthRequest, res: Response) => {
-    const sprint = await SprintQuery.getById(req.params.sprintId);
+    await ProjectAccess.assertProjectAccess(req.user!.id, req.params.projectId);
+    const sprint = await SprintQuery.getById(req.params.sprintId, req.params.projectId);
     res.json({ success: true, data: sprint });
   },
 );
@@ -300,6 +305,7 @@ export const completeSprint = asyncHandler(
 
 export const getProjectMilestones = asyncHandler(
   async (req: AuthRequest, res: Response) => {
+    await ProjectAccess.assertProjectAccess(req.user!.id, req.params.projectId);
     const data = await MilestoneQuery.getMilestoneStats(req.params.projectId);
     res.json({ success: true, data });
   },
@@ -307,7 +313,8 @@ export const getProjectMilestones = asyncHandler(
 
 export const getMilestoneById = asyncHandler(
   async (req: AuthRequest, res: Response) => {
-    const milestone = await MilestoneQuery.getById(req.params.milestoneId);
+    await ProjectAccess.assertProjectAccess(req.user!.id, req.params.projectId);
+    const milestone = await MilestoneQuery.getById(req.params.milestoneId, req.params.projectId);
     res.json({ success: true, data: milestone });
   },
 );
@@ -361,6 +368,7 @@ export const updateMilestoneProgress = asyncHandler(
 
 export const getProjectViews = asyncHandler(
   async (req: AuthRequest, res: Response) => {
+    await ProjectAccess.assertProjectAccess(req.user!.id, req.params.projectId);
     const views = await ProjectViewQuery.getByProject(
       req.params.projectId,
       req.user!.id,

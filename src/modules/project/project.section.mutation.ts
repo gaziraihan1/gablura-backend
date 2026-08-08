@@ -63,6 +63,23 @@ export const SectionMutation = {
     await ProjectAccess.assertProjectAdminAccess(userId, projectId);
     await ProjectAccess.assertProjectNotArchived(projectId);
 
+    if (!Array.isArray(sectionIds) || sectionIds.length === 0) {
+      throw new BadRequestError('sectionIds must be a non-empty array');
+    }
+
+    // A bare position update by id would let an admin of one project reorder
+    // another project's columns — only sections of THIS project may be moved.
+    const projectSections = await prisma.projectSection.findMany({
+      where:  { projectId },
+      select: { id: true },
+    });
+    const validIds = new Set(projectSections.map((s) => s.id));
+    for (const id of sectionIds) {
+      if (!validIds.has(id)) {
+        throw new BadRequestError('Section does not belong to this project');
+      }
+    }
+
     await prisma.$transaction(
       sectionIds.map((id, index) =>
         prisma.projectSection.update({
