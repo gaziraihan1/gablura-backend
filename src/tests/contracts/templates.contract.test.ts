@@ -70,3 +70,38 @@ describe('Templates API Contract Tests', () => {
     });
   });
 });
+
+describe('Template Rating Contract', () => {
+  let app: any;
+
+  beforeAll(async () => {
+    const appModule = await import('../../app.js');
+    app = appModule.default;
+  });
+
+  it('POST /templates/:slug/rate should match the contract', async () => {
+    const slug = `rate-contract-${Date.now()}`;
+    await prisma.projectTemplate.create({
+      data: {
+        slug,
+        title: 'Contract Rate',
+        description: '',
+        category: 'operations',
+        complexity: 'starter',
+        tier: 'FREE',
+        status: 'available',
+        visibility: 'PUBLIC',
+        content: {} as object,
+      },
+    });
+
+    const response = await request(app)
+      .post(`/api/v1/templates/${slug}/rate`)
+      .send({ stars: 4 });
+
+    expect(response.status).toBe(200);
+    validateContract(APIResponseSchema, response.body);
+    expect(typeof response.body.data.average).toBe('number');
+    expect(typeof response.body.data.count).toBe('number');
+  });
+});

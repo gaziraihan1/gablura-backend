@@ -8,6 +8,7 @@ import {
   saveAsTemplateSchema,
   updateTemplateSchema,
   privateTemplatesQuerySchema,
+  rateTemplateSchema,
 } from '../../../modules/templates/templates.validators.js';
 
 describe('listCatalogQuerySchema', () => {
@@ -28,6 +29,12 @@ describe('listCatalogQuerySchema', () => {
   it('rejects an invalid tier', () => {
     const parsed = listCatalogQuerySchema.safeParse({ tier: 'ENTERPRISE' });
     expect(parsed.success).toBe(false);
+  });
+
+  it('accepts the featured flag', () => {
+    expect(listCatalogQuerySchema.safeParse({ featured: 'true' }).success).toBe(true);
+    expect(listCatalogQuerySchema.safeParse({ featured: 'false' }).success).toBe(true);
+    expect(listCatalogQuerySchema.safeParse({ featured: 'yes' }).success).toBe(false);
   });
 });
 
@@ -83,5 +90,29 @@ describe('privateTemplatesQuerySchema', () => {
   it('requires workspaceId', () => {
     expect(privateTemplatesQuerySchema.safeParse({}).success).toBe(false);
     expect(privateTemplatesQuerySchema.safeParse({ workspaceId: 'ws1' }).success).toBe(true);
+  });
+});
+
+describe('rateTemplateSchema', () => {
+  it('accepts stars between 1 and 5', () => {
+    for (const stars of [1, 3, 5]) {
+      expect(rateTemplateSchema.safeParse({ stars }).success).toBe(true);
+    }
+  });
+
+  it('rejects out-of-range, fractional and missing stars', () => {
+    expect(rateTemplateSchema.safeParse({ stars: 0 }).success).toBe(false);
+    expect(rateTemplateSchema.safeParse({ stars: 6 }).success).toBe(false);
+    expect(rateTemplateSchema.safeParse({ stars: 4.5 }).success).toBe(false);
+    expect(rateTemplateSchema.safeParse({ stars: '5' }).success).toBe(false);
+    expect(rateTemplateSchema.safeParse({}).success).toBe(false);
+  });
+});
+
+describe('updateTemplateSchema featured', () => {
+  it('accepts a boolean featured flag', () => {
+    expect(updateTemplateSchema.safeParse({ featured: true }).success).toBe(true);
+    expect(updateTemplateSchema.safeParse({ featured: false }).success).toBe(true);
+    expect(updateTemplateSchema.safeParse({ featured: 'yes' }).success).toBe(false);
   });
 });

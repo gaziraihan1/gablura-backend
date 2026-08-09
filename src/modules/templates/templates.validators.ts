@@ -7,6 +7,7 @@ export const listCatalogQuerySchema = z.object({
   category: z.string().optional(),
   search: z.string().optional(),
   tier: z.enum(['FREE', 'PRO', 'BUSINESS']).optional(),
+  featured: z.enum(['true', 'false']).optional(),
 });
 
 export const useTemplateSchema = z.object({
@@ -27,7 +28,16 @@ export const updateTemplateSchema = z.object({
   complexity: z.enum(['starter', 'intermediate', 'advanced']).optional(),
   tier: z.enum(['FREE', 'PRO', 'BUSINESS']).optional(),
   status: z.enum(['available', 'coming_soon', 'archived']).optional(),
+  featured: z.boolean().optional(),
   tags: z.array(z.string().trim().min(1)).max(20).optional(),
+});
+
+export const rateTemplateSchema = z.object({
+  stars: z
+    .number()
+    .int('stars must be a whole number')
+    .min(1, 'stars must be between 1 and 5')
+    .max(5, 'stars must be between 1 and 5'),
 });
 
 export const privateTemplatesQuerySchema = z.object({

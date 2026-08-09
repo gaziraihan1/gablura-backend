@@ -14,13 +14,22 @@ import {
   updateTemplateSchema,
   privateTemplatesQuerySchema,
   templateRequestSchema,
+  rateTemplateSchema,
 } from './templates.validators.js';
 
 export const getCatalog = asyncHandler(async (req: AuthRequest, res: Response) => {
   const parsed = listCatalogQuerySchema.safeParse(req.query);
   if (!parsed.success) throw new ValidationError('Validation error', parsed.error.issues);
 
-  const data = await TemplateQuery.getCatalog(req.user?.id, parsed.data);
+  const data = await TemplateQuery.getCatalog(req.user?.id, {
+    category: parsed.data.category,
+    search: parsed.data.search,
+    tier: parsed.data.tier,
+    featured:
+      parsed.data.featured !== undefined
+        ? parsed.data.featured === 'true'
+        : undefined,
+  });
   res.json({ success: true, data });
 });
 
@@ -49,6 +58,18 @@ export const useTemplate = asyncHandler(async (req: AuthRequest, res: Response) 
     message: 'Project created from template',
     data: result,
   });
+});
+
+export const rateTemplate = asyncHandler(async (req: AuthRequest, res: Response) => {
+  const parsed = rateTemplateSchema.safeParse(req.body);
+  if (!parsed.success) throw new ValidationError('Validation error', parsed.error.issues);
+
+  const result = await TemplateMutation.rate(
+    req.user!.id,
+    req.params.slug,
+    parsed.data.stars,
+  );
+  res.json({ success: true, message: 'Template rated', data: result });
 });
 
 export const saveAsTemplate = asyncHandler(async (req: AuthRequest, res: Response) => {

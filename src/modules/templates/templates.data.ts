@@ -35,6 +35,34 @@ export interface OfficialTemplateSeed {
 
 const VIEWS = { kanban: 'KANBAN', list: 'LIST', calendar: 'CALENDAR', timeline: 'TIMELINE' } as const;
 
+/** Templates curated into the featured strip on the templates page. */
+export const FEATURED_TEMPLATE_SLUGS: string[] = [
+  'engineering-sprint',
+  'product-roadmap',
+  'hiring-pipeline',
+  'content-calendar',
+  'product-launch',
+];
+
+/**
+ * Baseline community ratings for the official catalog (average / count).
+ * Seeded only on CREATE so re-running the seed never overwrites real ratings.
+ */
+export const TEMPLATE_BASELINE_RATINGS: Record<string, { average: number; count: number }> = {
+  'quarterly-goals':       { average: 4.9, count: 210 },
+  'content-calendar':      { average: 4.6, count: 130 },
+  'engineering-sprint':    { average: 4.8, count: 160 },
+  'bug-tracker':           { average: 4.7, count: 90 },
+  'product-roadmap':       { average: 4.7, count: 110 },
+  'hiring-pipeline':       { average: 4.6, count: 75 },
+  'employee-onboarding':   { average: 4.8, count: 60 },
+  'startup-launch':        { average: 4.7, count: 40 },
+  'design-sprint':         { average: 4.5, count: 50 },
+  'operations-runbook':    { average: 4.4, count: 35 },
+  'social-media-campaign': { average: 4.6, count: 65 },
+  'product-launch':        { average: 4.9, count: 70 },
+};
+
 export const OFFICIAL_TEMPLATES: OfficialTemplateSeed[] = [
   // ── FREE ────────────────────────────────────────────────────────────────────
   {

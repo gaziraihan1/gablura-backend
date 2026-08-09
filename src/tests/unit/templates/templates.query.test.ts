@@ -33,8 +33,11 @@ const row = (overrides: Record<string, unknown> = {}) => ({
   color: '#3b82f6',
   tags: ['agile'],
   usageCount: 5,
+  ratingSum: 0,
+  ratingCount: 0,
   estimatedSetupMinutes: 3,
   status: 'available',
+  featured: false,
   visibility: 'PUBLIC',
   authorName: 'Focura Team',
   authorRole: 'Official',
@@ -109,6 +112,16 @@ describe('TemplateQuery.getCatalog', () => {
     );
   });
 
+  it('filters to featured templates when requested', async () => {
+    vi.mocked(prisma.projectTemplate.findMany).mockResolvedValue([] as never);
+
+    await TemplateQuery.getCatalog(undefined, { featured: true });
+
+    const args = vi.mocked(prisma.projectTemplate.findMany).mock.calls[0]?.[0];
+    const where = args?.where as Record<string, unknown>;
+    expect(where.featured).toBe(true);
+  });
+
   it('applies category, tier and search filters', async () => {
     vi.mocked(prisma.projectTemplate.findMany).mockResolvedValue([] as never);
 
@@ -134,6 +147,17 @@ describe('TemplateQuery.getBySlug', () => {
 
     expect(detail.slug).toBe('engineering-sprint');
     expect(detail.author).toEqual({ name: 'Focura Team', role: 'Official' });
+  });
+
+  it('maps rating aggregates and the featured flag onto the item', async () => {
+    vi.mocked(prisma.projectTemplate.findUnique).mockResolvedValue(
+      row({ ratingSum: 48, ratingCount: 10, featured: true }) as never,
+    );
+
+    const detail = await TemplateQuery.getBySlug('engineering-sprint');
+
+    expect(detail.rating).toEqual({ average: 4.8, count: 10 });
+    expect(detail.featured).toBe(true);
   });
 
   it('throws NotFoundError when missing or archived', async () => {

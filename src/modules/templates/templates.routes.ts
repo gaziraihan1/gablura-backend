@@ -24,6 +24,7 @@ import {
   saveAsTemplate,
   updateTemplate,
   deleteTemplate,
+  rateTemplate,
   requestTemplate,
   listTemplateRequests,
   removeTemplateRequest,
@@ -55,6 +56,14 @@ authedRouter.post(
   requireCsrfToken(),
   rateLimitMiddleware(10, 600),
   useTemplate,
+);
+authedRouter.post(
+  '/:slug/rate',
+  authenticate,
+  sessionTimeout,
+  requireCsrfToken(),
+  rateLimitMiddleware(30, 600),
+  rateTemplate,
 );
 authedRouter.patch('/:slug', authenticate, sessionTimeout, requireCsrfToken(), updateTemplate);
 

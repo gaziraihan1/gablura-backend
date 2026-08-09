@@ -20,6 +20,7 @@ import {
   AnalyticsCache,
 } from '../../lib/redis/cache.client.js';
 import { assertProjectEditAccess, assertWorkspaceMembership, assertCanManageTemplate } from './templates.access.js';
+import { resolveUserAccessTier } from './templates.query.js';
 import { canAccessTier } from './templates.types.js';
 import type {
   TemplateContent,
@@ -400,5 +401,72 @@ export const TemplateMutation = {
 
     await prisma.projectTemplate.delete({ where: { slug } });
     return { success: true };
+  },
+
+  /**
+   * Rate a public template (1–5 stars). One rating per user per template —
+   * re-rating replaces the previous stars. Aggregates are recomputed from the
+   * TemplateRating table (race-safe and self-healing), so ratingSum/ratingCount
+   * always match the actual ratings.
+   */
+  async rate(
+    userId: string,
+    slug: string,
+    stars: number,
+  ): Promise<{ average: number; count: number }> {
+    const template = await prisma.projectTemplate.findUnique({
+      where: { slug },
+      select: { id: true, tier: true, visibility: true, status: true },
+    });
+    if (!template || template.visibility !== 'PUBLIC' || template.status === 'archived') {
+      throw new NotFoundError('Template not found');
+    }
+
+    // Tier gate — mirrors the import path and the UI lock: a FREE user must not
+    // rate a PRO/BUSINESS template by calling the API directly.
+    const callerTier = await resolveUserAccessTier(userId);
+    if (!canAccessTier(callerTier, template.tier)) {
+      const needs = template.tier === 'BUSINESS' ? 'Business' : 'Pro';
+      throw new PlanLimitError(
+        `This template requires the ${needs} plan to rate. Upgrade to share your feedback.`,
+      );
+    }
+
+    const apply = () =>
+      prisma.$transaction(async (tx) => {
+        await tx.templateRating.upsert({
+          where: { templateId_userId: { templateId: template.id, userId } },
+          create: { templateId: template.id, userId, stars },
+          update: { stars },
+        });
+        const agg = await tx.templateRating.aggregate({
+          where: { templateId: template.id },
+          _sum: { stars: true },
+          _count: true,
+        });
+        const ratingSum = agg._sum.stars ?? 0;
+        const ratingCount = agg._count;
+        await tx.projectTemplate.update({
+          where: { id: template.id },
+          data: { ratingSum, ratingCount },
+        });
+        return { ratingSum, ratingCount };
+      });
+
+    let result: { ratingSum: number; ratingCount: number };
+    try {
+      result = await apply();
+    } catch (err) {
+      // Concurrent first-ratings race on the unique constraint — retry once
+      // (the upsert is idempotent, so the retry simply updates the winner's row).
+      if ((err as { code?: string })?.code !== 'P2002') throw err;
+      result = await apply();
+    }
+
+    const average =
+      result.ratingCount > 0
+        ? Math.round((result.ratingSum / result.ratingCount) * 10) / 10
+        : 0;
+    return { average, count: result.ratingCount };
   },
 };

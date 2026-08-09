@@ -23,8 +23,11 @@ const catalogSelect = {
   color: true,
   tags: true,
   usageCount: true,
+  ratingSum: true,
+  ratingCount: true,
   estimatedSetupMinutes: true,
   status: true,
+  featured: true,
   visibility: true,
   authorName: true,
   authorRole: true,
@@ -44,8 +47,11 @@ type CatalogRow = {
   color: string | null;
   tags: unknown;
   usageCount: number;
+  ratingSum: number;
+  ratingCount: number;
   estimatedSetupMinutes: number;
   status: string;
+  featured: boolean;
   visibility: string;
   authorName: string | null;
   authorRole: string | null;
@@ -68,6 +74,14 @@ function toCatalogItem(row: CatalogRow): TemplateCatalogItem {
     usageCount: row.usageCount,
     estimatedSetupMinutes: row.estimatedSetupMinutes,
     status: row.status,
+    rating: {
+      average:
+        row.ratingCount > 0
+          ? Math.round((row.ratingSum / row.ratingCount) * 10) / 10
+          : 0,
+      count: row.ratingCount,
+    },
+    featured: row.featured,
     author: row.authorName
       ? { name: row.authorName, role: row.authorRole }
       : null,
@@ -106,7 +120,12 @@ export const TemplateQuery = {
   /** Public catalog — available templates only, with the caller's access tier. */
   async getCatalog(
     userId: string | undefined,
-    filters: { category?: string; search?: string; tier?: TemplateTier },
+    filters: {
+      category?: string;
+      search?: string;
+      tier?: TemplateTier;
+      featured?: boolean;
+    },
   ): Promise<TemplateCatalogResponse> {
     const where: Record<string, unknown> = {
       visibility: 'PUBLIC',
@@ -116,6 +135,7 @@ export const TemplateQuery = {
       where.category = filters.category;
     }
     if (filters.tier) where.tier = filters.tier;
+    if (filters.featured) where.featured = true;
     if (filters.search) {
       const q = filters.search.trim().toLowerCase();
       where.OR = [
@@ -126,7 +146,9 @@ export const TemplateQuery = {
 
     const rows = await prisma.projectTemplate.findMany({
       where,
-      orderBy: [{ tier: 'asc' }, { usageCount: 'desc' }, { title: 'asc' }],
+      orderBy: filters.featured
+        ? [{ usageCount: 'desc' }, { ratingCount: 'desc' }, { title: 'asc' }]
+        : [{ tier: 'asc' }, { usageCount: 'desc' }, { title: 'asc' }],
       select: catalogSelect,
     });
 

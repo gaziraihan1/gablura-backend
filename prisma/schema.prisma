@@ -1614,14 +1614,32 @@ model ProjectTemplate {
   authorRole   String?
   content      Json
   usageCount   Int          @default(0)
+  ratingSum    Int          @default(0)
+  ratingCount  Int          @default(0)
+  featured     Boolean      @default(false)
   estimatedSetupMinutes Int @default(5)
   tags         Json?
+  ratings      TemplateRating[]
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
 
   @@index([visibility, category])
   @@index([tier])
   @@index([workspaceId])
+}
+
+model TemplateRating {
+  id         String   @id @default(cuid())
+  templateId String
+  userId     String
+  stars      Int
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  template ProjectTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@unique([templateId, userId])
+  @@index([templateId])
 }
 
 enum TemplateTier {

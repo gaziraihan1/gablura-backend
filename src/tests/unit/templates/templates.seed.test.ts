@@ -6,7 +6,11 @@
  * import endpoint relies on (distinct section statuses, valid enums).
  */
 import { describe, it, expect } from 'vitest';
-import { OFFICIAL_TEMPLATES } from '../../../modules/templates/templates.data.js';
+import {
+  FEATURED_TEMPLATE_SLUGS,
+  OFFICIAL_TEMPLATES,
+  TEMPLATE_BASELINE_RATINGS,
+} from '../../../modules/templates/templates.data.js';
 
 const VALID_STATUSES = ['TODO', 'IN_PROGRESS', 'IN_REVIEW', 'BLOCKED', 'COMPLETED', 'CANCELLED'];
 const VALID_PRIORITIES = ['URGENT', 'HIGH', 'MEDIUM', 'LOW'];
@@ -82,6 +86,25 @@ describe('OFFICIAL_TEMPLATES', () => {
         expect(names.has(v.name), `${t.slug}: duplicate view ${v.name}`).toBe(false);
         names.add(v.name);
       }
+    }
+  });
+
+  it('marks featured templates that exist in the catalog', () => {
+    const slugs = OFFICIAL_TEMPLATES.map((t) => t.slug);
+    expect(FEATURED_TEMPLATE_SLUGS.length).toBeGreaterThan(0);
+    for (const slug of FEATURED_TEMPLATE_SLUGS) {
+      expect(slugs).toContain(slug);
+    }
+  });
+
+  it('seeds a valid baseline rating for every catalog entry', () => {
+    for (const t of OFFICIAL_TEMPLATES) {
+      const baseline = TEMPLATE_BASELINE_RATINGS[t.slug];
+      expect(baseline, `${t.slug} missing baseline rating`).toBeDefined();
+      expect(baseline.count).toBeGreaterThan(0);
+      expect(baseline.average).toBeGreaterThanOrEqual(1);
+      expect(baseline.average).toBeLessThanOrEqual(5);
+      expect(Number.isInteger(Math.round(baseline.average * baseline.count))).toBe(true);
     }
   });
 });

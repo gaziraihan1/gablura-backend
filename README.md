@@ -373,7 +373,7 @@ All mutating routes require a valid CSRF token via the `requireCsrfToken()` midd
 
 ## 🗄 Database Schema
 
-### 40+ Models
+### 60 Models
 
 | Category | Models |
 |----------|--------|
@@ -388,12 +388,13 @@ All mutating routes require a valid CSRF token via the `requireCsrfToken()` midd
 | **Activity** | `Activity`, `Notification` |
 | **Billing** | `Plan`, `Subscription`, `Invoice`, `Payment`, `UsageRecord`, `BillingEvent` |
 | **Integrations** | `Integration` |
+| **Automation & Templates** | `AutomationRule`, `ProjectTemplate`, `TemplateRating` |
 | **CMS & Content** | `PopularResource`, `ProductUpdate`, `ContactMessage`, `JobPosting`, `TemplateList`, `SubscribeList` |
 | **Feature Requests** | `FeatureRequest`, `FeatureVote` |
 
 ### Key Enums
 
-`UserRole` (USER, ADMIN, SUPER_ADMIN), `WorkspacePlan` (FREE, PRO, BUSINESS, ENTERPRISE), `WorkspaceRole` (OWNER, ADMIN, MEMBER, GUEST), `ProjectStatus` (PLANNING, ACTIVE, ON_HOLD, COMPLETED, ARCHIVED), `TaskStatus` (TODO, IN_PROGRESS, IN_REVIEW, BLOCKED, COMPLETED, CANCELLED), `Priority` (URGENT, HIGH, MEDIUM, LOW), `TaskEnergy`, `TaskIntent`, `FocusType` (POMODORO, SHORT_BREAK, LONG_BREAK, DEEP_WORK, CUSTOM), `ActivityType`, `EntityType`, `NotificationType` (20 types), `FeatureStatus`, `BurnoutRisk` (LOW, MODERATE, HIGH, CRITICAL), `BillingCycle`, `SubStatus`, `ContactCategory`, `JobDepartment`, `JobStatus`, and 15+ more.
+`UserRole` (USER, ADMIN, SUPER_ADMIN), `WorkspacePlan` (FREE, PRO, BUSINESS, ENTERPRISE), `WorkspaceRole` (OWNER, ADMIN, MEMBER, GUEST), `ProjectStatus` (PLANNING, ACTIVE, ON_HOLD, COMPLETED, ARCHIVED), `TaskStatus` (TODO, IN_PROGRESS, IN_REVIEW, BLOCKED, COMPLETED, CANCELLED), `Priority` (URGENT, HIGH, MEDIUM, LOW), `TaskEnergy`, `TaskIntent`, `FocusType` (POMODORO, SHORT_BREAK, LONG_BREAK, DEEP_WORK, CUSTOM), `ActivityType`, `EntityType`, `NotificationType` (20 types), `FeatureStatus`, `BurnoutRisk` (LOW, MODERATE, HIGH, CRITICAL), `BillingCycle`, `SubStatus`, `ContactCategory`, `JobDepartment`, `JobStatus`, `TemplateTier` (FREE, PRO, BUSINESS), `AutomationTrigger` (STATUS_CHANGED, TASK_CREATED), `AutomationActionType` (ASSIGN_USER, SET_PRIORITY, NOTIFY_MEMBERS), and 15+ more.
 
 ---
 
@@ -446,7 +447,7 @@ All mutating authenticated routes additionally require `X-CSRF-Token`.
 | `GET` | `/api/v1/workspaces/:id/stats` | — | Get workspace statistics |
 | `POST` | `/api/v1/workspaces/:id/leave` | ✓ | Leave workspace |
 
-### Projects (10 endpoints)
+### Projects & Sections (15 endpoints)
 
 | Method | Route | CSRF | Description |
 |--------|-------|------|-------------|
@@ -460,8 +461,13 @@ All mutating authenticated routes additionally require `X-CSRF-Token`.
 | `POST` | `/api/v1/projects/:projectId/members` | ✓ | Add project member |
 | `PATCH` | `/api/v1/projects/:projectId/members/:memberId` | ✓ | Update member role |
 | `DELETE` | `/api/v1/projects/:projectId/members/:memberId` | ✓ | Remove member |
+| `GET` | `/api/v1/projects/:projectId/sections` | — | List workflow sections (columns) |
+| `POST` | `/api/v1/projects/:projectId/sections` | ✓ | Create workflow section |
+| `PUT` | `/api/v1/projects/:projectId/sections/reorder` | ✓ | Reorder workflow sections |
+| `PATCH` | `/api/v1/projects/:projectId/sections/:sectionId` | ✓ | Update section (rename / WIP limit / status mapping) |
+| `DELETE` | `/api/v1/projects/:projectId/sections/:sectionId` | ✓ | Delete section |
 
-### Templates (10 endpoints)
+### Templates (11 endpoints)
 
 | Method | Route | CSRF | Description |
 |--------|-------|------|-------------|
@@ -473,10 +479,22 @@ All mutating authenticated routes additionally require `X-CSRF-Token`.
 | `POST` | `/api/v1/templates/save-as-template/:projectId` | ✓ | Snapshot a project as a private template |
 | `GET` | `/api/v1/templates/private` | ✓ | Workspace private templates |
 | `POST` | `/api/v1/templates/:slug/use` | ✓ | Import a template as a new project (tier-gated) |
+| `POST` | `/api/v1/templates/:slug/rate` | ✓ | Rate a template (1–5 stars, one per user) |
 | `PATCH` | `/api/v1/templates/:slug` | ✓ | Update a template (author/admin) |
 | `DELETE` | `/api/v1/templates/:slug` | ✓ | Delete a template (author/admin) |
 
-### Tasks (15 endpoints)
+### Automations (6 endpoints)
+
+| Method | Route | CSRF | Description |
+|--------|-------|------|-------------|
+| `GET` | `/api/v1/automations` | — | List automation rules (workspace / project scope) |
+| `POST` | `/api/v1/automations` | ✓ | Create rule (plan-gated: FREE 10 / PRO 50 / BUSINESS 200 / ENTERPRISE unlimited) |
+| `GET` | `/api/v1/automations/:id` | — | Get rule detail |
+| `GET` | `/api/v1/automations/:id/runs` | — | Rule run history |
+| `PATCH` | `/api/v1/automations/:id` | ✓ | Update rule / toggle enabled |
+| `DELETE` | `/api/v1/automations/:id` | ✓ | Delete rule |
+
+### Tasks (16 endpoints)
 
 | Method | Route | CSRF | Description |
 |--------|-------|------|-------------|
@@ -492,6 +510,10 @@ All mutating authenticated routes additionally require `X-CSRF-Token`.
 | `DELETE` | `/api/v1/tasks/:id` | ✓ | Delete task |
 | `PUT` | `/api/v1/tasks/:id/github-link` | ✓ | Link GitHub entity to task |
 | `PUT` | `/api/v1/tasks/:id/github-unlink` | ✓ | Unlink GitHub entity |
+| `PUT` | `/api/v1/tasks/:id/slack-link` | ✓ | Link Slack message to task |
+| `PUT` | `/api/v1/tasks/:id/slack-unlink` | ✓ | Unlink Slack message from task |
+| `POST` | `/api/v1/tasks/:id/recurrence` | ✓ | Upsert task recurrence schedule |
+| `DELETE` | `/api/v1/tasks/:id/recurrence` | ✓ | Remove task recurrence |
 
 ### Subtasks (7 endpoints)
 
@@ -825,9 +847,9 @@ Read-heavy endpoints are cached in Upstash Redis (REST) via `CacheClient` in `li
 | Access control | 1 hour | Role/membership changes |
 | External API results | 5 min | Integration sync |
 
-### 13 Cache Namespaces
+### 14 Cache Namespaces
 
-`WorkspaceCache`, `LabelCache`, `AnalyticsCache`, `StorageCache`, `ProjectCache`, `TaskCache`, `ActivityCache`, `CalendarCache`, `FocusSessionCache`, `UserCache`, `ExternalApiCache`, `NotificationCache`, `AccessControlCache`
+`WorkspaceCache`, `LabelCache`, `AnalyticsCache`, `StorageCache`, `ProjectCache`, `TaskCache`, `AutomationCache`, `ActivityCache`, `CalendarCache`, `FocusSessionCache`, `UserCache`, `ExternalApiCache`, `NotificationCache`, `AccessControlCache`
 
 `CacheClient.getOrSet(key, fetcher, ttl)` — fetches from cache, falls back to DB, repopulates automatically.
 
@@ -867,7 +889,7 @@ Provider-agnostic webhook handler (`payment/webhook.handler.ts`):
 
 ## 📦 Job Queue (BullMQ)
 
-### 6 Queues with Dedicated Workers
+### 7 Queues with Dedicated Workers
 
 | Queue | Concurrency | Purpose |
 |-------|-------------|---------|
@@ -877,6 +899,7 @@ Provider-agnostic webhook handler (`payment/webhook.handler.ts`):
 | `calendar` | 3 | Calendar aggregate computation, insights, pre-computation |
 | `analytics` | 2 | Analytics pre-computation, focus streak calculation |
 | `integration` | 5 (rate-limited 20/s) | Third-party integration sync, webhook processing |
+| `automation` | 1 (default) | Automation-rule evaluation + action execution (20-run burst cap per rule) |
 
 ### Job Types
 
@@ -886,6 +909,7 @@ Provider-agnostic webhook handler (`payment/webhook.handler.ts`):
 - **Calendar:** compute aggregates, compute insights, pre-compute user calendar
 - **Analytics:** pre-compute analytics, compute focus streak
 - **Integration:** sync integration, process webhook
+- **Automation:** evaluate rules, execute actions (assign, set priority, notify members)
 
 ---
 
@@ -899,6 +923,7 @@ Provider-agnostic webhook handler (`payment/webhook.handler.ts`):
 | Daily task reset | Scheduled | Handled via `dailyTask.cron.ts` |
 | Wellness monitoring | Daily at 6 AM | Generates wellness recommendations via `wellness.cron.ts` |
 | Burnout signals | Weekly Monday 7 AM | Batch pre-computes `BurnoutSignal` rows via `burnoutSignal.cron.ts` |
+| Task recurrence | Daily at 1 AM | Idempotently generates due recurring-task instances via `taskRecurrence.cron.ts` |
 
 Redis dedup keys (`notif:sent:<taskId>:<userId>:<type>:<label>`) prevent double-firing across cron runs. TTL is set to 25 hours.
 

@@ -67,6 +67,8 @@ export interface TemplateCatalogItem {
   usageCount: number;
   estimatedSetupMinutes: number;
   status: string;
+  rating: { average: number; count: number };
+  featured: boolean;
   author: { name: string | null; role: string | null } | null;
   content: TemplateContent;
 }
