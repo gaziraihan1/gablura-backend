@@ -4,7 +4,7 @@ import request from "supertest";
 import app from "../../app.js";
 import { prisma } from "../../lib/prisma.js";
 import { createUser } from "../factories/index.js";
-import { authHeaders, TestUser } from "../helpers/auth.js";
+import { authHeaders, authWithCsrfHeaders, TestUser } from "../helpers/auth.js";
 import { getRedisClient } from "../../redis/redis.client.js";
 import * as adminConfig from "../../config/admin.config.js";
 
@@ -44,7 +44,7 @@ describe("Templates Module Integration Tests", () => {
         .send({});
 
       expect(res.status).toBe(400);
-      expect(res.body.message).toBe("Email is required");
+      expect(res.body.message).toBe("Validation error");
     });
 
     it("400 — rejects duplicate emails", async () => {
@@ -56,7 +56,7 @@ describe("Templates Module Integration Tests", () => {
         .send({ email });
 
       expect(res.status).toBe(400);
-      expect(res.body.message).toBe("Email already exists");
+      expect(res.body.message).toBe("This email is already on the template waitlist");
     });
 
     it("429 — enforces rate limiting", async () => {
@@ -134,12 +134,13 @@ describe("Templates Module Integration Tests", () => {
       const email = `delete-me-${Date.now()}@example.com`;
       await prisma.templateList.create({ data: { email } });
 
+      const headers = await authWithCsrfHeaders(adminUser);
       const res = await request(app)
         .delete(`/api/v1/templates/${encodeURIComponent(email)}`)
-        .set(authHeaders(adminUser));
+        .set(headers);
 
       expect(res.status).toBe(200);
-      expect(res.body.message).toBe("Email deleted successfully");
+      expect(res.body.message).toBe("Template request removed");
 
       const dbUser = await prisma.templateList.findUnique({ where: { email } });
       expect(dbUser).toBeNull();
