@@ -4,6 +4,7 @@ import { prisma } from "../../../lib/prisma.js";
 
 vi.mock("../../../lib/prisma.js", () => ({
   prisma: {
+    automationRule: { count: vi.fn().mockResolvedValue(0) },
     activity: { findMany: vi.fn(), count: vi.fn(), groupBy: vi.fn() },
     task: { count: vi.fn(), groupBy: vi.fn(), findMany: vi.fn() },
     project: { count: vi.fn(), findMany: vi.fn(), groupBy: vi.fn() },
@@ -103,6 +104,7 @@ describe("WorkspaceUsageQuery", () => {
   describe("getPlanLimits", () => {
     it("returns plan limits and storage usage for known plans", async () => {
       const result = await WorkspaceUsageQuery.getPlanLimits(
+        "workspace-1",
         { plan: "PRO", maxStorage: 9999 },
         3,
         [{ id: "f1", size: 2 * 1024 * 1024, uploadedById: "u1", projectId: null, mimeType: "text/plain", uploadedAt: new Date("2026-06-01T00:00:00.000Z") }],
@@ -123,7 +125,7 @@ describe("WorkspaceUsageQuery", () => {
     });
 
     it("throws when workspace was not found", async () => {
-      await expect(WorkspaceUsageQuery.getPlanLimits(null, 0, [], 0)).rejects.toThrow(
+      await expect(WorkspaceUsageQuery.getPlanLimits("workspace-1", null, 0, [], 0)).rejects.toThrow(
         "Workspace not found",
       );
     });

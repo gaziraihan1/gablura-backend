@@ -461,6 +461,21 @@ All mutating authenticated routes additionally require `X-CSRF-Token`.
 | `PATCH` | `/api/v1/projects/:projectId/members/:memberId` | ✓ | Update member role |
 | `DELETE` | `/api/v1/projects/:projectId/members/:memberId` | ✓ | Remove member |
 
+### Templates (10 endpoints)
+
+| Method | Route | CSRF | Description |
+|--------|-------|------|-------------|
+| `GET` | `/api/v1/templates/catalog` | — | Public tier-gated catalog (+ caller access tier) |
+| `GET` | `/api/v1/templates/:slug` | — | Public template detail |
+| `POST` | `/api/v1/templates` | — | Public template-waitlist email capture |
+| `GET` | `/api/v1/templates` | ✓ | Admin: list waitlist emails |
+| `DELETE` | `/api/v1/templates/:email` | ✓ | Admin: remove a waitlist email |
+| `POST` | `/api/v1/templates/save-as-template/:projectId` | ✓ | Snapshot a project as a private template |
+| `GET` | `/api/v1/templates/private` | ✓ | Workspace private templates |
+| `POST` | `/api/v1/templates/:slug/use` | ✓ | Import a template as a new project (tier-gated) |
+| `PATCH` | `/api/v1/templates/:slug` | ✓ | Update a template (author/admin) |
+| `DELETE` | `/api/v1/templates/:slug` | ✓ | Delete a template (author/admin) |
+
 ### Tasks (15 endpoints)
 
 | Method | Route | CSRF | Description |

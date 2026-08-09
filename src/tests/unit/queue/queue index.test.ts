@@ -47,6 +47,12 @@ vi.mock('../../../queue/workers/integration.worker.js', () => ({
     on: vi.fn().mockReturnThis(),
   }),
 }));
+vi.mock('../../../queue/workers/automation.worker.js', () => ({
+  createAutomationWorker: vi.fn().mockReturnValue({
+    close: vi.fn().mockResolvedValue(undefined),
+    on: vi.fn().mockReturnThis(),
+  }),
+}));
 
 // ── Import queue index after mocks ───────────────────────────────────────────
 import { initQueueWorkers, closeQueueWorkers } from '../../../queue/index.js';
@@ -56,6 +62,7 @@ import { createActivityWorker } from '../../../queue/workers/activity.worker.js'
 import { createCalendarWorker } from '../../../queue/workers/calendar.worker.js';
 import { createAnalyticsWorker } from '../../../queue/workers/analytics.worker.js';
 import { createIntegrationWorker } from '../../../queue/workers/integration.worker.js';
+import { createAutomationWorker } from '../../../queue/workers/automation.worker.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -65,7 +72,7 @@ describe('Queue Index', () => {
   });
 
   describe('initQueueWorkers', () => {
-    it('initializes all 6 workers', async () => {
+    it('initializes all 7 workers', async () => {
       await initQueueWorkers();
 
       expect(createEmailWorker).toHaveBeenCalled();
@@ -74,6 +81,7 @@ describe('Queue Index', () => {
       expect(createCalendarWorker).toHaveBeenCalled();
       expect(createAnalyticsWorker).toHaveBeenCalled();
       expect(createIntegrationWorker).toHaveBeenCalled();
+      expect(createAutomationWorker).toHaveBeenCalled();
     });
   });
 
@@ -88,6 +96,7 @@ describe('Queue Index', () => {
       const calendarWorker = (createCalendarWorker as any).mock.results[0]?.value;
       const analyticsWorker = (createAnalyticsWorker as any).mock.results[0]?.value;
       const integrationWorker = (createIntegrationWorker as any).mock.results[0]?.value;
+      const automationWorker = (createAutomationWorker as any).mock.results[0]?.value;
 
       if (emailWorker) expect(emailWorker.close).toHaveBeenCalled();
       if (notificationWorker) expect(notificationWorker.close).toHaveBeenCalled();
@@ -95,6 +104,7 @@ describe('Queue Index', () => {
       if (calendarWorker) expect(calendarWorker.close).toHaveBeenCalled();
       if (analyticsWorker) expect(analyticsWorker.close).toHaveBeenCalled();
       if (integrationWorker) expect(integrationWorker.close).toHaveBeenCalled();
+      if (automationWorker) expect(automationWorker.close).toHaveBeenCalled();
     });
   });
 });

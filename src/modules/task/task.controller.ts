@@ -20,6 +20,7 @@ import {
   upsertRecurrenceSchema,
 } from './task.validators.js';
 import { prisma } from '../../lib/prisma.js';
+import { emitAutomationEvent } from '../automation/automation.events.js';
 
 // ─── Slack URL Validation ─────────────────────────────────────────────────────
 
@@ -87,6 +88,15 @@ export const createTask = asyncHandler(async (req: AuthRequest, res: Response) =
       if (task.dueDate) {
         void CalendarAggregation.recalculateDay(req.user!.id, task.workspaceId || undefined, task.dueDate);
       }
+      if (task.workspaceId) {
+        void emitAutomationEvent({
+          trigger: 'TASK_CREATED',
+          taskId: task.id,
+          actorId: req.user!.id,
+          workspaceId: task.workspaceId,
+          projectId: task.projectId ?? null,
+        });
+      }
     },
   );
 
@@ -143,6 +153,21 @@ export const updateTask = asyncHandler(async (req: AuthRequest, res: Response) =
           });
         }
       }
+
+      // Emit a STATUS_CHANGED automation event when the edit form changed
+      // the task status — same event shape as PATCH /tasks/:id/status so
+      // automation rules fire regardless of which UI path changed it.
+      if (task.workspaceId && newStatus && oldStatus && newStatus !== oldStatus) {
+        void emitAutomationEvent({
+          trigger: 'STATUS_CHANGED',
+          taskId: task.id,
+          actorId: req.user!.id,
+          workspaceId: task.workspaceId,
+          projectId: task.projectId ?? null,
+          fromStatus: oldStatus,
+          toStatus: newStatus,
+        });
+      }
     },
   );
 
@@ -160,6 +185,15 @@ export const updateTaskStatus = asyncHandler(async (req: AuthRequest, res: Respo
         void TaskActivity.logStatusChanged({
           taskId: task.id, taskTitle: task.title, userId: req.user!.id,
           workspaceId: task.workspaceId, oldStatus, newStatus,
+        });
+        void emitAutomationEvent({
+          trigger: 'STATUS_CHANGED',
+          taskId: task.id,
+          actorId: req.user!.id,
+          workspaceId: task.workspaceId,
+          projectId: task.projectId ?? null,
+          fromStatus: oldStatus,
+          toStatus: newStatus,
         });
       }
       if (newStatus === 'COMPLETED' && oldStatus !== 'COMPLETED') {
@@ -312,6 +346,7 @@ export const linkGitHubEntity = asyncHandler(async (req: AuthRequest, res: Respo
       createdById: true,
       workspaceId: true,
       projectId: true,
+      status: true,
     },
   });
 
@@ -438,6 +473,20 @@ export const linkGitHubEntity = asyncHandler(async (req: AuthRequest, res: Respo
     where: { id },
     data: updateData,
   });
+
+  // Linking a merged PR auto-completes the task — emit a STATUS_CHANGED
+  // event so automation rules behave exactly as if the user set it manually.
+  if (prStatus === 'merged' && task.workspaceId && task.status !== 'COMPLETED') {
+    void emitAutomationEvent({
+      trigger: 'STATUS_CHANGED',
+      taskId: task.id,
+      actorId: userId,
+      workspaceId: task.workspaceId,
+      projectId: task.projectId ?? null,
+      fromStatus: task.status,
+      toStatus: 'COMPLETED',
+    });
+  }
 
   res.json({ success: true, data: updatedTask });
 });

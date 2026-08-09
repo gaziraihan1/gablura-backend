@@ -159,6 +159,7 @@ export const WorkspaceUsageQuery = {
 
     // planLimits reuses projectCount already fetched by getProjectActivity.
     const planLimits = await this.getPlanLimits(
+      workspaceId,
       workspace,
       members.length,
       files,
@@ -447,6 +448,7 @@ export const WorkspaceUsageQuery = {
   // ── Plan Limits ───────────────────────────────────────────────────────────
 
   async getPlanLimits(
+    workspaceId: string,
     workspace: FetchedWorkspace,
     memberCount: number,
     files: FetchedFile[],
@@ -466,7 +468,9 @@ export const WorkspaceUsageQuery = {
       storageLimitMB: limits.storage,
       projectCount,
       projectLimit: limits.projects,
-      automationCount: 0,
+      automationCount: await prisma.automationRule.count({
+        where: { workspaceId, enabled: true },
+      }),
       automationLimit: limits.automations,
     };
   },

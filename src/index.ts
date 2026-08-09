@@ -48,11 +48,12 @@ import {
 import { adminRouter } from "./admin/admin.routes.js";
 import { checkDatabaseHealth, getPoolMetrics, disconnectAll } from "./lib/prisma.js";
 import { dbMonitoring, dbPoolGuard } from "./middleware/dbMonitoring.js";
-import { templatesRouter } from "./modules/templates/index.js";
+import { templatesRouter, seedOfficialTemplates } from "./modules/templates/index.js";
 import { errorHandler, notFoundHandler } from "./errors/errorHandler.js";
 import { adminResourceRouter, publicResourceRouter } from "./modules/resource/index.js";
 import { captureException } from "./lib/sentry.js";
 import apiKeyRouter from "./modules/apikey/apikey.routes.js";
+import { automationRouter } from "./modules/automation/index.js";
 import { integrationRouter, workspaceIntegrationRouter, integrationWebhookRouter } from "./modules/integration/index.js";
 import { initQueueWorkers, closeQueueWorkers } from "./queue/index.js";
 import { securityHeaders } from "./middleware/securityHeaders.js";
@@ -163,6 +164,12 @@ initTaskRecurrenceCrons();
 initQueueWorkers().catch((err) => {
   console.error("❌ Failed to initialize queue workers:", err);
 });
+
+// Seed the official template catalog (idempotent upsert by slug — safe to run
+// on every boot; the catalog is a core, documented part of the product).
+seedOfficialTemplates()
+  .then((count) => console.log(`📦 Official template catalog ready (${count} templates)`))
+  .catch((err) => console.error("❌ Failed to seed template catalog:", err));
 
 app.get("/health", async (req: Request, res: Response) => {
   try {
@@ -279,6 +286,7 @@ app.use("/api/v1/projects", authenticate, sessionTimeout, requireCsrfToken(), pr
 app.use("/api/v1/user/integrations", authenticate, sessionTimeout, requireCsrfToken(), integrationRouter);
 app.use("/api/v1/workspace-integrations", authenticate, sessionTimeout, requireCsrfToken(), workspaceIntegrationRouter);
 app.use("/api/v1/tasks", authenticate, sessionTimeout, requireCsrfToken(), taskRouter);
+app.use("/api/v1/automations", authenticate, sessionTimeout, requireCsrfToken(), automationRouter);
 app.use("/api/v1/daily-tasks", authenticate, sessionTimeout, requireCsrfToken(), dailyTaskRouter);
 app.use("/api/v1/activities", authenticate, sessionTimeout, requireCsrfToken(), activityRouter);
 app.use("/api/v1/user", authenticate, sessionTimeout, requireCsrfToken(), userRoutes);

@@ -39,6 +39,7 @@ export const CACHE_TTL = {
   TASK_METADATA: parseInt(process.env.CACHE_TTL_TASK_METADATA ?? "300"), // 5 min
   TASK_OVERVIEW: parseInt(process.env.CACHE_TTL_TASK_OVERVIEW ?? "300"), // 5 min
   TASK_STATS: parseInt(process.env.CACHE_TTL_TASK_STATS ?? "120"), // 2 min
+  AUTOMATION_LIST: parseInt(process.env.CACHE_TTL_AUTOMATION_LIST ?? "300"), // 5 min
 
   // Activity — very short TTLs as activities are real-time
   ACTIVITY_LIST: parseInt(process.env.CACHE_TTL_ACTIVITY_LIST ?? "60"), // 1 min
@@ -186,6 +187,11 @@ export const CACHE_KEYS = {
   taskOverview: (taskId: string) => `task:overview:${taskId}`,
   taskStats: (userId: string, workspaceId?: string, type?: string) =>
     `task:stats:${userId}:${workspaceId ?? "personal"}:${type ?? "all"}`,
+
+  // Automation caching
+  automationList: (workspaceId: string, projectId?: string) =>
+    `automation:list:${workspaceId}:${projectId ?? "all"}`,
+  automationById: (ruleId: string) => `automation:id:${ruleId}`,
 
   // Activity caching
   activityUserList: (userId: string, workspaceId?: string) =>
@@ -537,6 +543,21 @@ export const TaskCache = {
    */
   async invalidateWorkspaceTasks(workspaceId: string): Promise<void> {
     await CacheClient.deletePattern(`task:stats:*:${workspaceId}:*`);
+  },
+};
+
+// ─── Automation Cache Invalidation ─────────────────────────────────────────
+
+export const AutomationCache = {
+  /**
+   * Invalidate every cached list that includes this workspace.
+   */
+  async invalidateList(workspaceId: string): Promise<void> {
+    await CacheClient.deletePattern(`automation:list:${workspaceId}:*`);
+  },
+
+  async invalidateById(ruleId: string): Promise<void> {
+    await CacheClient.delete(CACHE_KEYS.automationById(ruleId));
   },
 };
 

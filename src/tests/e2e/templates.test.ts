@@ -3,6 +3,7 @@ import request from 'supertest';
 import app from '../../app.js';
 import { createAdminUser, createUser } from '../factories/index.js';
 import { authWithCsrfHeaders } from '../helpers/auth.js';
+import { prisma } from '../../lib/prisma.js';
 
 describe('📄 Template Request Journeys', () => {
   let adminUser: any;
@@ -79,6 +80,47 @@ describe('📄 Template Request Journeys', () => {
 
     const res = await request(app)
       .get('/api/v1/templates')
+      .set(userHeaders);
+
+    expect(res.status).toBe(403);
+  });
+});
+
+describe('📄 Template delete route disambiguation', () => {
+  it('lets a non-admin template author delete their own template via DELETE /:slug', async () => {
+    const author = await createUser();
+    const authorHeaders = await authWithCsrfHeaders(author);
+    const slug = `author-del-${Date.now()}`;
+
+    await prisma.projectTemplate.create({
+      data: {
+        slug,
+        title: 'Author Owned',
+        description: '',
+        category: 'operations',
+        complexity: 'starter',
+        tier: 'FREE',
+        status: 'available',
+        visibility: 'PRIVATE',
+        authorId: author.id,
+        content: {} as object,
+      },
+    });
+
+    const res = await request(app)
+      .delete(`/api/v1/templates/${slug}`)
+      .set(authorHeaders);
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+  });
+
+  it('blocks non-admins from the waitlist DELETE /:email path', async () => {
+    const user = await createUser();
+    const userHeaders = await authWithCsrfHeaders(user);
+
+    const res = await request(app)
+      .delete(`/api/v1/templates/test-${Date.now()}@example.com`)
       .set(userHeaders);
 
     expect(res.status).toBe(403);

@@ -18,6 +18,7 @@ const {
   mockRecalculateDay,
   mockGetPersonalQuotaInfo,
   mockGetWorkspaceQuotaInfo,
+  mockEmitAutomationEvent,
 } = vi.hoisted(() => ({
   mockGetTasks: vi.fn(),
   mockGetTaskStats: vi.fn(),
@@ -36,6 +37,7 @@ const {
   mockRecalculateDay: vi.fn(),
   mockGetPersonalQuotaInfo: vi.fn(),
   mockGetWorkspaceQuotaInfo: vi.fn(),
+  mockEmitAutomationEvent: vi.fn(),
 }));
 
 const {
@@ -98,6 +100,9 @@ vi.mock('../../../modules/task/task.mutation.js', () => ({
     updateTaskStatus: mockUpdateTaskStatus,
     deleteTask: mockDeleteTask,
   },
+}));
+vi.mock('../../../modules/automation/automation.events.js', () => ({
+  emitAutomationEvent: mockEmitAutomationEvent,
 }));
 
 vi.mock('../../../modules/task/task.activity.js', () => ({
@@ -777,6 +782,86 @@ describe('updateTask', () => {
     await updateTask(req as any, res as any, mockNext);
 
     expect(mockLogUpdated).not.toHaveBeenCalled();
+  });
+
+  it('should emit a STATUS_CHANGED automation event when the edit form changes status', async () => {
+    mockFindUnique.mockResolvedValue({
+      title: 'Old', description: null, priority: 'MEDIUM', status: 'TODO', projectId: 'p1',
+      dueDate: null, startDate: null, estimatedHours: null,
+      focusRequired: null, focusLevel: null, energyType: null, distractionCost: null, intent: null,
+      assignees: [], labels: [],
+    });
+    mockUpdateTask.mockImplementation(async (_id: string, _userId: string, _data: unknown, callback: (...args: unknown[]) => unknown) => {
+      await callback({
+        task: { id: 't1', title: 'Task', workspaceId: 'ws1', projectId: 'p1' },
+        oldStatus: 'TODO',
+        newStatus: 'COMPLETED',
+      });
+      return {};
+    });
+
+    const req = mockReq({ params: { id: 't1' }, body: { status: 'COMPLETED' } });
+    const res = mockRes();
+
+    await updateTask(req as any, res as any, mockNext);
+
+    expect(mockEmitAutomationEvent).toHaveBeenCalledWith({
+      trigger: 'STATUS_CHANGED',
+      taskId: 't1',
+      actorId: 'user1',
+      workspaceId: 'ws1',
+      projectId: 'p1',
+      fromStatus: 'TODO',
+      toStatus: 'COMPLETED',
+    });
+  });
+
+  it('should not emit a STATUS_CHANGED event when the status did not change', async () => {
+    mockFindUnique.mockResolvedValue({
+      title: 'Old', description: null, priority: 'MEDIUM', status: 'TODO', projectId: 'p1',
+      dueDate: null, startDate: null, estimatedHours: null,
+      focusRequired: null, focusLevel: null, energyType: null, distractionCost: null, intent: null,
+      assignees: [], labels: [],
+    });
+    mockUpdateTask.mockImplementation(async (_id: string, _userId: string, _data: unknown, callback: (...args: unknown[]) => unknown) => {
+      await callback({
+        task: { id: 't1', title: 'Task', workspaceId: 'ws1', projectId: 'p1' },
+        oldStatus: 'TODO',
+        newStatus: 'TODO',
+      });
+      return {};
+    });
+
+    const req = mockReq({ params: { id: 't1' }, body: { title: 'Renamed' } });
+    const res = mockRes();
+
+    await updateTask(req as any, res as any, mockNext);
+
+    expect(mockEmitAutomationEvent).not.toHaveBeenCalled();
+  });
+
+  it('should not emit a STATUS_CHANGED event for personal tasks', async () => {
+    mockFindUnique.mockResolvedValue({
+      title: 'Old', description: null, priority: 'MEDIUM', status: 'TODO', projectId: null,
+      dueDate: null, startDate: null, estimatedHours: null,
+      focusRequired: null, focusLevel: null, energyType: null, distractionCost: null, intent: null,
+      assignees: [], labels: [],
+    });
+    mockUpdateTask.mockImplementation(async (_id: string, _userId: string, _data: unknown, callback: (...args: unknown[]) => unknown) => {
+      await callback({
+        task: { id: 't1', title: 'Task', workspaceId: null },
+        oldStatus: 'TODO',
+        newStatus: 'COMPLETED',
+      });
+      return {};
+    });
+
+    const req = mockReq({ params: { id: 't1' }, body: { status: 'COMPLETED' } });
+    const res = mockRes();
+
+    await updateTask(req as any, res as any, mockNext);
+
+    expect(mockEmitAutomationEvent).not.toHaveBeenCalled();
   });
 });
 
@@ -1527,7 +1612,7 @@ describe('linkGitHubEntity', () => {
   });
 
   it('should auto-complete task when PR is merged', async () => {
-    mockFindUnique.mockResolvedValue(baseTask);
+    mockFindUnique.mockResolvedValue({ ...baseTask, status: 'IN_PROGRESS' });
     mockIntegrationFindFirst.mockResolvedValue({
       accessToken: 'ghp_token123',
     });
@@ -1556,6 +1641,43 @@ describe('linkGitHubEntity', () => {
         status: 'COMPLETED',
       }),
     });
+
+    expect(mockEmitAutomationEvent).toHaveBeenCalledWith({
+      trigger: 'STATUS_CHANGED',
+      taskId: 't1',
+      actorId: 'user1',
+      workspaceId: 'ws1',
+      projectId: null,
+      fromStatus: 'IN_PROGRESS',
+      toStatus: 'COMPLETED',
+    });
+
+    vi.unstubAllGlobals();
+  });
+
+  it('should not emit an automation event when the PR is not merged', async () => {
+    mockFindUnique.mockResolvedValue({ ...baseTask, status: 'TODO' });
+    mockIntegrationFindFirst.mockResolvedValue({
+      accessToken: 'ghp_token123',
+    });
+
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ merged: false, state: 'open' }),
+    });
+    vi.stubGlobal('fetch', mockFetch);
+
+    mockTaskUpdate.mockResolvedValue({ id: 't1' });
+
+    const req = mockReq({
+      params: { id: 't1' },
+      body: { type: 'pr', url: 'https://github.com/org/repo/pull/1', number: 1 },
+    });
+    const res = mockRes();
+
+    await linkGitHubEntity(req as any, res as any, mockNext);
+
+    expect(mockEmitAutomationEvent).not.toHaveBeenCalled();
 
     vi.unstubAllGlobals();
   });
@@ -2265,5 +2387,87 @@ describe('unlinkGitHubEntity', () => {
     await unlinkGitHubEntity(req as any, res as any, mockNext);
 
     expect(mockNext).toHaveBeenCalledWith(error);
+  });
+});
+
+describe('createTask — automation events', () => {
+  beforeEach(() => mockEmitAutomationEvent.mockClear());
+
+  it('should emit TASK_CREATED event when task has workspaceId', async () => {
+    const task = { id: 't1', title: 'Task', workspaceId: 'ws1', projectId: 'p1', dueDate: null };
+    mockCreateTask.mockImplementation(async (_data: unknown, callback: (...args: unknown[]) => unknown) => {
+      await callback({ task, assigneeIds: [] });
+      return task;
+    });
+
+    const req = mockReq({ body: { title: 'Task' } });
+    const res = mockRes();
+
+    await createTask(req as any, res as any, mockNext);
+
+    expect(mockEmitAutomationEvent).toHaveBeenCalledWith({
+      trigger: 'TASK_CREATED',
+      taskId: 't1',
+      actorId: 'user1',
+      workspaceId: 'ws1',
+      projectId: 'p1',
+    });
+  });
+
+  it('should not emit TASK_CREATED when task has no workspaceId', async () => {
+    const task = { id: 't1', title: 'Task', workspaceId: null, projectId: null, dueDate: null };
+    mockCreateTask.mockImplementation(async (_data: unknown, callback: (...args: unknown[]) => unknown) => {
+      await callback({ task, assigneeIds: [] });
+      return task;
+    });
+
+    const req = mockReq({ body: { title: 'Task' } });
+    const res = mockRes();
+
+    await createTask(req as any, res as any, mockNext);
+
+    expect(mockEmitAutomationEvent).not.toHaveBeenCalled();
+  });
+});
+
+describe('updateTaskStatus — automation events', () => {
+  beforeEach(() => mockEmitAutomationEvent.mockClear());
+
+  it('should emit STATUS_CHANGED event when status changes', async () => {
+    const task = { id: 't1', title: 'Task', workspaceId: 'ws1', projectId: null };
+    mockUpdateTaskStatus.mockImplementation(async (_id: unknown, _user: unknown, _status: unknown, callback: (...args: unknown[]) => unknown) => {
+      await callback({ task, oldStatus: 'TODO', newStatus: 'IN_PROGRESS' });
+      return task;
+    });
+
+    const req = mockReq({ body: { status: 'IN_PROGRESS' } });
+    const res = mockRes();
+
+    await updateTaskStatus(req as any, res as any, mockNext);
+
+    expect(mockEmitAutomationEvent).toHaveBeenCalledWith({
+      trigger: 'STATUS_CHANGED',
+      taskId: 't1',
+      actorId: 'user1',
+      workspaceId: 'ws1',
+      projectId: null,
+      fromStatus: 'TODO',
+      toStatus: 'IN_PROGRESS',
+    });
+  });
+
+  it('should not emit STATUS_CHANGED when status is unchanged', async () => {
+    const task = { id: 't1', title: 'Task', workspaceId: 'ws1', projectId: null };
+    mockUpdateTaskStatus.mockImplementation(async (_id: unknown, _user: unknown, _status: unknown, callback: (...args: unknown[]) => unknown) => {
+      await callback({ task, oldStatus: 'TODO', newStatus: 'TODO' });
+      return task;
+    });
+
+    const req = mockReq({ body: { status: 'TODO' } });
+    const res = mockRes();
+
+    await updateTaskStatus(req as any, res as any, mockNext);
+
+    expect(mockEmitAutomationEvent).not.toHaveBeenCalled();
   });
 });
