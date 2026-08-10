@@ -269,6 +269,7 @@ model User {
   integrations            Integration[]
   connectedIntegrations   Integration[]            @relation("IntegrationConnectedBy")
   ProjectView             ProjectView[]
+  aiUsageLogs             AiUsageLog[]
 
   @@index([stripeCustomerId])
 }
@@ -325,6 +326,7 @@ model Workspace {
   invitations     WorkspaceInvitation[]
   members         WorkspaceMember[]
   integrations    Integration[]
+  aiUsageLogs     AiUsageLog[]
 
   @@unique([id, slug])
   @@index([ownerId])
@@ -1693,4 +1695,29 @@ enum JobStatus {
   OPEN
   PAUSED
   CLOSED
+}
+
+// ─── AI usage log (Phase 4 hardening) ─────────────────────────────────────────
+// One row per successful Gemini call. Written fire-and-forget (never fails the
+// request) so billing reports and audit can be built from real token usage.
+model AiUsageLog {
+  id           String   @id @default(cuid())
+  /// Null for personal (workspace-less) calls.
+  workspaceId  String?
+  userId       String
+  feature      String
+  model        String
+  inputTokens  Int
+  outputTokens Int
+  totalTokens  Int
+  /// Estimated USD cost for this call (see AI_COST_PER_1M_TOKENS_USD).
+  costUsd      Decimal? @db.Decimal(12, 6)
+  createdAt    DateTime @default(now())
+
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([workspaceId])
+  @@index([feature, createdAt])
 }

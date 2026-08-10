@@ -157,6 +157,48 @@ export class SessionHijackError extends UnauthorizedError {
   }
 }
 
+// ─── 502 / 503 AI service errors ─────────────────────────────────────────────
+
+/**
+ * Thrown when the AI provider cannot be reached, is unconfigured, or times
+ * out. Maps to 503 so the client can surface a friendly "try again later"
+ * notice instead of a generic 500.
+ */
+export class AiServiceUnavailableError extends AppError {
+  constructor(message = "AI service is currently unavailable. Please try again later.") {
+    super(message, 503, "AI_SERVICE_UNAVAILABLE");
+  }
+}
+
+/**
+ * Thrown when the LLM returns malformed JSON or output that fails the
+ * feature's Zod schema. Maps to 502 — the upstream responded but the
+ * contract was violated.
+ */
+export class AiInvalidResponseError extends AppError {
+  constructor(message = "The AI service returned an unexpected response. Please try again.") {
+    super(message, 502, "AI_INVALID_RESPONSE");
+  }
+}
+
+/**
+ * Thrown before an LLM call when the scope's monthly token budget would be
+ * exceeded by the worst-case cost of the request. Maps to 429 with the
+ * seconds until the budget resets (start of next month) in `retryAfter`.
+ */
+export class AiMonthlyQuotaExceededError extends AppError {
+  public readonly retryAfter?: number;
+
+  constructor(retryAfterSeconds: number) {
+    super(
+      "You've reached the monthly AI token limit for this plan. Upgrade to unlock more, or try again next month.",
+      429,
+      "AI_MONTHLY_QUOTA_EXCEEDED",
+    );
+    this.retryAfter = retryAfterSeconds;
+  }
+}
+
 // ─── 429 Storage / upload quota errors ───────────────────────────────────────
 
 /**

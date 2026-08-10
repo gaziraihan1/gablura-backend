@@ -40,6 +40,7 @@
     "test:performance:check": "tsx performance/check-server.ts"
   },
   "dependencies": {
+    "@google/genai": "^2.16.0",
     "@ngrok/ngrok": "^1.7.0",
     "@paddle/paddle-node-sdk": "^3.8.0",
     "@prisma/client": "^5.22.0",

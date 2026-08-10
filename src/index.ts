@@ -54,6 +54,7 @@ import { adminResourceRouter, publicResourceRouter } from "./modules/resource/in
 import { captureException } from "./lib/sentry.js";
 import apiKeyRouter from "./modules/apikey/apikey.routes.js";
 import { automationRouter } from "./modules/automation/index.js";
+import { aiRouter } from "./modules/ai/index.js";
 import { integrationRouter, workspaceIntegrationRouter, integrationWebhookRouter } from "./modules/integration/index.js";
 import { initQueueWorkers, closeQueueWorkers } from "./queue/index.js";
 import { securityHeaders } from "./middleware/securityHeaders.js";
@@ -287,6 +288,7 @@ app.use("/api/v1/user/integrations", authenticate, sessionTimeout, requireCsrfTo
 app.use("/api/v1/workspace-integrations", authenticate, sessionTimeout, requireCsrfToken(), workspaceIntegrationRouter);
 app.use("/api/v1/tasks", authenticate, sessionTimeout, requireCsrfToken(), taskRouter);
 app.use("/api/v1/automations", authenticate, sessionTimeout, requireCsrfToken(), automationRouter);
+app.use("/api/v1/ai", authenticate, sessionTimeout, requireCsrfToken(), aiRouter);
 app.use("/api/v1/daily-tasks", authenticate, sessionTimeout, requireCsrfToken(), dailyTaskRouter);
 app.use("/api/v1/activities", authenticate, sessionTimeout, requireCsrfToken(), activityRouter);
 app.use("/api/v1/user", authenticate, sessionTimeout, requireCsrfToken(), userRoutes);

@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from "express";
-import { AppError, ValidationError, RateLimitError, SessionHijackError, NotFoundError } from "./AppError.js";
+import { AppError, ValidationError, RateLimitError, SessionHijackError, NotFoundError, AiMonthlyQuotaExceededError } from "./AppError.js";
 import { captureException } from "../lib/sentry.js";
 
 /**
@@ -35,6 +35,12 @@ export const errorHandler = (
     if (err instanceof RateLimitError && err.retryAfter != null) {
       body.retryAfter = err.retryAfter;
       res.setHeader("Retry-After", err.retryAfter);
+    }
+
+    // Monthly AI budget reset — retryAfter is seconds until the next month
+    if (err instanceof AiMonthlyQuotaExceededError && err.retryAfter != null) {
+      body.retryAfter = err.retryAfter;
+      res.setHeader("Retry-After", String(err.retryAfter));
     }
 
     // SessionHijackError carries the mismatch reason

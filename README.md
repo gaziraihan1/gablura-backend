@@ -85,6 +85,7 @@ Built with a **modular monolith architecture** — each domain is fully self-con
 - CMS for popular resources and product updates
 - Email notification queue
 - Background job processing (BullMQ)
+- **AI assistant (Google Gemini)** — server-side `src/modules/ai`: task autocomplete, goal breakdown, comment assist, with tier-based quota/rate limiting (see `GEMINI.md`)
 - Audit logging for all security-relevant events
 - Business rule enforcement and input validation
 - Response caching for read-heavy analytics and workspace queries

@@ -43,6 +43,7 @@ import { securityHeaders } from "./middleware/securityHeaders.js";
 import { requireFocuraAdmin } from "./middleware/focuraAdmin.js";
 import apiKeyRouter from "./modules/apikey/apikey.routes.js";
 import { integrationRouter, workspaceIntegrationRouter, integrationWebhookRouter } from "./modules/integration/index.js";
+import { aiRouter } from "./modules/ai/index.js";
 
 const isProd = process.env.NODE_ENV === "production";
 
@@ -244,6 +245,7 @@ app.use(
 );
 app.use("/api/v1/meetings", authenticate, sessionTimeout, requireCsrfToken(), meetingRoutes);
 app.use("/api/v1/features", authenticate, sessionTimeout, requireCsrfToken(), featureRouter);
+app.use("/api/v1/ai", authenticate, sessionTimeout, requireCsrfToken(), aiRouter);
 app.use("/api/v1/admin", authenticate, sessionTimeout, requireCsrfToken(), requireFocuraAdmin, adminRouter);
 
 // ── 404 ───────────────────────────────────────────────────
