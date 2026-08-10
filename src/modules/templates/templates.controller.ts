@@ -17,6 +17,24 @@ import {
   rateTemplateSchema,
 } from './templates.validators.js';
 
+/** Admin: list community templates waiting for approval. */
+export const listPendingTemplates = asyncHandler(async (_req: AuthRequest, res: Response) => {
+  const data = await TemplateQuery.getPendingForModeration();
+  res.json({ success: true, data });
+});
+
+/** Admin: approve a pending template → it becomes PUBLIC in the gallery. */
+export const approveTemplate = asyncHandler(async (req: AuthRequest, res: Response) => {
+  const data = await TemplateMutation.approve(req.params.slug);
+  res.json({ success: true, message: 'Template approved and published', data });
+});
+
+/** Admin: reject a submission → it returns to PRIVATE (never published). */
+export const rejectTemplate = asyncHandler(async (req: AuthRequest, res: Response) => {
+  const data = await TemplateMutation.reject(req.params.slug);
+  res.json({ success: true, message: 'Template rejected — moved back to private', data });
+});
+
 export const getCatalog = asyncHandler(async (req: AuthRequest, res: Response) => {
   const parsed = listCatalogQuerySchema.safeParse(req.query);
   if (!parsed.success) throw new ValidationError('Validation error', parsed.error.issues);

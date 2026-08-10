@@ -79,6 +79,62 @@ describe('Template Rating Contract', () => {
     app = appModule.default;
   });
 
+  it('GET /templates/admin/pending should match the contract', async () => {
+    const response = await request(app).get('/api/v1/templates/admin/pending');
+
+    expect(response.status).toBe(200);
+    validateContract(APIResponseSchema, response.body);
+    expect(Array.isArray(response.body.data)).toBe(true);
+  });
+
+  it('POST /templates/admin/:slug/approve should match the contract', async () => {
+    const slug = 'moder-approve-' + Date.now();
+    await prisma.projectTemplate.create({
+      data: {
+        slug,
+        title: 'Moderation Approve',
+        description: '',
+        category: 'operations',
+        complexity: 'starter',
+        tier: 'FREE',
+        status: 'available',
+        visibility: 'PENDING',
+        content: {} as object,
+      },
+    });
+
+    const response = await request(app)
+      .post('/api/v1/templates/admin/' + slug + '/approve');
+
+    expect(response.status).toBe(200);
+    validateContract(APIResponseSchema, response.body);
+    expect(response.body.data.visibility).toBe('PUBLIC');
+  });
+
+  it('POST /templates/admin/:slug/reject should match the contract', async () => {
+    const slug = 'moder-reject-' + Date.now();
+    await prisma.projectTemplate.create({
+      data: {
+        slug,
+        title: 'Moderation Reject',
+        description: '',
+        category: 'operations',
+        complexity: 'starter',
+        tier: 'FREE',
+        status: 'available',
+        visibility: 'PENDING',
+        content: {} as object,
+      },
+    });
+
+    const response = await request(app)
+      .post('/api/v1/templates/admin/' + slug + '/reject');
+
+    expect(response.status).toBe(200);
+    validateContract(APIResponseSchema, response.body);
+    expect(response.body.data.visibility).toBe('PRIVATE');
+  });
+
   it('POST /templates/:slug/rate should match the contract', async () => {
     const slug = `rate-contract-${Date.now()}`;
     await prisma.projectTemplate.create({

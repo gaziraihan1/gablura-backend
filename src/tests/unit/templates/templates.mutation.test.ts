@@ -6,7 +6,7 @@ import { TemplateMutation } from '../../../modules/templates/templates.mutation.
 import { prisma } from '../../../lib/prisma.js';
 import { SlugService } from '../../../services/slug.service.js';
 import { resolveWorkspacePlan } from '../../../modules/task/task.quota.service.js';
-import { PlanLimitError, ForbiddenError, NotFoundError } from '../../../errors/index.js';
+import { PlanLimitError, ForbiddenError, NotFoundError, ValidationError } from '../../../errors/index.js';
 
 const mockAssertWorkspaceMembership = vi.fn();
 const mockAssertProjectEditAccess = vi.fn();
@@ -279,6 +279,81 @@ describe('TemplateMutation.saveAsTemplate', () => {
         }),
       }),
     );
+  });
+
+  it('queues PUBLIC save requests as PENDING for moderation', async () => {
+    vi.mocked(prisma.projectSection.findMany).mockResolvedValue([] as never);
+    vi.mocked(prisma.taskLabel.findMany).mockResolvedValue([] as never);
+    vi.mocked(prisma.task.findMany).mockResolvedValue([] as never);
+    vi.mocked(prisma.projectMilestone.findMany).mockResolvedValue([] as never);
+    vi.mocked(prisma.projectView.findMany).mockResolvedValue([] as never);
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({ name: 'Ada' } as never);
+    vi.mocked(prisma.projectTemplate.create).mockResolvedValue({} as never);
+
+    const result = await TemplateMutation.saveAsTemplate(req() as never, 'proj1', {
+      visibility: 'PUBLIC',
+    });
+
+    expect(result.visibility).toBe('PENDING');
+    expect(prisma.projectTemplate.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ visibility: 'PENDING' }),
+      }),
+    );
+  });
+});
+
+describe('TemplateMutation.approve / reject (moderation)', () => {
+  it('approves a PENDING submission to PUBLIC', async () => {
+    vi.mocked(prisma.projectTemplate.findUnique).mockResolvedValue({
+      slug: 'community-sprint',
+      title: 'Community Sprint',
+      visibility: 'PENDING',
+    } as never);
+    vi.mocked(prisma.projectTemplate.update).mockResolvedValue({
+      slug: 'community-sprint',
+      title: 'Community Sprint',
+      visibility: 'PUBLIC',
+    } as never);
+
+    const result = await TemplateMutation.approve('community-sprint');
+
+    expect(result.visibility).toBe('PUBLIC');
+    expect(prisma.projectTemplate.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { visibility: 'PUBLIC' } }),
+    );
+  });
+
+  it('rejects a submission back to PRIVATE', async () => {
+    vi.mocked(prisma.projectTemplate.findUnique).mockResolvedValue({
+      slug: 'community-sprint',
+      title: 'Community Sprint',
+      visibility: 'PENDING',
+    } as never);
+    vi.mocked(prisma.projectTemplate.update).mockResolvedValue({
+      slug: 'community-sprint',
+      title: 'Community Sprint',
+      visibility: 'PRIVATE',
+    } as never);
+
+    const result = await TemplateMutation.reject('community-sprint');
+    expect(result.visibility).toBe('PRIVATE');
+  });
+
+  it('throws NotFoundError for missing templates', async () => {
+    vi.mocked(prisma.projectTemplate.findUnique).mockResolvedValue(null);
+    await expect(TemplateMutation.approve('nope')).rejects.toThrow(NotFoundError);
+    await expect(TemplateMutation.reject('nope')).rejects.toThrow(NotFoundError);
+  });
+
+  it('refuses to approve a template that is still PRIVATE', async () => {
+    vi.mocked(prisma.projectTemplate.findUnique).mockResolvedValue({
+      slug: 'private-draft',
+      title: 'Draft',
+      visibility: 'PRIVATE',
+    } as never);
+
+    await expect(TemplateMutation.approve('private-draft')).rejects.toThrow(ValidationError);
   });
 });
 

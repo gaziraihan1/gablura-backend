@@ -7,7 +7,9 @@ import { assertWorkspaceMembership } from './templates.access.js';
 import type {
   TemplateCatalogItem,
   TemplateCatalogResponse,
+  TemplateModerationItem,
   TemplateTier,
+  TemplateVisibility,
 } from './templates.types.js';
 
 const catalogSelect = {
@@ -31,6 +33,9 @@ const catalogSelect = {
   visibility: true,
   authorName: true,
   authorRole: true,
+  createdAt: true,
+  authorId: true,
+  workspaceId: true,
   content: true,
 } as const;
 
@@ -55,6 +60,9 @@ type CatalogRow = {
   visibility: string;
   authorName: string | null;
   authorRole: string | null;
+  createdAt: Date;
+  authorId: string | null;
+  workspaceId: string | null;
   content: unknown;
 };
 
@@ -74,6 +82,7 @@ function toCatalogItem(row: CatalogRow): TemplateCatalogItem {
     usageCount: row.usageCount,
     estimatedSetupMinutes: row.estimatedSetupMinutes,
     status: row.status,
+    visibility: row.visibility as TemplateVisibility,
     rating: {
       average:
         row.ratingCount > 0
@@ -176,11 +185,32 @@ export const TemplateQuery = {
   async getWorkspacePrivate(userId: string, workspaceId: string) {
     await assertWorkspaceMembership(userId, workspaceId);
 
+    // PRIVATE + PENDING — authors see their submissions (awaiting review) too.
     const rows = await prisma.projectTemplate.findMany({
-      where: { workspaceId, visibility: 'PRIVATE' },
+      where: { workspaceId, visibility: { in: ['PRIVATE', 'PENDING'] } },
       orderBy: { createdAt: 'desc' },
       select: catalogSelect,
     });
     return rows.map(toCatalogItem);
+  },
+
+  /** Admin moderation queue — community submissions waiting for review. */
+  async getPendingForModeration(): Promise<TemplateModerationItem[]> {
+    const rows = await prisma.projectTemplate.findMany({
+      where: { visibility: 'PENDING' },
+      orderBy: { createdAt: 'asc' },
+      select: catalogSelect,
+    });
+    return rows.map((row) => {
+      const item = toCatalogItem(row);
+      const content = (row.content ?? {}) as { sections?: unknown[]; tasks?: unknown[] };
+      return {
+        ...item,
+        workspaceId: row.workspaceId,
+        createdAt: row.createdAt,
+        taskCount: content.tasks?.length ?? 0,
+        sectionCount: content.sections?.length ?? 0,
+      };
+    });
   },
 };

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import request from 'supertest';
 import app from '../../app.js';
-import { createAdminUser, createUser } from '../factories/index.js';
+import { createAdminUser, createUser, createWorkspaceWithOwner, createProject } from '../factories/index.js';
 import { authWithCsrfHeaders } from '../helpers/auth.js';
 import { prisma } from '../../lib/prisma.js';
 
@@ -190,5 +190,87 @@ describe('⭐ Template rating journeys', () => {
       .set(headers)
       .send({ stars: 4 });
     expect(res.status).toBe(404);
+  });
+});
+
+describe('🛡 Template moderation journeys', () => {
+  it('queues PUBLIC saves as PENDING and lets an admin approve them into the catalog', async () => {
+    const { user: author, workspace } = await createWorkspaceWithOwner();
+    const admin = await createAdminUser();
+    const authorHeaders = await authWithCsrfHeaders(author);
+    const adminHeaders = await authWithCsrfHeaders(admin);
+
+    const project = await createProject(workspace.id, author.id, { name: 'Moderated Project' });
+
+    // 1. Author saves publicly → queued as PENDING (not instantly PUBLIC).
+    const saveRes = await request(app)
+      .post('/api/v1/templates/save-as-template/' + project.id)
+      .set(authorHeaders)
+      .send({ title: 'Community Sprint', visibility: 'PUBLIC' });
+    expect(saveRes.status).toBe(201);
+    expect(saveRes.body.data.visibility).toBe('PENDING');
+    const slug = saveRes.body.data.slug;
+
+    // 2. Not in the public catalog yet.
+    const catalogBefore = await request(app).get('/api/v1/templates/catalog');
+    expect(catalogBefore.body.data.templates.some((t: any) => t.slug === slug)).toBe(false);
+
+    // 3. Admin sees it in the moderation queue.
+    const pendingRes = await request(app)
+      .get('/api/v1/templates/admin/pending')
+      .set(adminHeaders);
+    expect(pendingRes.status).toBe(200);
+    expect(pendingRes.body.data.some((t: any) => t.slug === slug)).toBe(true);
+
+    // 4. Admin approves → live in the gallery.
+    const approveRes = await request(app)
+      .post('/api/v1/templates/admin/' + slug + '/approve')
+      .set(adminHeaders);
+    expect(approveRes.status).toBe(200);
+    expect(approveRes.body.data.visibility).toBe('PUBLIC');
+
+    // 5. Now it appears in the catalog and leaves the queue.
+    const catalogAfter = await request(app).get('/api/v1/templates/catalog');
+    expect(catalogAfter.body.data.templates.some((t: any) => t.slug === slug)).toBe(true);
+
+    const pendingAfter = await request(app)
+      .get('/api/v1/templates/admin/pending')
+      .set(adminHeaders);
+    expect(pendingAfter.body.data.some((t: any) => t.slug === slug)).toBe(false);
+  });
+
+  it('lets an admin reject a submission back to PRIVATE', async () => {
+    const { user: author, workspace } = await createWorkspaceWithOwner();
+    const admin = await createAdminUser();
+    const authorHeaders = await authWithCsrfHeaders(author);
+    const adminHeaders = await authWithCsrfHeaders(admin);
+
+    const project = await createProject(workspace.id, author.id, { name: 'Rejected Project' });
+
+    const saveRes = await request(app)
+      .post('/api/v1/templates/save-as-template/' + project.id)
+      .set(authorHeaders)
+      .send({ title: 'Rejected Sprint', visibility: 'PUBLIC' });
+    const slug = saveRes.body.data.slug;
+    expect(saveRes.body.data.visibility).toBe('PENDING');
+
+    const rejectRes = await request(app)
+      .post('/api/v1/templates/admin/' + slug + '/reject')
+      .set(adminHeaders);
+    expect(rejectRes.status).toBe(200);
+    expect(rejectRes.body.data.visibility).toBe('PRIVATE');
+
+    const catalogAfter = await request(app).get('/api/v1/templates/catalog');
+    expect(catalogAfter.body.data.templates.some((t: any) => t.slug === slug)).toBe(false);
+  });
+
+  it('blocks non-admins from the moderation queue', async () => {
+    const user = await createUser();
+    const userHeaders = await authWithCsrfHeaders(user);
+
+    const res = await request(app)
+      .get('/api/v1/templates/admin/pending')
+      .set(userHeaders);
+    expect(res.status).toBe(403);
   });
 });

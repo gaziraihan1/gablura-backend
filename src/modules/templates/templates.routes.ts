@@ -28,6 +28,9 @@ import {
   requestTemplate,
   listTemplateRequests,
   removeTemplateRequest,
+  listPendingTemplates,
+  approveTemplate,
+  rejectTemplate,
 } from './templates.controller.js';
 
 const router = Router();
@@ -40,6 +43,34 @@ authedRouter.get(
   sessionTimeout,
   requireCsrfToken(),
   getWorkspacePrivateTemplates,
+);
+
+// Admin moderation queue — approve/reject community submissions before they
+// can go PUBLIC. The static `/admin` prefix is declared before the `/:slug`
+// routes so it is never shadowed by a template slug.
+authedRouter.get(
+  '/admin/pending',
+  authenticate,
+  sessionTimeout,
+  requireCsrfToken(),
+  requireFocuraAdmin,
+  listPendingTemplates,
+);
+authedRouter.post(
+  '/admin/:slug/approve',
+  authenticate,
+  sessionTimeout,
+  requireCsrfToken(),
+  requireFocuraAdmin,
+  approveTemplate,
+);
+authedRouter.post(
+  '/admin/:slug/reject',
+  authenticate,
+  sessionTimeout,
+  requireCsrfToken(),
+  requireFocuraAdmin,
+  rejectTemplate,
 );
 authedRouter.post(
   '/save-as-template/:projectId',

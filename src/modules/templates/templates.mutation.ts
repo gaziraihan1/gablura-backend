@@ -9,7 +9,7 @@
  */
 import * as slugifyModule from 'slugify';
 import { prisma } from '../../lib/prisma.js';
-import { NotFoundError, PlanLimitError } from '../../errors/index.js';
+import { NotFoundError, PlanLimitError, ValidationError } from '../../errors/index.js';
 import { SlugService } from '../../services/slug.service.js';
 import { resolveWorkspacePlan } from '../task/task.quota.service.js';
 import { PLAN_LIMITS } from '../workspaceUsage/workspaceUsage.types.js';
@@ -26,6 +26,7 @@ import type {
   TemplateContent,
   TemplateImportResult,
   TemplateTier,
+  TemplateVisibility,
 } from './templates.types.js';
 import type { AuthRequest } from '../../middleware/auth.js';
 
@@ -275,7 +276,7 @@ export const TemplateMutation = {
     req: AuthRequest,
     projectId: string,
     input: { title?: string; visibility?: 'PRIVATE' | 'PUBLIC' },
-  ): Promise<{ slug: string; title: string }> {
+  ): Promise<{ slug: string; title: string; visibility: TemplateVisibility }> {
     const userId = req.user!.id;
     const project = await assertProjectEditAccess(userId, projectId);
 
@@ -362,7 +363,9 @@ export const TemplateMutation = {
         icon: '📁',
         color: '#667eea',
         status: 'available',
-        visibility: input.visibility ?? 'PRIVATE',
+        // Moderation gate: a "PUBLIC" request becomes PENDING — a Focura
+        // admin must approve before the template appears in the gallery.
+        visibility: input.visibility === 'PUBLIC' ? 'PENDING' : 'PRIVATE',
         workspaceId: project.workspaceId,
         sourceProjectId: projectId,
         authorId: userId,
@@ -374,7 +377,11 @@ export const TemplateMutation = {
       },
     });
 
-    return { slug: templateSlug, title };
+    return {
+      slug: templateSlug,
+      title,
+      visibility: input.visibility === 'PUBLIC' ? 'PENDING' : 'PRIVATE',
+    };
   },
 
   async update(
@@ -401,6 +408,60 @@ export const TemplateMutation = {
 
     await prisma.projectTemplate.delete({ where: { slug } });
     return { success: true };
+  },
+
+  /**
+   * Admin: approve a PENDING community submission → PUBLIC (live in the
+   * gallery). Approving an already-public template is a no-op; PRIVATE
+   * drafts cannot be approved out from under their workspace.
+   */
+  async approve(
+    slug: string,
+  ): Promise<{ slug: string; title: string; visibility: TemplateVisibility }> {
+    const existing = await prisma.projectTemplate.findUnique({
+      where: { slug },
+      select: { slug: true, title: true, visibility: true },
+    });
+    if (!existing) throw new NotFoundError('Template not found');
+    if (existing.visibility === 'PRIVATE') {
+      throw new ValidationError('Only pending templates can be approved');
+    }
+
+    const updated = await prisma.projectTemplate.update({
+      where: { slug },
+      data: { visibility: 'PUBLIC' },
+      select: { slug: true, title: true, visibility: true },
+    });
+    return {
+      slug: updated.slug,
+      title: updated.title,
+      visibility: updated.visibility as TemplateVisibility,
+    };
+  },
+
+  /**
+   * Admin: reject a submission (or unpublish a live one) → back to PRIVATE.
+   * The template stays available to its workspace but leaves the gallery.
+   */
+  async reject(
+    slug: string,
+  ): Promise<{ slug: string; title: string; visibility: TemplateVisibility }> {
+    const existing = await prisma.projectTemplate.findUnique({
+      where: { slug },
+      select: { slug: true, title: true, visibility: true },
+    });
+    if (!existing) throw new NotFoundError('Template not found');
+
+    const updated = await prisma.projectTemplate.update({
+      where: { slug },
+      data: { visibility: 'PRIVATE' },
+      select: { slug: true, title: true, visibility: true },
+    });
+    return {
+      slug: updated.slug,
+      title: updated.title,
+      visibility: updated.visibility as TemplateVisibility,
+    };
   },
 
   /**

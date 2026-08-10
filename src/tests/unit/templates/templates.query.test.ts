@@ -172,16 +172,59 @@ describe('TemplateQuery.getBySlug', () => {
 });
 
 describe('TemplateQuery.getWorkspacePrivate', () => {
-  it('requires membership and returns only PRIVATE templates', async () => {
-    vi.mocked(prisma.projectTemplate.findMany).mockResolvedValue([row()] as never);
+  it('requires membership and returns PRIVATE + PENDING templates', async () => {
+    vi.mocked(prisma.projectTemplate.findMany).mockResolvedValue([
+      row({ visibility: 'PENDING' }),
+    ] as never);
 
-    await TemplateQuery.getWorkspacePrivate('u1', 'ws1');
+    const items = await TemplateQuery.getWorkspacePrivate('u1', 'ws1');
 
     expect(mockAssertWorkspaceMembership).toHaveBeenCalledWith('u1', 'ws1');
+    expect(items[0].visibility).toBe('PENDING');
     expect(prisma.projectTemplate.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { workspaceId: 'ws1', visibility: 'PRIVATE' },
+        where: { workspaceId: 'ws1', visibility: { in: ['PRIVATE', 'PENDING'] } },
       }),
     );
+  });
+});
+
+describe('TemplateQuery moderation', () => {
+  it('exposes the visibility state on catalog items', async () => {
+    vi.mocked(prisma.projectTemplate.findMany).mockResolvedValue([row()] as never);
+
+    const { templates } = await TemplateQuery.getCatalog(undefined, {});
+
+    expect(templates[0].visibility).toBe('PUBLIC');
+  });
+
+  it('lists PENDING submissions with content stats in the admin queue', async () => {
+    vi.mocked(prisma.projectTemplate.findMany).mockResolvedValue([
+      row({
+        slug: 'pending-community',
+        title: 'Community Sprint',
+        visibility: 'PENDING',
+        createdAt: new Date('2026-08-01T10:00:00Z'),
+        authorName: 'Ada Lovelace',
+        content: {
+          sections: [{ name: 'Backlog' }, { name: 'Done' }],
+          labels: [],
+          tasks: [{ title: 'A' }, { title: 'B' }, { title: 'C' }],
+          milestones: [],
+          views: [],
+        },
+      }),
+    ] as never);
+
+    const queue = await TemplateQuery.getPendingForModeration();
+
+    expect(prisma.projectTemplate.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { visibility: 'PENDING' } }),
+    );
+    expect(queue[0].visibility).toBe('PENDING');
+    expect(queue[0].author).toEqual({ name: 'Ada Lovelace', role: 'Official' });
+    expect(queue[0].taskCount).toBe(3);
+    expect(queue[0].sectionCount).toBe(2);
+    expect(queue[0].createdAt).toBeInstanceOf(Date);
   });
 });
