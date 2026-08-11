@@ -34,19 +34,22 @@ describe("ActivityAnalytics", () => {
         { action: "CREATED", _count: 60 },
         { action: "UPDATED", _count: 40 },
       ] as any);
+      vi.mocked(prisma.activity.count).mockResolvedValueOnce(5);   // admin total
+      vi.mocked(prisma.activity.count).mockResolvedValueOnce(2);   // admin today
 
       const stats = await ActivityAnalytics.getUserActivityStats(mockUserId, mockWorkspaceId);
 
+      // Admin audit rows (5 total, 2 today, all UPDATED) are subtracted
       expect(stats).toEqual({
-        total: 100,
-        today: 10,
+        total: 95,
+        today: 8,
         byAction: {
           CREATED: 60,
-          UPDATED: 40,
+          UPDATED: 35,
         },
       });
 
-      expect(prisma.activity.count).toHaveBeenCalledTimes(2);
+      expect(prisma.activity.count).toHaveBeenCalledTimes(4);
       expect(prisma.activity.groupBy).toHaveBeenCalled();
     });
 

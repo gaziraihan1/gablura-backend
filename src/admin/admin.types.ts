@@ -65,6 +65,10 @@ export interface AdminWorkspaceDetail {
   updatedAt: Date;
   maxMembers: number;
   maxStorageMb: number;
+  /** Focura-admin AI overrides — null means the plan default applies. */
+  aiDailyCalls: number | null;
+  aiMonthlyTokens: number | null;
+  aiMaxOutputTokens: number | null;
   usedStorageMb: number;
   owner: { id: string; name: string; email: string; image: string | null };
   subscription: {

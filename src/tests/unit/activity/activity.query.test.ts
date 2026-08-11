@@ -121,6 +121,48 @@ describe("ActivityQuery", () => {
       expect(result).toEqual([{ id: "act-1" }]);
       expect(prisma.activity.findMany).toHaveBeenCalled();
     });
+
+    it("filters Focura-admin audit rows from the member view", async () => {
+      vi.mocked(CacheClient.get).mockResolvedValue(null);
+      const rows = [
+        { id: "act-1", action: "CREATED", metadata: {} },
+        {
+          id: "act-2",
+          action: "UPDATED",
+          metadata: { source: "focura-admin", changes: { aiDailyCalls: { from: null, to: 9000 } } },
+        },
+      ];
+      vi.mocked(prisma.activity.findMany).mockResolvedValue(rows as any);
+
+      const result = await ActivityQuery.getWorkspaceActivities(mockWorkspaceId);
+
+      expect(result.map((r: any) => r.id)).toEqual(["act-1"]);
+      expect(CacheClient.set).toHaveBeenCalled();
+    });
+
+    it("includes Focura-admin audit rows for workspace admins without caching", async () => {
+      const rows = [
+        { id: "act-1", action: "CREATED", metadata: {} },
+        {
+          id: "act-2",
+          action: "UPDATED",
+          metadata: { source: "focura-admin", changes: { plan: { from: "PRO", to: "ENTERPRISE" } } },
+        },
+      ];
+      vi.mocked(prisma.activity.findMany).mockResolvedValue(rows as any);
+
+      const result = await ActivityQuery.getWorkspaceActivities(
+        mockWorkspaceId,
+        {},
+        { includeAdminRows: true },
+      );
+
+      expect(result.map((r: any) => r.id)).toEqual(["act-1", "act-2"]);
+      // Admin view is always fresh — never served from or written to the
+      // member cache (which would leak admin rows to regular members).
+      expect(CacheClient.get).not.toHaveBeenCalled();
+      expect(CacheClient.set).not.toHaveBeenCalled();
+    });
   });
 
   describe("getTaskActivities", () => {

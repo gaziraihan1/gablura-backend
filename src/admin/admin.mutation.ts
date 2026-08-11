@@ -1,15 +1,26 @@
 import { WorkspacePlan } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { WorkspaceCache, UserCache } from "../lib/redis/cache.client.js";
+import { invalidateWorkspaceAiConfig } from "../modules/ai/ai.ratelimit.js";
 
 // ─── Workspace mutations ───────────────────────────────────────────────────────
 
 export async function mutateUpdateWorkspaceLimits(
   workspaceId: string,
-  data: { plan: WorkspacePlan; maxMembers: number; maxStorage: number },
+  data: {
+    plan: WorkspacePlan;
+    maxMembers: number;
+    maxStorage: number;
+    aiDailyCalls?: number | null;
+    aiMonthlyTokens?: number | null;
+    aiMaxOutputTokens?: number | null;
+  },
 ): Promise<{
   id: string; slug: string; name: string;
   plan: WorkspacePlan; maxMembers: number; maxStorage: number;
+  aiDailyCalls: number | null;
+  aiMonthlyTokens: number | null;
+  aiMaxOutputTokens: number | null;
 }> {
   const updated = await prisma.workspace.update({
     where: { id: workspaceId },
@@ -17,10 +28,14 @@ export async function mutateUpdateWorkspaceLimits(
     select: {
       id: true, slug: true, name: true,
       plan: true, maxMembers: true, maxStorage: true,
+      aiDailyCalls: true, aiMonthlyTokens: true, aiMaxOutputTokens: true,
     },
   });
 
   await WorkspaceCache.invalidateWorkspace(updated.id, updated.slug);
+  // AI limits are cached per-process for 60s — drop them so the new overrides
+  // take effect immediately for this workspace.
+  invalidateWorkspaceAiConfig(updated.id);
 
   return updated;
 }

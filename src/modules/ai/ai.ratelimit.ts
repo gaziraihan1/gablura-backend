@@ -3,7 +3,7 @@ import type { AuthRequest } from "../../middleware/auth.js";
 import { getRedisClient } from "../../redis/redis.client.js";
 import { prisma } from "../../lib/prisma.js";
 import { BillingService } from "../billing/billing.service.js";
-import { AI_PLAN_LIMITS, type AiPlan } from "./ai.types.js";
+import { AI_PLAN_LIMITS, type AiLimits, type AiPlan } from "./ai.types.js";
 
 /**
  * ⭐ Tier-based AI rate limiting (FREE / PRO / BUSINESS).
@@ -21,23 +21,123 @@ import { AI_PLAN_LIMITS, type AiPlan } from "./ai.types.js";
  */
 
 const PLAN_CACHE_TTL_MS = 60_000;
-const planCache = new Map<string, { plan: AiPlan; expiresAt: number }>();
 
-/** Resolve the effective AI plan for a workspace (60s in-memory cache). */
-export async function resolveWorkspacePlan(workspaceId: string): Promise<AiPlan> {
-  const cached = planCache.get(workspaceId);
-  if (cached && cached.expiresAt > Date.now()) return cached.plan;
+interface WorkspaceAiConfig {
+  plan: AiPlan;
+  /** Effective limits — plan defaults overridden by Focura-admin workspace overrides. */
+  limits: AiLimits;
+  /** Raw Focura-admin overrides currently active (absent field = plan default). */
+  overrides: Partial<Pick<AiLimits, "daily" | "monthlyTokens" | "maxOutputTokens">>;
+  /** Plan defaults for the overrideable fields — what the tier gives without admin changes. */
+  defaults: Pick<AiLimits, "daily" | "monthlyTokens" | "maxOutputTokens">;
+}
+
+const configCache = new Map<string, { config: WorkspaceAiConfig; expiresAt: number }>();
+
+/**
+ * Resolve the effective AI config for a workspace (60s in-memory cache):
+ * plan defaults, overridden by the per-workspace admin overrides
+ * (`aiDailyCalls`, `aiMonthlyTokens`, `aiMaxOutputTokens`).
+ */
+async function loadWorkspaceAiConfig(workspaceId: string): Promise<WorkspaceAiConfig> {
+  const cached = configCache.get(workspaceId);
+  if (cached && cached.expiresAt > Date.now()) return cached.config;
 
   const workspace = await prisma.workspace.findUnique({
     where: { id: workspaceId },
-    select: { plan: true },
+    select: {
+      plan: true,
+      aiDailyCalls: true,
+      aiMonthlyTokens: true,
+      aiMaxOutputTokens: true,
+    },
   });
 
   const raw = workspace?.plan as AiPlan | undefined;
   const plan: AiPlan = raw && AI_PLAN_LIMITS[raw] ? raw : "FREE";
+  const base = AI_PLAN_LIMITS[plan];
 
-  planCache.set(workspaceId, { plan, expiresAt: Date.now() + PLAN_CACHE_TTL_MS });
-  return plan;
+  const overrides: Partial<Pick<AiLimits, "daily" | "monthlyTokens" | "maxOutputTokens">> = {};
+  if (workspace?.aiDailyCalls != null) overrides.daily = workspace.aiDailyCalls;
+  if (workspace?.aiMonthlyTokens != null) overrides.monthlyTokens = workspace.aiMonthlyTokens;
+  if (workspace?.aiMaxOutputTokens != null) overrides.maxOutputTokens = workspace.aiMaxOutputTokens;
+
+  const config: WorkspaceAiConfig = {
+    plan,
+    limits: { ...base, ...overrides },
+    overrides,
+    defaults: {
+      daily: base.daily,
+      monthlyTokens: base.monthlyTokens,
+      maxOutputTokens: base.maxOutputTokens,
+    },
+  };
+
+  configCache.set(workspaceId, {
+    config,
+    expiresAt: Date.now() + PLAN_CACHE_TTL_MS,
+  });
+  return config;
+}
+
+/** Resolve the effective AI plan for a workspace (60s in-memory cache). */
+export async function resolveWorkspacePlan(workspaceId: string): Promise<AiPlan> {
+  return (await loadWorkspaceAiConfig(workspaceId)).plan;
+}
+
+/**
+ * Drop the cached AI config for a workspace so the next call re-reads it.
+ * Called when a Focura admin updates the workspace's AI overrides — without
+ * this, the new limits would only take effect after the 60s TTL.
+ */
+export function invalidateWorkspaceAiConfig(workspaceId: string): void {
+  configCache.delete(workspaceId);
+}
+
+/** Effective AI limits for a workspace, honoring Focura-admin overrides. */
+export async function resolveWorkspaceAiLimits(workspaceId: string): Promise<AiLimits> {
+  return (await loadWorkspaceAiConfig(workspaceId)).limits;
+}
+
+/**
+ * Resolve the effective AI plan + limits for a request scope: per-workspace
+ * overrides when a `workspaceId` is given, otherwise the user's highest plan
+ * (personal flows have no per-user overrides — plan defaults apply). Also
+ * returns the active overrides and the plan defaults so clients can surface
+ * admin-raised caps.
+ */
+export interface ResolvedAiLimits {
+  plan: AiPlan;
+  limits: AiLimits;
+  overrides: Partial<Pick<AiLimits, "daily" | "monthlyTokens" | "maxOutputTokens">>;
+  defaults: Pick<AiLimits, "daily" | "monthlyTokens" | "maxOutputTokens">;
+}
+
+export async function resolveAiLimits(
+  workspaceId: string | undefined,
+  userId: string,
+): Promise<ResolvedAiLimits> {
+  if (workspaceId) {
+    const config = await loadWorkspaceAiConfig(workspaceId);
+    return {
+      plan: config.plan,
+      limits: config.limits,
+      overrides: config.overrides,
+      defaults: config.defaults,
+    };
+  }
+  const plan = await resolveUserPlan(userId);
+  const base = AI_PLAN_LIMITS[plan];
+  return {
+    plan,
+    limits: base,
+    overrides: {},
+    defaults: {
+      daily: base.daily,
+      monthlyTokens: base.monthlyTokens,
+      maxOutputTokens: base.maxOutputTokens,
+    },
+  };
 }
 
 /** Resolve the effective AI plan for a user's personal (workspace-less) flows. */
@@ -69,11 +169,7 @@ export const aiRateLimit = async (
 ): Promise<void> => {
   try {
     const scope = getAiScope(req);
-    const plan = scope.workspaceId
-      ? await resolveWorkspacePlan(scope.workspaceId)
-      : await resolveUserPlan(req.user!.id);
-
-    const limits = AI_PLAN_LIMITS[plan];
+    const { plan, limits } = await resolveAiLimits(scope.workspaceId, req.user!.id);
     const id = scope.id;
     const now = Date.now();
     const today = new Date().toISOString().slice(0, 10);

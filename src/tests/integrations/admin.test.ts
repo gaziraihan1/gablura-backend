@@ -375,6 +375,52 @@ describe('PATCH /api/v1/admin/workspaces/:slug/limits', () => {
     expect(res.status).toBe(200);
   });
 
+  it('sets and persists AI limit overrides for an ENTERPRISE workspace', async () => {
+    const admin = await createAdminUser();
+    const { workspace } = await createWorkspaceWithOwner();
+    const headers = await authWithCsrfHeaders(admin);
+
+    const res = await request(app)
+      .patch(`${BASE}/workspaces/${workspace.slug}/limits`)
+      .set(headers)
+      .send({
+        plan: 'ENTERPRISE',
+        maxMembers: -1,
+        maxStorage: -1,
+        aiDailyCalls: 9000,
+        aiMonthlyTokens: 100_000_000,
+        aiMaxOutputTokens: 8192,
+      });
+
+    expect(res.status).toBe(200);
+
+    const fresh = await prisma.workspace.findUnique({ where: { id: workspace.id } });
+    expect(fresh?.plan).toBe('ENTERPRISE');
+    expect(fresh?.aiDailyCalls).toBe(9000);
+    expect(fresh?.aiMonthlyTokens).toBe(100_000_000);
+    expect(fresh?.aiMaxOutputTokens).toBe(8192);
+
+    // The detail endpoint surfaces the overrides back to the admin UI
+    const detail = await request(app)
+      .get(`${BASE}/workspaces/${workspace.slug}`)
+      .set(authHeaders(admin));
+    expect(detail.status).toBe(200);
+    expect(detail.body.data?.aiDailyCalls).toBe(9000);
+  });
+
+  it('rejects non-positive AI overrides', async () => {
+    const admin = await createAdminUser();
+    const { workspace } = await createWorkspaceWithOwner();
+    const headers = await authWithCsrfHeaders(admin);
+
+    const res = await request(app)
+      .patch(`${BASE}/workspaces/${workspace.slug}/limits`)
+      .set(headers)
+      .send({ plan: 'PRO', maxMembers: 10, maxStorage: 1000, aiDailyCalls: 0 });
+
+    expect(res.status).toBe(400);
+  });
+
   it('returns 404 for a non-existent workspace slug', async () => {
     const admin = await createAdminUser();
     const headers = await authWithCsrfHeaders(admin);

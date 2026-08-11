@@ -72,6 +72,25 @@ describe('admin.email', () => {
       consoleSpy.mockRestore();
     });
   });
+
+  describe('sendWorkspaceLimitsChangedEmail', () => {
+    it('should log a warning and skip when SMTP is not configured', async () => {
+      const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const { sendWorkspaceLimitsChangedEmail } = await import('../../../admin/admin.email.js');
+
+      await sendWorkspaceLimitsChangedEmail({
+        toEmail: 'owner@test.com',
+        toName: 'Alice',
+        workspaceName: 'Acme Corp',
+        changes: [{ label: 'Plan', from: 'PRO', to: 'ENTERPRISE' }],
+      });
+
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Skipping workspace limits email'),
+      );
+      consoleSpy.mockRestore();
+    });
+  });
 });
 
 // ─── Template builder unit tests (no SMTP needed) ────────────────────────────
@@ -213,6 +232,36 @@ describe('admin.email template builders', () => {
           html: expect.stringContaining('Hi Eve'),
         }),
       );
+    });
+  });
+
+  describe('workspace limits changed HTML', () => {
+    it('should include the workspace name in the subject and changes in the body', async () => {
+      const { sendWorkspaceLimitsChangedEmail } = await import('../../../admin/admin.email.js');
+      const sendMail = vi.fn().mockResolvedValue({ messageId: 'test' });
+
+      process.env.SMTP_HOST = 'smtp.test.com';
+      process.env.SMTP_USER = 'user@test.com';
+      process.env.SMTP_PASS = 'pass';
+
+      const nodemailer = await import('nodemailer');
+      (nodemailer.default.createTransport as any).mockReturnValue({ sendMail });
+
+      await sendWorkspaceLimitsChangedEmail({
+        toEmail: 'owner@test.com',
+        toName: 'Grace',
+        workspaceName: 'Acme Corp',
+        changes: [
+          { label: 'Plan', from: 'PRO', to: 'ENTERPRISE' },
+          { label: 'AI calls per day', from: 'default', to: '9,000' },
+        ],
+      });
+
+      const sent = sendMail.mock.calls[0][0];
+      expect(sent.subject).toContain('Acme Corp');
+      expect(sent.html).toContain('AI calls per day');
+      expect(sent.html).toContain('9,000');
+      expect(sent.text).toContain('Plan: PRO → ENTERPRISE');
     });
   });
 

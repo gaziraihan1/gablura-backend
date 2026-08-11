@@ -107,6 +107,39 @@ describe('GET /api/v1/activities', () => {
     expect(res.body.data.length).toBeGreaterThan(0);
   });
 
+  it('excludes Focura-admin audit rows (e.g. AI cap changes) from the user feed', async () => {
+    await createActivity(user.id, workspace.id, {
+      taskId: task.id,
+    });
+    // Admin-driven workspace-limits audit row (same shape serviceUpdateWorkspaceLimits writes)
+    await prisma.activity.create({
+      data: {
+        action: 'UPDATED',
+        entityType: 'WORKSPACE',
+        entityId: workspace.id,
+        userId: user.id,
+        workspaceId: workspace.id,
+        workspaceSlug: workspace.slug,
+        metadata: {
+          source: 'focura-admin',
+          changes: {
+            aiDailyCalls: { from: null, to: 9000 },
+          },
+        },
+      },
+    });
+
+    const res = await request(app)
+      .get('/api/v1/activities')
+      .set(authHeaders(user));
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.length).toBeGreaterThan(0);
+    expect(
+      res.body.data.some((a: any) => a.metadata?.source === 'focura-admin'),
+    ).toBe(false);
+  });
+
   it('401 — unauthenticated', async () => {
     const res = await request(app).get('/api/v1/activities');
     expect(res.status).toBe(401);
@@ -144,6 +177,136 @@ describe('GET /api/v1/activities/workspace/:workspaceId', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.data.length).toBeGreaterThan(0);
+  });
+
+  it('shows workspace-limit changes (Focura-admin audit rows) to the workspace owner', async () => {
+    await createActivity(user.id, workspace.id);
+    await prisma.activity.create({
+      data: {
+        action: 'UPDATED',
+        entityType: 'WORKSPACE',
+        entityId: workspace.id,
+        userId: user.id,
+        workspaceId: workspace.id,
+        workspaceSlug: workspace.slug,
+        metadata: {
+          source: 'focura-admin',
+          changes: {
+            aiMonthlyTokens: { from: 500000, to: 100000000 },
+          },
+        },
+      },
+    });
+
+    const res = await request(app)
+      .get(`/api/v1/activities/workspace/${workspace.id}`)
+      .set(authHeaders(user)); // user is the workspace owner
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.length).toBeGreaterThan(0);
+    expect(
+      res.body.data.some((a: any) => a.metadata?.source === 'focura-admin'),
+    ).toBe(true);
+  });
+
+  it('shows workspace-limit changes (Focura-admin audit rows) to workspace admins', async () => {
+    await createActivity(user.id, workspace.id);
+    await prisma.activity.create({
+      data: {
+        action: 'UPDATED',
+        entityType: 'WORKSPACE',
+        entityId: workspace.id,
+        userId: user.id,
+        workspaceId: workspace.id,
+        workspaceSlug: workspace.slug,
+        metadata: {
+          source: 'focura-admin',
+          changes: {
+            maxStorage: { from: 1024, to: 20000 },
+          },
+        },
+      },
+    });
+
+    const workspaceAdmin = await createUser();
+    await addMemberToWorkspace(workspaceAdmin.id, workspace.id, 'ADMIN');
+
+    const res = await request(app)
+      .get(`/api/v1/activities/workspace/${workspace.id}`)
+      .set(authHeaders(workspaceAdmin));
+
+    expect(res.status).toBe(200);
+    expect(
+      res.body.data.some((a: any) => a.metadata?.source === 'focura-admin'),
+    ).toBe(true);
+  });
+
+  it('hides workspace-limit changes (Focura-admin audit rows) from regular members', async () => {
+    await createActivity(user.id, workspace.id);
+    await prisma.activity.create({
+      data: {
+        action: 'UPDATED',
+        entityType: 'WORKSPACE',
+        entityId: workspace.id,
+        userId: user.id,
+        workspaceId: workspace.id,
+        workspaceSlug: workspace.slug,
+        metadata: {
+          source: 'focura-admin',
+          changes: {
+            aiDailyCalls: { from: null, to: 9000 },
+          },
+        },
+      },
+    });
+
+    const member = await createUser();
+    await addMemberToWorkspace(member.id, workspace.id); // MEMBER role
+
+    const res = await request(app)
+      .get(`/api/v1/activities/workspace/${workspace.id}`)
+      .set(authHeaders(member));
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.length).toBeGreaterThan(0);
+    expect(
+      res.body.data.some((a: any) => a.metadata?.source === 'focura-admin'),
+    ).toBe(false);
+  });
+
+  it('hides workspace-limit changes from public non-member viewers', async () => {
+    await prisma.workspace.update({
+      where: { id: workspace.id },
+      data: { isPublic: true },
+    });
+    await createActivity(user.id, workspace.id);
+    await prisma.activity.create({
+      data: {
+        action: 'UPDATED',
+        entityType: 'WORKSPACE',
+        entityId: workspace.id,
+        userId: user.id,
+        workspaceId: workspace.id,
+        workspaceSlug: workspace.slug,
+        metadata: {
+          source: 'focura-admin',
+          changes: {
+            plan: { from: 'PRO', to: 'ENTERPRISE' },
+          },
+        },
+      },
+    });
+
+    const outsider = await createUser();
+    const res = await request(app)
+      .get(`/api/v1/activities/workspace/${workspace.id}`)
+      .set(authHeaders(outsider));
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.length).toBeGreaterThan(0);
+    expect(
+      res.body.data.some((a: any) => a.metadata?.source === 'focura-admin'),
+    ).toBe(false);
   });
 
   it('403 — non-member cannot access private workspace', async () => {

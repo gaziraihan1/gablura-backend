@@ -29,9 +29,13 @@ vi.mock("../../../redis/redis.client.js", () => ({
 import {
   aiRateLimit,
   getAiScope,
+  invalidateWorkspaceAiConfig,
+  resolveAiLimits,
   resolveUserPlan,
+  resolveWorkspaceAiLimits,
   resolveWorkspacePlan,
 } from "../../../modules/ai/ai.ratelimit.js";
+import { AiAccess } from "../../../modules/ai/ai.access.js";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Helpers
@@ -121,11 +125,95 @@ describe("resolveWorkspacePlan", () => {
     await expect(resolveWorkspacePlan("ws-unknown")).resolves.toBe("FREE");
   });
 
+  it("returns ENTERPRISE for ENTERPRISE workspaces", async () => {
+    mockPrisma.workspace.findUnique.mockResolvedValue({ plan: "ENTERPRISE" });
+    await expect(resolveWorkspacePlan("ws-ent")).resolves.toBe("ENTERPRISE");
+  });
+
   it("caches plan lookups for 60s", async () => {
     mockPrisma.workspace.findUnique.mockResolvedValue({ plan: "BUSINESS" });
     await resolveWorkspacePlan("ws-cached");
     await resolveWorkspacePlan("ws-cached");
     expect(mockPrisma.workspace.findUnique).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("resolveWorkspaceAiLimits", () => {
+  it("applies per-workspace AI overrides on top of the plan defaults", async () => {
+    mockPrisma.workspace.findUnique.mockResolvedValue({
+      plan: "BUSINESS",
+      aiDailyCalls: 5000,
+      aiMonthlyTokens: 50_000_000,
+      aiMaxOutputTokens: 4096,
+    });
+    const limits = await resolveWorkspaceAiLimits("ws-ovr");
+    expect(limits.daily).toBe(5000);
+    expect(limits.monthlyTokens).toBe(50_000_000);
+    expect(limits.maxOutputTokens).toBe(4096);
+    // Untouched fields still come from the plan defaults
+    expect(limits.burstPerMinute).toBe(30);
+    expect(limits.hourly).toBe(200);
+  });
+
+  it("uses plan defaults when no overrides are set", async () => {
+    mockPrisma.workspace.findUnique.mockResolvedValue({ plan: "ENTERPRISE" });
+    const limits = await resolveWorkspaceAiLimits("ws-def");
+    expect(limits.daily).toBe(2000);
+    expect(limits.monthlyTokens).toBe(25_000_000);
+    expect(limits.maxOutputTokens).toBe(2048);
+  });
+
+  it("invalidateWorkspaceAiConfig forces a fresh lookup on the next call", async () => {
+    mockPrisma.workspace.findUnique.mockResolvedValue({ plan: "PRO" });
+    await resolveWorkspacePlan("ws-inv");
+
+    invalidateWorkspaceAiConfig("ws-inv");
+    mockPrisma.workspace.findUnique.mockResolvedValue({
+      plan: "ENTERPRISE",
+      aiDailyCalls: 42,
+      aiMonthlyTokens: null,
+      aiMaxOutputTokens: null,
+    });
+
+    const limits = await resolveWorkspaceAiLimits("ws-inv");
+    expect(limits.daily).toBe(42); // would have been 60 (PRO) without invalidation
+  });
+});
+
+describe("resolveAiLimits", () => {
+  it("returns overrides + plan defaults for a workspace scope", async () => {
+    mockPrisma.workspace.findUnique.mockResolvedValue({
+      plan: "BUSINESS",
+      aiDailyCalls: 5000,
+      aiMonthlyTokens: null,
+      aiMaxOutputTokens: 4096,
+    });
+
+    const resolved = await resolveAiLimits("ws-ri", "user-1");
+
+    expect(resolved.plan).toBe("BUSINESS");
+    expect(resolved.limits.daily).toBe(5000);
+    expect(resolved.limits.maxOutputTokens).toBe(4096);
+    expect(resolved.overrides).toEqual({ daily: 5000, maxOutputTokens: 4096 });
+    expect(resolved.defaults).toEqual({
+      daily: 2000,
+      monthlyTokens: 25_000_000,
+      maxOutputTokens: 2048,
+    });
+  });
+
+  it("returns empty overrides for personal scopes", async () => {
+    mockBillingService.getUserHighestPlan.mockResolvedValue("PRO");
+
+    const resolved = await resolveAiLimits(undefined, "user-1");
+
+    expect(resolved.plan).toBe("PRO");
+    expect(resolved.overrides).toEqual({});
+    expect(resolved.defaults).toEqual({
+      daily: 300,
+      monthlyTokens: 4_000_000,
+      maxOutputTokens: 1024,
+    });
   });
 });
 
@@ -138,6 +226,11 @@ describe("resolveUserPlan", () => {
   it("falls back to FREE for unknown plans", async () => {
     mockBillingService.getUserHighestPlan.mockResolvedValue("MYSTERY");
     await expect(resolveUserPlan("user-1")).resolves.toBe("FREE");
+  });
+
+  it("resolves ENTERPRISE from the billing service", async () => {
+    mockBillingService.getUserHighestPlan.mockResolvedValue("ENTERPRISE");
+    await expect(resolveUserPlan("user-1")).resolves.toBe("ENTERPRISE");
   });
 });
 
@@ -304,5 +397,74 @@ describe("aiRateLimit", () => {
     await aiRateLimit(req, res, next);
 
     expect(next).toHaveBeenCalledTimes(1);
+  });
+
+  it("applies BUSINESS-tier limits to ENTERPRISE workspaces", async () => {
+    const redis = createRedisMock();
+    redis._execResults.push([null, 0]);
+    redis._execResults.push([null, 1]);
+    redis._execResults.push([null, 1]); // burst ok
+    redis._execResults.push([null, 1]);
+    redis._execResults.push([null, 0]);
+    redis._execResults.push([null, 1]);
+    redis._execResults.push([null, 1]); // hourly ok
+    redis._execResults.push([null, 1]);
+    mockGetRedisClient.mockReturnValue(redis);
+    mockPrisma.workspace.findUnique.mockResolvedValue({ plan: "ENTERPRISE" });
+
+    const req = createReq({ body: { workspaceId: "ws-ent" } });
+    const res = createRes();
+
+    await aiRateLimit(req, res, next);
+
+    expect(res.setHeader).toHaveBeenCalledWith("X-AI-RateLimit-Plan", "ENTERPRISE");
+    expect(res.setHeader).toHaveBeenCalledWith("X-AI-RateLimit-Limit", "2000");
+    expect(next).toHaveBeenCalledTimes(1);
+  });
+
+  it("honors admin AI overrides in the quota headers", async () => {
+    const redis = createRedisMock();
+    redis._execResults.push([null, 0]);
+    redis._execResults.push([null, 1]);
+    redis._execResults.push([null, 1]); // burst ok
+    redis._execResults.push([null, 1]);
+    redis._execResults.push([null, 0]);
+    redis._execResults.push([null, 1]);
+    redis._execResults.push([null, 1]); // hourly ok
+    redis._execResults.push([null, 1]);
+    mockGetRedisClient.mockReturnValue(redis);
+    mockPrisma.workspace.findUnique.mockResolvedValue({
+      plan: "ENTERPRISE",
+      aiDailyCalls: 10_000,
+      aiMonthlyTokens: null,
+      aiMaxOutputTokens: null,
+    });
+
+    const req = createReq({ body: { workspaceId: "ws-ovr-mw" } });
+    const res = createRes();
+
+    await aiRateLimit(req, res, next);
+
+    expect(res.setHeader).toHaveBeenCalledWith("X-AI-RateLimit-Plan", "ENTERPRISE");
+    expect(res.setHeader).toHaveBeenCalledWith("X-AI-RateLimit-Limit", "10000");
+    expect(res.setHeader).toHaveBeenCalledWith("X-AI-RateLimit-Remaining", "9999");
+    expect(next).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("AiAccess feature gating", () => {
+  it("allows BUSINESS-only features on ENTERPRISE plans", () => {
+    expect(() =>
+      AiAccess.assertFeatureEnabled("ENTERPRISE", "insights.weekly"),
+    ).not.toThrow();
+    expect(() =>
+      AiAccess.assertFeatureEnabled("ENTERPRISE", "meetings.summarize"),
+    ).not.toThrow();
+  });
+
+  it("still rejects BUSINESS-only features on FREE plans", () => {
+    expect(() =>
+      AiAccess.assertFeatureEnabled("FREE", "insights.weekly"),
+    ).toThrow();
   });
 });

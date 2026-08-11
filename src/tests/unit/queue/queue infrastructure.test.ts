@@ -69,6 +69,29 @@ describe('Queue Infrastructure', () => {
 
       expect(emailQueue.add).toBeDefined();
     });
+
+    it('addSendEmailJob dispatches workspace-limits-changed-email', async () => {
+      await addSendEmailJob({
+        type: 'workspace-limits-changed-email',
+        to: 'owner@example.com',
+        data: {
+          toEmail: 'owner@example.com',
+          toName: 'Owner',
+          workspaceName: 'Acme',
+          changes: [{ label: 'Plan', from: 'PRO', to: 'ENTERPRISE' }],
+        },
+      });
+
+      expect(emailQueue.add).toHaveBeenCalledWith(
+        'send-workspace-limits-changed-email',
+        expect.objectContaining({
+          type: 'workspace-limits-changed-email',
+          to: 'owner@example.com',
+          data: expect.objectContaining({ workspaceName: 'Acme' }),
+        }),
+        expect.anything(),
+      );
+    });
   });
 
   describe('Notification Queue', () => {

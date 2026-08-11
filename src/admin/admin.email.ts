@@ -55,6 +55,62 @@ function buildWorkspaceDeletedHtml(params: {
   `);
 }
 
+interface WorkspaceLimitChangePart {
+  label: string;
+  from: string;
+  to: string;
+}
+
+function buildWorkspaceLimitsHtml(params: {
+  toName: string;
+  workspaceName: string;
+  changes: WorkspaceLimitChangePart[];
+}): string {
+  const { toName, workspaceName, changes } = params;
+  const safeName = escape(toName);
+  const safeWorkspace = escape(workspaceName);
+
+  const rows = changes
+    .map(
+      (c) => `
+        <tr>
+          <td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:13px;color:#525252;"><strong>${escape(c.label)}</strong></td>
+          <td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:13px;color:#525252;text-align:right;">${escape(c.from)} &rarr; ${escape(c.to)}</td>
+        </tr>`,
+    )
+    .join("");
+
+  return baseWrapper(`
+    <h2 style="margin:0 0 8px;font-size:18px;font-weight:700;color:#0a0a0a;">Your Workspace Limits Were Updated</h2>
+    <p style="margin:0 0 16px;font-size:14px;color:#525252;line-height:1.7;">Hi ${safeName},</p>
+    <p style="margin:0 0 16px;font-size:14px;color:#525252;line-height:1.7;">
+      A Focura admin updated the limits for your workspace <strong>${safeWorkspace}</strong>:
+    </p>
+    <table role="presentation" style="width:100%;border-collapse:collapse;margin-bottom:16px;">${rows}</table>
+    <p style="margin:0 0 8px;font-size:14px;color:#525252;line-height:1.7;">You can view your current plan and AI limits from the workspace settings.</p>
+    <p style="margin:0;font-size:14px;color:#525252;">— The Focura Team</p>
+  `);
+}
+
+function buildWorkspaceLimitsText(params: {
+  toName: string;
+  workspaceName: string;
+  changes: WorkspaceLimitChangePart[];
+}): string {
+  const { toName, workspaceName, changes } = params;
+  return [
+    `Hi ${toName},`,
+    "",
+    `A Focura admin updated the limits for your workspace "${workspaceName}":`,
+    "",
+    ...changes.map((c) => `  ${c.label}: ${c.from} → ${c.to}`),
+    "",
+    "You can view your current plan and AI limits from the workspace settings.",
+    "",
+    "— The Focura Team",
+  ].join("\n") + plainTextFooter();
+}
+
 function buildBanHtml(params: { toName: string; reason: string }): string {
   const { toName, reason } = params;
   const safeName = escape(toName);
@@ -149,6 +205,34 @@ export async function sendWorkspaceDeletedEmail(params: {
     });
   } catch (error) {
     console.error(`[admin.email] Failed to send workspace email to ${toEmail}:`, error);
+    throw error;
+  }
+}
+
+export async function sendWorkspaceLimitsChangedEmail(params: {
+  toEmail:       string;
+  toName:        string;
+  workspaceName: string;
+  changes:       WorkspaceLimitChangePart[];
+}): Promise<void> {
+  const transporter = getTransporter();
+  if (!transporter) {
+    console.warn(`[admin.email] Skipping workspace limits email to ${params.toEmail} — SMTP not configured`);
+    return;
+  }
+
+  const { toEmail } = params;
+
+  try {
+    await transporter.sendMail({
+      from:    `"Focura" <${getFromAddress()}>`,
+      to:      toEmail,
+      subject: `Your Focura workspace "${params.workspaceName}" limits were updated`,
+      html:    buildWorkspaceLimitsHtml(params),
+      text:    buildWorkspaceLimitsText(params),
+    });
+  } catch (error) {
+    console.error(`[admin.email] Failed to send workspace limits email to ${toEmail}:`, error);
     throw error;
   }
 }

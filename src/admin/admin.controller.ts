@@ -114,16 +114,14 @@ export const getAdminActivity = asyncHandler(
 export const updateWorkspaceLimits = asyncHandler(
   async (req: AuthRequest, res: Response) => {
     assertFocuraAdmin(req.user!.id);
-    const { plan, maxMembers, maxStorage } = parseOrThrow(
+    const input = parseOrThrow(
       updateWorkspaceLimitsSchema,
       req.body,
     );
     const updated = await serviceUpdateWorkspaceLimits(
       req.params.slug,
       req.user!.id,
-      plan,
-      maxMembers,
-      maxStorage,
+      input,
     );
     res.json({
       success: true,

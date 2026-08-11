@@ -89,6 +89,51 @@ describe('mutateUpdateWorkspaceLimits', () => {
     expect(fresh?.plan).toBe(WorkspacePlan.BUSINESS);
     expect(fresh?.maxMembers).toBe(100);
   });
+
+  it('persists AI override fields and returns them', async () => {
+    const { workspace } = await createWorkspaceWithOwner();
+
+    const result = await mutateUpdateWorkspaceLimits(workspace.id, {
+      plan:             WorkspacePlan.ENTERPRISE,
+      maxMembers:       -1,
+      maxStorage:       -1,
+      aiDailyCalls:     9000,
+      aiMonthlyTokens:  100_000_000,
+      aiMaxOutputTokens: 8192,
+    });
+
+    expect(result.plan).toBe(WorkspacePlan.ENTERPRISE);
+    expect(result.aiDailyCalls).toBe(9000);
+    expect(result.aiMonthlyTokens).toBe(100_000_000);
+    expect(result.aiMaxOutputTokens).toBe(8192);
+
+    const fresh = await prisma.workspace.findUnique({ where: { id: workspace.id } });
+    expect(fresh?.aiDailyCalls).toBe(9000);
+    expect(fresh?.aiMonthlyTokens).toBe(100_000_000);
+    expect(fresh?.aiMaxOutputTokens).toBe(8192);
+  });
+
+  it('clears AI overrides back to null when explicitly set', async () => {
+    const { workspace } = await createWorkspaceWithOwner();
+
+    await mutateUpdateWorkspaceLimits(workspace.id, {
+      plan: WorkspacePlan.ENTERPRISE,
+      maxMembers: -1,
+      maxStorage: -1,
+      aiDailyCalls: 1234,
+      aiMonthlyTokens: null,
+      aiMaxOutputTokens: null,
+    });
+    await mutateUpdateWorkspaceLimits(workspace.id, {
+      plan: WorkspacePlan.ENTERPRISE,
+      maxMembers: -1,
+      maxStorage: -1,
+      aiDailyCalls: null,
+    });
+
+    const fresh = await prisma.workspace.findUnique({ where: { id: workspace.id } });
+    expect(fresh?.aiDailyCalls).toBeNull();
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -39,6 +39,22 @@ export const PLAN_LIMITS = {
     prioritySupport:    true,
     apiAccess:          true,
   },
+  ENTERPRISE: {
+    // Top tier — BUSINESS allowances with unlimited storage, matching the
+    // workspaceUsage PLAN_LIMITS (storage: -1) and PLAN_RANK (3). Without this
+    // entry ENTERPRISE workspaces silently fell back to FREE limits everywhere
+    // (`PLAN_LIMITS[name] ?? PLAN_LIMITS.FREE`).
+    maxWorkspacesOwned: -1,
+    maxMembersPerWs:    -1,
+    maxStorageMb:       -1,
+    maxFileSizeMb:      100,
+    maxMeetingsPerMo:   -1,
+    maxProjects:        -1,
+    analyticsAccess:    true,
+    businessOnlyAccess: true,
+    prioritySupport:    true,
+    apiAccess:          true,
+  },
 } as const;
 
 export type PlanName = keyof typeof PLAN_LIMITS;

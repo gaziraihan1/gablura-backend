@@ -1,6 +1,6 @@
 import { Worker, Job } from "bullmq";
 import { sendAdminContactNotification, sendUserAutoReply } from "../../modules/contact/contact.email.js";
-import { sendBanEmail, sendWorkspaceDeletedEmail } from "../../admin/admin.email.js";
+import { sendBanEmail, sendWorkspaceDeletedEmail, sendWorkspaceLimitsChangedEmail } from "../../admin/admin.email.js";
 import { sendInvitationEmail } from "../../utils/email.js";
 import type { SendEmailJobData } from "../queues/email.queue.js";
 
@@ -38,6 +38,15 @@ export function createEmailWorker() {
             workspaceName: data.workspaceName,
             reason: data.reason,
             hardDelete: data.hardDelete,
+          });
+          break;
+
+        case "workspace-limits-changed-email":
+          await sendWorkspaceLimitsChangedEmail({
+            toEmail: data.toEmail,
+            toName: data.toName,
+            workspaceName: data.workspaceName,
+            changes: data.changes,
           });
           break;
 

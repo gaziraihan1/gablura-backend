@@ -72,6 +72,45 @@ describe('updateWorkspaceLimitsSchema', () => {
       updateWorkspaceLimitsSchema.parse({ plan: 'ENTERPRISE', maxMembers: 5, maxStorages: 100 })
     ).toThrow();
   });
+
+  it('accepts AI override fields as positive integers', () => {
+    const result = updateWorkspaceLimitsSchema.parse({
+      plan: 'ENTERPRISE',
+      maxMembers: -1,
+      maxStorage: -1,
+      aiDailyCalls: 5000,
+      aiMonthlyTokens: 50_000_000,
+      aiMaxOutputTokens: 4096,
+    });
+    expect(result.aiDailyCalls).toBe(5000);
+    expect(result.aiMonthlyTokens).toBe(50_000_000);
+    expect(result.aiMaxOutputTokens).toBe(4096);
+  });
+
+  it('accepts null AI overrides (clears back to the plan default)', () => {
+    const result = updateWorkspaceLimitsSchema.parse({
+      plan: 'ENTERPRISE',
+      maxMembers: -1,
+      maxStorage: -1,
+      aiDailyCalls: null,
+      aiMonthlyTokens: null,
+      aiMaxOutputTokens: null,
+    });
+    expect(result.aiDailyCalls).toBeNull();
+    expect(result.aiMonthlyTokens).toBeNull();
+    expect(result.aiMaxOutputTokens).toBeNull();
+  });
+
+  it('rejects non-positive AI overrides', () => {
+    expect(() =>
+      updateWorkspaceLimitsSchema.parse({
+        plan: 'ENTERPRISE',
+        maxMembers: -1,
+        maxStorage: -1,
+        aiDailyCalls: 0,
+      })
+    ).toThrow('aiDailyCalls');
+  });
 });
 
 describe('banUserSchema', () => {

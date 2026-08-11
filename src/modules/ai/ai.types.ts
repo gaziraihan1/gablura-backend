@@ -43,9 +43,39 @@ export const AI_PLAN_LIMITS = {
     maxOutputTokens: 2048,
     features: ["*"], // everything
   },
+  ENTERPRISE: {
+    // Mirrors BUSINESS — the top-tier AI allowance until a dedicated
+    // ENTERPRISE tier is defined. Without this entry ENTERPRISE workspaces
+    // silently fell back to FREE limits (3 calls/min, no plan.daily etc.).
+    burstPerMinute: 30,
+    hourly: 200,
+    daily: 2_000,
+    dailyTokens: 2_000_000,
+    monthlyTokens: 25_000_000,
+    model: "std",
+    maxOutputTokens: 2048,
+    features: ["*"], // everything incl. insights.weekly
+  },
 } as const;
 
 export type AiPlan = keyof typeof AI_PLAN_LIMITS;
+
+/**
+ * The effective per-plan AI limits. Workspaces may override `daily`,
+ * `monthlyTokens` and `maxOutputTokens` via the Focura admin dashboard
+ * (Workspace.aiDailyCalls / aiMonthlyTokens / aiMaxOutputTokens); the other
+ * fields always come from `AI_PLAN_LIMITS`.
+ */
+export interface AiLimits {
+  burstPerMinute: number;
+  hourly: number;
+  daily: number;
+  dailyTokens: number;
+  monthlyTokens: number;
+  model: "lite" | "std" | "pro";
+  maxOutputTokens: number;
+  features: readonly string[];
+}
 
 export type AiFeature =
   | "tasks.autocomplete"
@@ -194,11 +224,17 @@ export interface AiQuotaResponse {
   hourly: number;
   dailyTokens: number;
   monthlyTokens: number;
+  /** Effective per-response output cap (honors Focura-admin overrides). */
+  maxOutputTokens: number;
   tokensUsedToday: number;
   tokensUsedThisMonth: number;
   features: readonly string[];
   /** ISO timestamp of the next daily reset (local midnight). */
   resetAt: string;
+  /** Plan defaults for the overrideable fields — what the tier gives without admin changes. */
+  defaults: Pick<AiLimits, "daily" | "monthlyTokens" | "maxOutputTokens">;
+  /** Per-workspace Focura-admin overrides currently active (absent field = plan default). */
+  overrides: Partial<Pick<AiLimits, "daily" | "monthlyTokens" | "maxOutputTokens">>;
 }
 
 // ─── Phase 4: AiUsageLog usage report (OWNER/ADMIN only) ──────────────────────

@@ -796,7 +796,46 @@ describe("AiService.getQuota", () => {
     expect(quota.usedToday).toBe(10);
     expect(quota.remaining).toBe(50);
     expect(quota.tokensUsedToday).toBe(500);
+    expect(quota.maxOutputTokens).toBe(512);
     expect(quota.features).toContain("tasks.autocomplete");
+    // No admin overrides → defaults equal the effective limits.
+    expect(quota.overrides).toEqual({});
+    expect(quota.defaults).toEqual({
+      daily: 60,
+      monthlyTokens: 500_000,
+      maxOutputTokens: 512,
+    });
+  });
+
+  it("reports admin-raised caps as overrides on top of plan defaults", async () => {
+    const redis = createRedisMock();
+    mockGetRedisClient.mockReturnValue(redis);
+    mockPrisma.workspace.findUnique.mockResolvedValue({
+      plan: "ENTERPRISE",
+      aiDailyCalls: 10_000,
+      aiMonthlyTokens: 50_000_000,
+      aiMaxOutputTokens: 4096,
+    });
+
+    const quota = await AiService.getQuota({
+      userId: "user-1",
+      workspaceId: "ws-quota-ovr",
+    });
+
+    expect(quota.plan).toBe("ENTERPRISE");
+    expect(quota.dailyLimit).toBe(10_000);
+    expect(quota.maxOutputTokens).toBe(4096);
+    // The tier's defaults stay visible so the UI can show "raised from X".
+    expect(quota.defaults).toEqual({
+      daily: 2_000,
+      monthlyTokens: 25_000_000,
+      maxOutputTokens: 2048,
+    });
+    expect(quota.overrides).toEqual({
+      daily: 10_000,
+      monthlyTokens: 50_000_000,
+      maxOutputTokens: 4096,
+    });
   });
 
   it("defaults to zero usage when Redis is empty", async () => {
@@ -807,6 +846,7 @@ describe("AiService.getQuota", () => {
     expect(quota.plan).toBe("BUSINESS");
     expect(quota.usedToday).toBe(0);
     expect(quota.remaining).toBe(quota.dailyLimit);
+    expect(quota.maxOutputTokens).toBe(2048);
   });
 
   it("never throws when Redis reads fail", async () => {

@@ -40,16 +40,24 @@ export const getWorkspaceActivities = asyncHandler(async (req: AuthRequest, res:
   const limit  = toInt(req.query.limit,  50);
   const offset = toInt(req.query.offset, 0);
 
-  const hasAccess = await ActivityAccess.canAccessWorkspace(req.user!.id, workspaceId);
+  const { hasAccess, isAdmin } = await ActivityAccess.getWorkspaceAccess(req.user!.id, workspaceId);
   const isPublic = await ActivityAccess.isPublicWorkspace(workspaceId);
   if(!hasAccess && !isPublic) throw new ForbiddenError('You do not have access to this workspace');
 
-  const activities = await ActivityQuery.getWorkspaceActivities(workspaceId, {
-    action:     action     as ActivityType | undefined,
-    entityType: entityType as EntityType  | undefined,
-    limit,
-    offset,
-  });
+  // Workspace owners/admins see Focura-admin audit rows (e.g. AI cap changes)
+  // in the feed; regular members and public viewers don't.
+  const includeAdminRows = isAdmin;
+
+  const activities = await ActivityQuery.getWorkspaceActivities(
+    workspaceId,
+    {
+      action:     action     as ActivityType | undefined,
+      entityType: entityType as EntityType  | undefined,
+      limit,
+      offset,
+    },
+    { includeAdminRows },
+  );
 
   res.json({
     success: true,

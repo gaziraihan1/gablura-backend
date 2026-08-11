@@ -8,6 +8,16 @@ export const paginationSchema = z.object({
   workspaceId: z.string().optional(),
 });
 
+const aiOverrideField = z
+  .union([
+    z.null(),
+    z.coerce
+      .number()
+      .int()
+      .min(1, "must be a positive integer, or null for the plan default"),
+  ])
+  .optional();
+
 export const updateWorkspaceLimitsSchema = z.object({
   plan: z.nativeEnum(WorkspacePlan),
   maxMembers: z.coerce
@@ -22,6 +32,11 @@ export const updateWorkspaceLimitsSchema = z.object({
     .refine((v) => v === -1 || v > 0, {
       message: "maxStorage (MB) must be a positive integer, or -1 for unlimited",
     }),
+  // Focura-admin AI overrides — null (or omitted) = fall back to the plan
+  // default for the workspace's plan.
+  aiDailyCalls: aiOverrideField,
+  aiMonthlyTokens: aiOverrideField,
+  aiMaxOutputTokens: aiOverrideField,
 });
 
 export const banUserSchema = z.object({

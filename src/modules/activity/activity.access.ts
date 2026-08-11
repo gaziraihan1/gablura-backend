@@ -45,6 +45,32 @@ export const ActivityAccess = {
     return !!task;
   },
 
+  /**
+   * Single-lookup access + role resolution for the workspace activity feed.
+   * Returns whether the caller can see the feed at all, and whether they are
+   * a workspace owner/admin (who additionally see Focura-admin audit rows).
+   */
+  async getWorkspaceAccess(
+    userId: string,
+    workspaceId: string,
+  ): Promise<{ hasAccess: boolean; isAdmin: boolean }> {
+    const workspace = await prisma.workspace.findFirst({
+      where: { id: workspaceId },
+      select: {
+        ownerId: true,
+        members: { where: { userId }, select: { role: true } },
+      },
+    });
+    if (!workspace) return { hasAccess: false, isAdmin: false };
+
+    const isOwner = workspace.ownerId === userId;
+    const role = workspace.members[0]?.role;
+    return {
+      hasAccess: isOwner || !!role,
+      isAdmin:   isOwner || role === 'OWNER' || role === 'ADMIN',
+    };
+  },
+
   async isWorkspaceAdmin(userId: string, workspaceId: string): Promise<boolean> {
     const workspace = await prisma.workspace.findFirst({
       where: {

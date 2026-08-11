@@ -99,6 +99,59 @@ describe("ActivityAccess", () => {
     });
   });
 
+  describe("getWorkspaceAccess", () => {
+    it("owner without a membership row still gets full access", async () => {
+      vi.mocked(prisma.workspace.findFirst).mockResolvedValue({
+        ownerId: mockUserId,
+        members: [],
+      } as any);
+      const result = await ActivityAccess.getWorkspaceAccess(mockUserId, mockWorkspaceId);
+      expect(result).toEqual({ hasAccess: true, isAdmin: true });
+    });
+
+    it("owner with OWNER membership row gets full access", async () => {
+      vi.mocked(prisma.workspace.findFirst).mockResolvedValue({
+        ownerId: mockUserId,
+        members: [{ role: "OWNER" }],
+      } as any);
+      const result = await ActivityAccess.getWorkspaceAccess(mockUserId, mockWorkspaceId);
+      expect(result).toEqual({ hasAccess: true, isAdmin: true });
+    });
+
+    it("ADMIN member gets access and admin visibility", async () => {
+      vi.mocked(prisma.workspace.findFirst).mockResolvedValue({
+        ownerId: "other",
+        members: [{ role: "ADMIN" }],
+      } as any);
+      const result = await ActivityAccess.getWorkspaceAccess(mockUserId, mockWorkspaceId);
+      expect(result).toEqual({ hasAccess: true, isAdmin: true });
+    });
+
+    it("regular MEMBER gets access but no admin visibility", async () => {
+      vi.mocked(prisma.workspace.findFirst).mockResolvedValue({
+        ownerId: "other",
+        members: [{ role: "MEMBER" }],
+      } as any);
+      const result = await ActivityAccess.getWorkspaceAccess(mockUserId, mockWorkspaceId);
+      expect(result).toEqual({ hasAccess: true, isAdmin: false });
+    });
+
+    it("non-member gets no access", async () => {
+      vi.mocked(prisma.workspace.findFirst).mockResolvedValue({
+        ownerId: "other",
+        members: [],
+      } as any);
+      const result = await ActivityAccess.getWorkspaceAccess(mockUserId, mockWorkspaceId);
+      expect(result).toEqual({ hasAccess: false, isAdmin: false });
+    });
+
+    it("missing workspace gets no access", async () => {
+      vi.mocked(prisma.workspace.findFirst).mockResolvedValue(null);
+      const result = await ActivityAccess.getWorkspaceAccess(mockUserId, mockWorkspaceId);
+      expect(result).toEqual({ hasAccess: false, isAdmin: false });
+    });
+  });
+
   describe("isWorkspaceAdmin", () => {
     it("should return true for OWNER", async () => {
       vi.mocked(prisma.workspace.findFirst).mockResolvedValue({ ownerId: mockUserId } as any);

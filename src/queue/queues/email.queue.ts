@@ -22,7 +22,7 @@ export const emailQueue = new Queue(EMAIL_QUEUE_NAME, {
 
 // Job data types
 export interface SendEmailJobData {
-  type: "admin-contact-notification" | "user-auto-reply" | "ban-email" | "workspace-deleted-email" | "invitation-email";
+  type: "admin-contact-notification" | "user-auto-reply" | "ban-email" | "workspace-deleted-email" | "workspace-limits-changed-email" | "invitation-email";
   to: string;
   subject?: string;
   data: Record<string, any>;

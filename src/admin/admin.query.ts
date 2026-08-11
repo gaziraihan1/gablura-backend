@@ -207,6 +207,7 @@ export async function queryWorkspaceDetailBySlug(
       id: true, name: true, slug: true, plan: true, description: true,
       createdAt: true, updatedAt: true,
       maxMembers: true, maxStorage: true,
+      aiDailyCalls: true, aiMonthlyTokens: true, aiMaxOutputTokens: true,
       deletedAt: true, deletedById: true, deleteReason: true,
       owner: { select: { id: true, name: true, email: true, image: true } },
       subscription: {
@@ -278,6 +279,9 @@ export async function queryWorkspaceDetailBySlug(
     updatedAt:   raw.updatedAt,
     maxMembers:  raw.maxMembers,
     maxStorageMb:  raw.maxStorage,
+    aiDailyCalls: raw.aiDailyCalls,
+    aiMonthlyTokens: raw.aiMonthlyTokens,
+    aiMaxOutputTokens: raw.aiMaxOutputTokens,
     usedStorageMb,
     owner: { ...raw.owner, name: raw.owner.name ?? "Unknown" },
     subscription: raw.subscription
@@ -708,7 +712,9 @@ export async function queryWorkspaceForGuard(slug: string) {
   return prisma.workspace.findUnique({
     where: { slug },
     select: {
-      id: true, name: true,
+      id: true, name: true, slug: true,
+      plan: true, maxMembers: true, maxStorage: true,
+      aiDailyCalls: true, aiMonthlyTokens: true, aiMaxOutputTokens: true,
       owner:  { select: { id: true, name: true, email: true } },
       _count: { select: { members: true } },
       deletedAt: true,

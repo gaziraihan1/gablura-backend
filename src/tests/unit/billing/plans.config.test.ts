@@ -3,10 +3,11 @@ import { PLAN_LIMITS } from '../../../modules/billing/plans.config.js';
 
 describe('billing.plans.config', () => {
   describe('PLAN_LIMITS', () => {
-    it('should have FREE, PRO, and BUSINESS plans', () => {
+    it('should have FREE, PRO, BUSINESS, and ENTERPRISE plans', () => {
       expect(PLAN_LIMITS).toHaveProperty('FREE');
       expect(PLAN_LIMITS).toHaveProperty('PRO');
       expect(PLAN_LIMITS).toHaveProperty('BUSINESS');
+      expect(PLAN_LIMITS).toHaveProperty('ENTERPRISE');
     });
 
     it('FREE should have correct limits', () => {
@@ -45,6 +46,17 @@ describe('billing.plans.config', () => {
     it('PRO should have limited meetings per month', () => {
       expect(PLAN_LIMITS.PRO.maxMeetingsPerMo).toBe(-1);
       expect(PLAN_LIMITS.FREE.maxMeetingsPerMo).toBe(10);
+    });
+
+    it('ENTERPRISE should have top-tier allowances with unlimited storage', () => {
+      const ent = PLAN_LIMITS.ENTERPRISE;
+      expect(ent.maxWorkspacesOwned).toBe(-1);
+      expect(ent.maxMembersPerWs).toBe(-1);
+      expect(ent.maxStorageMb).toBe(-1);
+      expect(ent.analyticsAccess).toBe(true);
+      expect(ent.businessOnlyAccess).toBe(true);
+      expect(ent.prioritySupport).toBe(true);
+      expect(ent.apiAccess).toBe(true);
     });
   });
 });

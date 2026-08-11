@@ -8,10 +8,7 @@ import {
   AiServiceUnavailableError,
 } from "../../errors/AppError.js";
 import { AiAccess } from "./ai.access.js";
-import {
-  resolveUserPlan,
-  resolveWorkspacePlan,
-} from "./ai.ratelimit.js";
+import { resolveAiLimits } from "./ai.ratelimit.js";
 import { prisma } from "../../lib/prisma.js";
 import {
   ForbiddenError,
@@ -19,9 +16,7 @@ import {
   ValidationError,
 } from "../../errors/index.js";
 import {
-  AI_PLAN_LIMITS,
   type AiFeature,
-  type AiPlan,
   type AiQuotaResponse,
   type AiUsageReport,
 } from "./ai.types.js";
@@ -109,7 +104,7 @@ export const AiService = {
     input: AutocompleteInput,
     userId: string,
   ): Promise<AutocompleteOutput> {
-    const plan = await resolvePlan(input.workspaceId, userId);
+    const { plan, limits } = await resolveAiLimits(input.workspaceId, userId);
     AiAccess.assertFeatureEnabled(plan, "tasks.autocomplete");
 
     const prompt = [
@@ -140,14 +135,14 @@ export const AiService = {
       model: "lite",
       scopeId: scopeId(input.workspaceId, userId),
       userId,
-      monthlyTokens: AI_PLAN_LIMITS[plan].monthlyTokens,
-      maxOutputTokens: AI_PLAN_LIMITS[plan].maxOutputTokens,
+      monthlyTokens: limits.monthlyTokens,
+      maxOutputTokens: limits.maxOutputTokens,
       cacheable: true,
     });
   },
 
   async breakdown(input: BreakdownInput, userId: string): Promise<BreakdownOutput> {
-    const plan = await resolvePlan(input.workspaceId, userId);
+    const { plan, limits } = await resolveAiLimits(input.workspaceId, userId);
     AiAccess.assertFeatureEnabled(plan, "goals.breakdown");
 
     const prompt = [
@@ -173,8 +168,8 @@ export const AiService = {
       model: "std",
       scopeId: scopeId(input.workspaceId, userId),
       userId,
-      monthlyTokens: AI_PLAN_LIMITS[plan].monthlyTokens,
-      maxOutputTokens: AI_PLAN_LIMITS[plan].maxOutputTokens,
+      monthlyTokens: limits.monthlyTokens,
+      maxOutputTokens: limits.maxOutputTokens,
     });
   },
 
@@ -182,7 +177,7 @@ export const AiService = {
     input: CommentAssistInput,
     userId: string,
   ): Promise<CommentAssistOutput> {
-    const plan = await resolvePlan(input.workspaceId, userId);
+    const { plan, limits } = await resolveAiLimits(input.workspaceId, userId);
     AiAccess.assertFeatureEnabled(plan, "comments.assist");
 
     const prompt = [
@@ -201,14 +196,14 @@ export const AiService = {
       model: "lite",
       scopeId: scopeId(input.workspaceId, userId),
       userId,
-      monthlyTokens: AI_PLAN_LIMITS[plan].monthlyTokens,
-      maxOutputTokens: AI_PLAN_LIMITS[plan].maxOutputTokens,
+      monthlyTokens: limits.monthlyTokens,
+      maxOutputTokens: limits.maxOutputTokens,
       cacheable: true,
     });
   },
 
   async planDaily(input: DailyPlanInput, userId: string): Promise<DailyPlanOutput> {
-    const plan = await resolvePlan(input.workspaceId, userId);
+    const { plan, limits } = await resolveAiLimits(input.workspaceId, userId);
     AiAccess.assertFeatureEnabled(plan, "plan.daily");
 
     const tasksText = input.tasks
@@ -246,8 +241,8 @@ export const AiService = {
       model: "std",
       scopeId: scopeId(input.workspaceId, userId),
       userId,
-      monthlyTokens: AI_PLAN_LIMITS[plan].monthlyTokens,
-      maxOutputTokens: AI_PLAN_LIMITS[plan].maxOutputTokens,
+      monthlyTokens: limits.monthlyTokens,
+      maxOutputTokens: limits.maxOutputTokens,
     });
 
     return sanitizeDailyPlan(result, input.tasks);
@@ -257,7 +252,7 @@ export const AiService = {
     input: MeetingSummaryInput,
     userId: string,
   ): Promise<MeetingSummaryOutput> {
-    const plan = await resolvePlan(input.workspaceId, userId);
+    const { plan, limits } = await resolveAiLimits(input.workspaceId, userId);
     AiAccess.assertFeatureEnabled(plan, "meetings.summarize");
 
     // Fetch the meeting record for context — only the fields the prompt needs.
@@ -310,8 +305,8 @@ export const AiService = {
       model: "std",
       scopeId: scopeId(input.workspaceId, userId),
       userId,
-      monthlyTokens: AI_PLAN_LIMITS[plan].monthlyTokens,
-      maxOutputTokens: AI_PLAN_LIMITS[plan].maxOutputTokens,
+      monthlyTokens: limits.monthlyTokens,
+      maxOutputTokens: limits.maxOutputTokens,
     });
 
     return sanitizeMeetingSummary(result, meeting.attendees.map((a) => a.user.email));
@@ -321,7 +316,7 @@ export const AiService = {
     input: WeeklyInsightsInput,
     userId: string,
   ): Promise<WeeklyInsightsOutput> {
-    const plan = await resolvePlan(input.workspaceId, userId);
+    const { plan, limits } = await resolveAiLimits(input.workspaceId, userId);
     AiAccess.assertFeatureEnabled(plan, "insights.weekly");
 
     const snapshot = await buildWeeklySnapshot(input.workspaceId, input.week);
@@ -346,8 +341,8 @@ export const AiService = {
       model: "pro", // BUSINESS-tier: most capable model for analysis
       scopeId: scopeId(input.workspaceId, userId),
       userId,
-      monthlyTokens: AI_PLAN_LIMITS[plan].monthlyTokens,
-      maxOutputTokens: AI_PLAN_LIMITS[plan].maxOutputTokens,
+      monthlyTokens: limits.monthlyTokens,
+      maxOutputTokens: limits.maxOutputTokens,
     });
 
     return {
@@ -446,8 +441,10 @@ export const AiService = {
     userId: string;
     workspaceId?: string;
   }): Promise<AiQuotaResponse> {
-    const plan = await resolvePlan(opts.workspaceId, opts.userId);
-    const limits = AI_PLAN_LIMITS[plan];
+    const { plan, limits, overrides, defaults } = await resolveAiLimits(
+      opts.workspaceId,
+      opts.userId,
+    );
     const id = scopeId(opts.workspaceId, opts.userId);
 
     const now = new Date();
@@ -483,10 +480,13 @@ export const AiService = {
       hourly: limits.hourly,
       dailyTokens: limits.dailyTokens,
       monthlyTokens: limits.monthlyTokens,
+      maxOutputTokens: limits.maxOutputTokens,
       tokensUsedToday,
       tokensUsedThisMonth,
       features: limits.features,
       resetAt,
+      defaults,
+      overrides,
     };
   },
 
@@ -778,12 +778,6 @@ function sanitizeMeetingSummary(
         : { text: item.text, assigneeEmail: null };
     }),
   };
-}
-
-async function resolvePlan(workspaceId: string | undefined, userId: string): Promise<AiPlan> {
-  return workspaceId
-    ? resolveWorkspacePlan(workspaceId)
-    : resolveUserPlan(userId);
 }
 
 function scopeId(workspaceId: string | undefined, userId: string): string {
