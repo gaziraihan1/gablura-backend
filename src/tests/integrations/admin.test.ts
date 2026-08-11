@@ -13,6 +13,7 @@ import request from 'supertest';
 import app from '../../app.js';
 // import { WorkspacePlan, WorkspaceRole } from '@prisma/client';
 import { prisma } from '../../lib/prisma.js';
+import { CacheClient, CACHE_KEYS } from '../../lib/redis/cache.client.js';
 
 import {
   createUser,
@@ -722,5 +723,35 @@ describe('PATCH /api/v1/admin/workspaces/:slug/restore', () => {
       .set(headers);
 
     expect(res.status).toBe(403);
+  });
+
+  it('invalidates the cached workspace on restore (no stale deletedAt)', async () => {
+    const admin = await createAdminUser();
+    const { workspace } = await createWorkspaceWithOwner();
+    const headers = await authWithCsrfHeaders(admin);
+
+    // Simulate a workspace read that populated the metadata cache while the
+    // workspace was suspended (deletedAt present in the cached copy).
+    const staleCopy = {
+      id: workspace.id,
+      slug: workspace.slug,
+      name: workspace.name,
+      deletedAt: new Date(),
+    };
+    await CacheClient.set(CACHE_KEYS.workspaceBySlug(workspace.slug), staleCopy, 3600);
+
+    // Soft-delete then restore
+    await request(app)
+      .post(`${BASE}/workspaces/${workspace.slug}`)
+      .set(headers)
+      .send({ hardDelete: false, reason: 'Test' });
+    await request(app)
+      .patch(`${BASE}/workspaces/${workspace.slug}/restore`)
+      .set(headers);
+
+    // The cached copy must be gone — otherwise members would still see the
+    // workspace as suspended/not-found for up to the TTL after a restore.
+    const cached = await CacheClient.get<any>(CACHE_KEYS.workspaceBySlug(workspace.slug));
+    expect(cached).toBeNull();
   });
 });

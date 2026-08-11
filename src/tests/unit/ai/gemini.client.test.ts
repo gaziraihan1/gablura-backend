@@ -21,6 +21,7 @@ vi.mock("@google/genai", () => ({
 import { aiComplete, isAiConfigured } from "../../../lib/ai/gemini.client.js";
 import {
   AiInvalidResponseError,
+  AiProviderRateLimitError,
   AiServiceUnavailableError,
 } from "../../../errors/AppError.js";
 
@@ -98,6 +99,38 @@ describe("aiComplete", () => {
     }));
 
     await expect(aiComplete("hello")).rejects.toThrow(AiServiceUnavailableError);
+  });
+
+  it("maps provider 429 quota errors to AI_PROVIDER_RATE_LIMIT (not 503)", async () => {
+    mockGoogleGenAI.mockImplementation(() => ({
+      models: {
+        generateContent: vi.fn().mockRejectedValue({
+          code: 429,
+          status: "RESOURCE_EXHAUSTED",
+          message: "Quota exceeded for quota metric 'API requests' ...",
+        }),
+      },
+    }));
+
+    const err = await aiComplete("hello").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(AiProviderRateLimitError);
+    expect((err as AiProviderRateLimitError).statusCode).toBe(429);
+    expect((err as AiProviderRateLimitError).code).toBe("AI_PROVIDER_RATE_LIMIT");
+    expect((err as AiProviderRateLimitError).retryAfter).toBe(60);
+  });
+
+  it("detects provider rate limits embedded in the error message", async () => {
+    mockGoogleGenAI.mockImplementation(() => ({
+      models: {
+        generateContent: vi
+          .fn()
+          .mockRejectedValue(
+            new Error("429: Quota exceeded — Request limit per minute"),
+          ),
+      },
+    }));
+
+    await expect(aiComplete("hello")).rejects.toThrow(AiProviderRateLimitError);
   });
 
   it("throws AI_SERVICE_UNAVAILABLE on timeout", async () => {

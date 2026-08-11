@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from "express";
-import { AppError, ValidationError, RateLimitError, SessionHijackError, NotFoundError, AiMonthlyQuotaExceededError } from "./AppError.js";
+import { AppError, ValidationError, RateLimitError, SessionHijackError, NotFoundError, AiMonthlyQuotaExceededError, AiProviderRateLimitError } from "./AppError.js";
 import { captureException } from "../lib/sentry.js";
 
 /**
@@ -39,6 +39,12 @@ export const errorHandler = (
 
     // Monthly AI budget reset — retryAfter is seconds until the next month
     if (err instanceof AiMonthlyQuotaExceededError && err.retryAfter != null) {
+      body.retryAfter = err.retryAfter;
+      res.setHeader("Retry-After", String(err.retryAfter));
+    }
+
+    // AI provider busy (Google-side rate limit / quota) — retryAfter seconds
+    if (err instanceof AiProviderRateLimitError && err.retryAfter != null) {
       body.retryAfter = err.retryAfter;
       res.setHeader("Retry-After", String(err.retryAfter));
     }

@@ -23,6 +23,7 @@ vi.mock('../../middleware/focuraAdmin.js', () => ({
 
 vi.mock('../../config/admin.config.js', () => ({
   isFocuraAdmin: vi.fn((userId: string) => userId === 'test-admin-id'),
+  isFocuraAdminUser: vi.fn((role: string, userId: string) => userId === 'test-admin-id'),
   getFocuraAdminIds: vi.fn(() => ['test-admin-id']),
 }));
 
@@ -60,6 +61,25 @@ describe('Admin API Contract Tests', () => {
       rejected: z.number(),
     }),
     totalStorageUsedMb: z.number(),
+    growth: z.array(z.object({
+      label: z.string(),
+      users: z.number(),
+      workspaces: z.number(),
+      projects: z.number(),
+    })),
+    taskActivity: z.array(z.object({
+      label: z.string(),
+      todo: z.number(),
+      inProgress: z.number(),
+      completed: z.number(),
+    })),
+    growthByPlan: z.array(z.object({
+      label: z.string(),
+      FREE: z.number(),
+      PRO: z.number(),
+      BUSINESS: z.number(),
+      ENTERPRISE: z.number(),
+    })),
     recentSignups: z.array(z.object({
       id: z.string(),
       name: z.string(),

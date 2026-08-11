@@ -31,6 +31,29 @@ function buildPagination(page: number, pageSize: number, totalCount: number) {
 
 // ─── Query functions ───────────────────────────────────────────────────────────
 
+type MonthPoint = { label: string; count: number };
+
+/**
+ * Zero-filled per-month counts for the last 7 months (incl. current), driven by
+ * the entity's `createdAt`. Table names come from a hardcoded allowlist, never
+ * user input.
+ */
+function monthlyCounts(table: string): Promise<MonthPoint[]> {
+  return prisma.$queryRawUnsafe<MonthPoint[]>(`
+    SELECT to_char(d, 'Mon') AS label, COALESCE(c, 0)::int AS count
+    FROM generate_series(
+      date_trunc('month', now()) - interval '6 months',
+      date_trunc('month', now()),
+      interval '1 month'
+    ) d
+    LEFT JOIN (
+      SELECT date_trunc('month', "createdAt") AS m, COUNT(*) AS c
+      FROM "${table}" GROUP BY m
+    ) t ON t.m = d
+    ORDER BY d
+  `);
+}
+
 export async function queryStats(): Promise<AdminStats> {
   const [
     totalUsers,
@@ -44,6 +67,11 @@ export async function queryStats(): Promise<AdminStats> {
     recentSignups,
     recentWorkspaces,
     storageStats,
+    growthUsers,
+    growthWorkspaces,
+    growthProjects,
+    taskActivity,
+    growthByPlan,
   ] = await Promise.all([
     prisma.user.count(),
     prisma.workspace.count(),
@@ -78,6 +106,43 @@ export async function queryStats(): Promise<AdminStats> {
       },
     }),
     prisma.file.aggregate({ _sum: { size: true } }),
+    monthlyCounts("User"),
+    monthlyCounts("Workspace"),
+    monthlyCounts("Project"),
+    prisma.$queryRawUnsafe<
+      { label: string; todo: number; inProgress: number; completed: number }[]
+    >(`
+      SELECT to_char(d, 'Dy') AS label,
+        COUNT(*) FILTER (WHERE t.status = 'TODO')::int        AS todo,
+        COUNT(*) FILTER (WHERE t.status = 'IN_PROGRESS')::int AS "inProgress",
+        COUNT(*) FILTER (WHERE t.status = 'COMPLETED')::int   AS completed
+      FROM generate_series(current_date - 6, current_date, interval '1 day') d
+      -- Range predicates on the bare column keep the JOIN index-friendly
+      -- while the LEFT JOIN still zero-fills days with no task activity.
+      LEFT JOIN "Task" t
+        ON t."createdAt" >= d::date AND t."createdAt" < d::date + interval '1 day'
+      GROUP BY d
+      ORDER BY d
+    `),
+    // Workspaces per month broken down by plan — same zero-filled series.
+    prisma.$queryRawUnsafe<
+      { label: string; FREE: number; PRO: number; BUSINESS: number; ENTERPRISE: number }[]
+    >(`
+      SELECT to_char(d, 'Mon') AS label,
+        COALESCE(SUM(CASE WHEN t.plan = 'FREE' THEN 1 ELSE 0 END), 0)::int       AS "FREE",
+        COALESCE(SUM(CASE WHEN t.plan = 'PRO' THEN 1 ELSE 0 END), 0)::int        AS "PRO",
+        COALESCE(SUM(CASE WHEN t.plan = 'BUSINESS' THEN 1 ELSE 0 END), 0)::int   AS "BUSINESS",
+        COALESCE(SUM(CASE WHEN t.plan = 'ENTERPRISE' THEN 1 ELSE 0 END), 0)::int AS "ENTERPRISE"
+      FROM generate_series(
+        date_trunc('month', now()) - interval '6 months',
+        date_trunc('month', now()),
+        interval '1 month'
+      ) d
+      LEFT JOIN "Workspace" t
+        ON t."createdAt" >= d AND t."createdAt" < d + interval '1 month'
+      GROUP BY d
+      ORDER BY d
+    `),
   ]);
 
   const frMap = Object.fromEntries(
@@ -115,6 +180,19 @@ export async function queryStats(): Promise<AdminStats> {
       ...w,
       owner: { ...w.owner, name: w.owner.name ?? "Unknown" },
     })),
+    growth: growthUsers.map((p, i) => ({
+      label:      p.label,
+      users:      p.count,
+      workspaces: growthWorkspaces[i]?.count ?? 0,
+      projects:   growthProjects[i]?.count ?? 0,
+    })),
+    taskActivity: taskActivity.map((t) => ({
+      label:      t.label,
+      todo:       t.todo,
+      inProgress: t.inProgress,
+      completed:  t.completed,
+    })),
+    growthByPlan,
   };
 }
 

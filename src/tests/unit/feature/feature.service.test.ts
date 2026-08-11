@@ -151,7 +151,7 @@ describe('FeatureService & FeatureRepository Unit Tests', () => {
       const user = await createUser();
       const feature = await createFeatureRequest(user.id);
 
-      const result = await FeatureService.updateStatus(feature.id, admin.id, {
+      const result = await FeatureService.updateStatus(feature.id, admin.id, admin.role, {
         status: FeatureStatus.PLANNED,
         adminNote: 'We are starting implementation in Q3.',
       });
@@ -169,7 +169,7 @@ describe('FeatureService & FeatureRepository Unit Tests', () => {
       const feature = await createFeatureRequest(user.id);
 
       await expect(
-        FeatureService.updateStatus(feature.id, user.id, {
+        FeatureService.updateStatus(feature.id, user.id, user.role, {
           status: FeatureStatus.APPROVED,
         })
       ).rejects.toThrow(ForbiddenError);
@@ -178,7 +178,7 @@ describe('FeatureService & FeatureRepository Unit Tests', () => {
     it('throws NotFoundError when trying to update non-existent feature request', async () => {
       const admin = await createAdminUser();
       await expect(
-        FeatureService.updateStatus('cmqqqqqqqqqqqqqqqqqqqqqqq', admin.id, {
+        FeatureService.updateStatus('cmqqqqqqqqqqqqqqqqqqqqqqq', admin.id, admin.role, {
           status: FeatureStatus.APPROVED,
         })
       ).rejects.toThrow(NotFoundError);
@@ -194,7 +194,7 @@ describe('FeatureService & FeatureRepository Unit Tests', () => {
       const user = await createUser();
       const feature = await createFeatureRequest(user.id);
 
-      await FeatureService.delete(feature.id, admin.id);
+      await FeatureService.delete(feature.id, admin.id, admin.role);
 
       const dbRecord = await prisma.featureRequest.findUnique({ where: { id: feature.id } });
       expect(dbRecord).toBeNull();
@@ -205,14 +205,14 @@ describe('FeatureService & FeatureRepository Unit Tests', () => {
       const feature = await createFeatureRequest(user.id);
 
       await expect(
-        FeatureService.delete(feature.id, user.id)
+        FeatureService.delete(feature.id, user.id, user.role)
       ).rejects.toThrow(ForbiddenError);
     });
 
     it('throws NotFoundError when deleting non-existent feature request', async () => {
       const admin = await createAdminUser();
       await expect(
-        FeatureService.delete('cmqqqqqqqqqqqqqqqqqqqqqqq', admin.id)
+        FeatureService.delete('cmqqqqqqqqqqqqqqqqqqqqqqq', admin.id, admin.role)
       ).rejects.toThrow(NotFoundError);
     });
   });

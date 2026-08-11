@@ -199,6 +199,27 @@ export class AiMonthlyQuotaExceededError extends AppError {
   }
 }
 
+/**
+ * Thrown when the AI provider itself is rate-limiting or quota-exhausted for
+ * the request (Google 429 / RESOURCE_EXHAUSTED / RATE_LIMIT_EXCEEDED). Maps to
+ * 429 so clients can surface "the AI provider is busy right now — try again in
+ * a moment" instead of the misleading 503 used for genuine provider outages.
+ * The provider's message is kept in `meta.providerDetail` for debugging.
+ */
+export class AiProviderRateLimitError extends AppError {
+  public readonly retryAfter?: number;
+
+  constructor(retryAfterSeconds = 60, providerDetail?: string) {
+    super(
+      "The AI provider is receiving too many requests right now. Please try again in a moment.",
+      429,
+      "AI_PROVIDER_RATE_LIMIT",
+      providerDetail ? { providerDetail } : undefined,
+    );
+    this.retryAfter = retryAfterSeconds;
+  }
+}
+
 // ─── 429 Storage / upload quota errors ───────────────────────────────────────
 
 /**

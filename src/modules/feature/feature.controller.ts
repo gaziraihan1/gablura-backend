@@ -1,7 +1,7 @@
 import { Response } from "express";
 import type { AuthRequest } from "../../middleware/auth.js";
 import { FeatureService } from "./feature.service.js";
-import { isFocuraAdmin } from "../../config/admin.config.js";
+import { isFocuraAdminUser } from "../../config/admin.config.js";
 import { asyncHandler } from "../../errors/index.js";
 import { ValidationError } from "../../errors/index.js";
 import {
@@ -52,6 +52,7 @@ export const updateFeatureStatus = asyncHandler(
     const feature = await FeatureService.updateStatus(
       req.params.id,
       req.user!.id,
+      req.user!.role,
       parsed.data,
     );
     res.json({ success: true, data: feature });
@@ -60,7 +61,7 @@ export const updateFeatureStatus = asyncHandler(
 
 export const deleteFeatureRequest = asyncHandler(
   async (req: AuthRequest, res: Response) => {
-    await FeatureService.delete(req.params.id, req.user!.id);
+    await FeatureService.delete(req.params.id, req.user!.id, req.user!.role);
     res.json({ success: true, message: "Feature request deleted" });
   },
 );
@@ -88,6 +89,13 @@ export const removeVote = asyncHandler(
 );
 
 export const getAdminContext = async (req: AuthRequest, res: Response) => {
-    res.json({ success: true, isAdmin: isFocuraAdmin(req.user!.id) });
+    // Mirror `requireFocuraAdmin`: the dashboard is only usable when the caller
+    // is both an ADMIN-role user AND registered in FOCURA_ADMIN_IDS. Checking
+    // the env list alone made the frontend gate say "admin" while every admin
+    // API still returned 403 (role mismatch) — the confusing state this fixes.
+    res.json({
+      success: true,
+      isAdmin: isFocuraAdminUser(req.user!.role, req.user!.id),
+    });
   }
 ;

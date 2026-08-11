@@ -1,6 +1,6 @@
 import { WorkspacePlan } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
-import { isFocuraAdmin } from "../config/admin.config.js";
+import { isFocuraAdmin, isFocuraAdminUser } from "../config/admin.config.js";
 
 import {
   ForbiddenError,
@@ -25,8 +25,8 @@ import { ActivityMutation } from "../modules/activity/activity.mutation.js";
 
 // ─── Guards ────────────────────────────────────────────────────────────────────
 
-export function assertFocuraAdmin(userId: string): void {
-  if (!isFocuraAdmin(userId)) {
+export function assertFocuraAdmin(userId: string, role: string): void {
+  if (!isFocuraAdminUser(role, userId)) {
     throw new ForbiddenError("Focura admin access required");
   }
 }

@@ -1,6 +1,6 @@
 import { Response, NextFunction } from 'express';
 import { AuthRequest } from '../middleware/auth.js';
-import { isFocuraAdmin } from '../config/admin.config.js';
+import { isFocuraAdminUser } from '../config/admin.config.js';
 
 export const requireFocuraAdmin = (
   req: AuthRequest,
@@ -21,7 +21,7 @@ export const requireFocuraAdmin = (
   }
 
   // Require both ADMIN role AND FOCURA_ADMIN_IDS registration
-  if (userRole !== 'ADMIN' || !isFocuraAdmin(userId)) {
+  if (!isFocuraAdminUser(userRole, userId)) {
     return res.status(403).json({
       success: false,
       message: 'Forbidden: Admin access required',

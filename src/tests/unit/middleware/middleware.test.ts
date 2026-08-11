@@ -21,6 +21,8 @@ const mockGetPoolMetrics = vi.hoisted(() => vi.fn());
 
 const mockIsFocuraAdmin = vi.hoisted(() => vi.fn());
 
+const mockIsFocuraAdminUser = vi.hoisted(() => vi.fn());
+
 const mockGetRedisClient = vi.hoisted(() => vi.fn());
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -34,6 +36,7 @@ vi.mock('../../../lib/prisma.js', () => ({
 
 vi.mock('../../../config/admin.config.js', () => ({
   isFocuraAdmin: mockIsFocuraAdmin,
+  isFocuraAdminUser: mockIsFocuraAdminUser,
 }));
 
 vi.mock('../../../redis/redis.client.js', () => ({
@@ -528,7 +531,7 @@ describe('requireFocuraAdmin', () => {
   });
 
   it('returns 403 when user is not ADMIN role', () => {
-    mockIsFocuraAdmin.mockReturnValue(false);
+    mockIsFocuraAdminUser.mockReturnValue(false);
     const req = createReq({ user: { id: 'u1', email: 'a@b.com', role: 'MEMBER' } });
     const res = createRes();
 
@@ -543,7 +546,7 @@ describe('requireFocuraAdmin', () => {
   });
 
   it('returns 403 when user is ADMIN but not in FOCURA_ADMIN_IDS', () => {
-    mockIsFocuraAdmin.mockReturnValue(false);
+    mockIsFocuraAdminUser.mockReturnValue(false);
     const req = createReq({ user: { id: 'u1', email: 'a@b.com', role: 'ADMIN' } });
     const res = createRes();
 
@@ -555,11 +558,11 @@ describe('requireFocuraAdmin', () => {
         message: 'Forbidden: Admin access required',
       }),
     );
-    expect(mockIsFocuraAdmin).toHaveBeenCalledWith('u1');
+    expect(mockIsFocuraAdminUser).toHaveBeenCalledWith('ADMIN', 'u1');
   });
 
   it('returns 403 when isFocuraAdmin returns false even with ADMIN role', () => {
-    mockIsFocuraAdmin.mockReturnValue(false);
+    mockIsFocuraAdminUser.mockReturnValue(false);
     const req = createReq({ user: { id: 'u1', email: 'a@b.com', role: 'ADMIN' } });
     const res = createRes();
 
@@ -568,8 +571,8 @@ describe('requireFocuraAdmin', () => {
     expect(res.status).toHaveBeenCalledWith(403);
   });
 
-  it('calls next() when user is ADMIN and isFocuraAdmin returns true', () => {
-    mockIsFocuraAdmin.mockReturnValue(true);
+  it('calls next() when user is ADMIN and isFocuraAdminUser returns true', () => {
+    mockIsFocuraAdminUser.mockReturnValue(true);
     const req = createReq({ user: { id: 'u1', email: 'a@b.com', role: 'ADMIN' } });
     const res = createRes();
 
@@ -580,7 +583,7 @@ describe('requireFocuraAdmin', () => {
   });
 
   it('returns 500 when an unexpected error is thrown', () => {
-    mockIsFocuraAdmin.mockImplementation(() => {
+    mockIsFocuraAdminUser.mockImplementation(() => {
       throw new Error('Unexpected error');
     });
     const req = createReq({ user: { id: 'u1', email: 'a@b.com', role: 'ADMIN' } });

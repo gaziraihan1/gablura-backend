@@ -1,6 +1,6 @@
 import { Request, Response }   from 'express';
 import type { AuthRequest }    from '../../middleware/auth.js';
-import { isFocuraAdmin }       from '../../config/admin.config.js';
+import { isFocuraAdminUser }   from '../../config/admin.config.js';
 import {
   listOpenJobs, getOpenJob,
   createJob, updateJob,
@@ -21,8 +21,8 @@ import {
 
 // ─── Guard ────────────────────────────────────────────────────────────────────
 
-function assertAdmin(userId: string | undefined): void {
-  if (!isFocuraAdmin(userId!)) {
+function assertAdmin(userId: string | undefined, role: string | undefined): void {
+  if (!isFocuraAdminUser(role, userId)) {
     throw new ForbiddenError('You do not have permission to access this resource.');
   }
 }
@@ -51,7 +51,7 @@ export const publicGetJob = asyncHandler(async (req: Request, res: Response) => 
 // ─── Admin ────────────────────────────────────────────────────────────────────
 
 export const adminListJobs = asyncHandler(async (req: AuthRequest, res: Response) => {
-  assertAdmin(req.user?.id);
+  assertAdmin(req.user?.id, req.user?.role);
 
   const page  = Math.max(1, Number(req.query.page)  || 1);
   const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 20));
@@ -65,7 +65,7 @@ export const adminListJobs = asyncHandler(async (req: AuthRequest, res: Response
 });
 
 export const adminCreateJob = asyncHandler(async (req: AuthRequest, res: Response) => {
-  assertAdmin(req.user?.id);
+  assertAdmin(req.user?.id, req.user?.role);
 
   const parsed = createJobSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -77,7 +77,7 @@ export const adminCreateJob = asyncHandler(async (req: AuthRequest, res: Respons
 });
 
 export const adminUpdateJob = asyncHandler(async (req: AuthRequest, res: Response) => {
-  assertAdmin(req.user?.id);
+  assertAdmin(req.user?.id, req.user?.role);
 
   const parsed = updateJobSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -91,7 +91,7 @@ export const adminUpdateJob = asyncHandler(async (req: AuthRequest, res: Respons
 });
 
 export const adminDeleteJob = asyncHandler(async (req: AuthRequest, res: Response) => {
-  assertAdmin(req.user?.id);
+  assertAdmin(req.user?.id, req.user?.role);
 
   const deleted = await deleteJob(req.params.id);
   if (!deleted) throw new NotFoundError('Job');
@@ -100,7 +100,7 @@ export const adminDeleteJob = asyncHandler(async (req: AuthRequest, res: Respons
 });
 
 export const adminTogglePin = asyncHandler(async (req: AuthRequest, res: Response) => {
-  assertAdmin(req.user?.id);
+  assertAdmin(req.user?.id, req.user?.role);
 
   const job = await togglePin(req.params.id);
   if (!job) throw new NotFoundError('Job');

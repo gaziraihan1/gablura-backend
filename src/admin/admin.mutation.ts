@@ -97,14 +97,19 @@ export async function mutateHardDeleteWorkspace(
 }
 
 export async function mutateRestoreWorkspace(workspaceId: string): Promise<void> {
-  await prisma.workspace.update({
+  const restored = await prisma.workspace.update({
     where: { id: workspaceId },
     data: {
       deletedAt:    null,
       deletedById:  null,
       deleteReason: null,
     },
+    select: { id: true, slug: true },
   });
+
+  // Invalidate metadata caches so the restored workspace is usable
+  // immediately instead of still looking suspended until the TTL expires.
+  WorkspaceCache.invalidateWorkspace(restored.id, restored.slug).catch(() => {});
 }
 
 // ─── User mutations ────────────────────────────────────────────────────────────

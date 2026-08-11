@@ -15,6 +15,28 @@ export interface AdminStats {
     completed: number;
     rejected: number;
   };
+  /** Monthly platform growth — last 7 months, zero-filled. */
+  growth: {
+    label: string;
+    users: number;
+    workspaces: number;
+    projects: number;
+  }[];
+  /** Per-day task counts by status — last 7 days. */
+  taskActivity: {
+    label: string;
+    todo: number;
+    inProgress: number;
+    completed: number;
+  }[];
+  /** Workspaces created per month broken down by plan — last 7 months. */
+  growthByPlan: {
+    label: string;
+    FREE: number;
+    PRO: number;
+    BUSINESS: number;
+    ENTERPRISE: number;
+  }[];
   totalStorageUsedMb: number;
   recentSignups: {
     id: string;

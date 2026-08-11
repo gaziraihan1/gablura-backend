@@ -1,6 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
 import {
   AiInvalidResponseError,
+  AiProviderRateLimitError,
   AiServiceUnavailableError,
 } from "../../errors/AppError.js";
 
@@ -151,6 +152,16 @@ export async function aiComplete(
     )) as GeminiResponse;
   } catch (error) {
     if (error instanceof AiServiceUnavailableError) throw error;
+
+    // Google-side rate limiting / quota exhaustion (HTTP 429) is transient —
+    // surface it as 429 so the client can tell the user to retry shortly,
+    // instead of masking it as a generic 503 provider outage.
+    if (isProviderRateLimit(error)) {
+      const detail = error instanceof Error ? error.message : String(error);
+      console.error("[AiClient] Gemini rate limit / quota hit:", detail);
+      throw new AiProviderRateLimitError(60, detail);
+    }
+
     console.error("[AiClient] Gemini request failed:", error);
     throw new AiServiceUnavailableError(
       "The AI service is temporarily unavailable. Please try again.",
@@ -166,6 +177,31 @@ export async function aiComplete(
       outputTokens: response.usageMetadata?.candidatesTokenCount ?? 0,
     },
   };
+}
+
+/**
+ * Detects provider-side rate limiting / quota exhaustion (Google 429 with
+ * RESOURCE_EXHAUSTED / RATE_LIMIT_EXCEEDED, or a matching message). These are
+ * transient and recover within a minute, so they map to 429 — not the 503
+ * reserved for genuine provider outages.
+ */
+function isProviderRateLimit(error: unknown): boolean {
+  const record = error as Record<string, unknown>;
+  const code = record.code ?? record.statusCode;
+  const status = record.status;
+  if (
+    code === 429 ||
+    code === "429" ||
+    status === 429 ||
+    status === "RESOURCE_EXHAUSTED" ||
+    status === "RATE_LIMIT_EXCEEDED"
+  ) {
+    return true;
+  }
+  const message = error instanceof Error ? error.message : String(error);
+  return /quota exceeded|rate limit|too many requests|resource_exhausted|\"code\"\s*:\s*429/i.test(
+    message,
+  );
 }
 
 function extractText(response: GeminiResponse): string {
