@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Planned for v1.2.0
+- Added self-service data export — a JSON bundle of your data is generated and emailed on request
+- Added self-service account deletion with ownership-transfer guards
+- Hardened SSE authentication — notification streams now use a 30-second, single-use token instead of the 15-minute access token
+
 ## [1.1.0] - 2026-08-11
 
 First tagged release.
