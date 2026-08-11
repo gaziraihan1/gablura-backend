@@ -170,6 +170,13 @@ app.get("/health", async (_req: Request, res: Response) => {
 // ── CSRF endpoint ──────────────────────────────────────────
 app.get("/api/v1/csrf-token", authenticate, sessionTimeout, getCsrfTokenHandler);
 
+// ── Session activity heartbeat ────────────────────────────
+// Authenticated + sessionTimeout so each ping refreshes the Redis inactivity
+// TTL while the user is actively using the app (even without API traffic).
+app.get("/api/v1/auth/activity", authenticate, sessionTimeout, (_req, res) =>
+  res.json({ success: true }),
+);
+
 // ── Public routes ──────────────────────────────────────────
 app.use("/api/v1/notifications", notificationRouter);
 app.use("/api/v1/contact", contactRouter);

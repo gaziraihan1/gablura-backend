@@ -241,6 +241,16 @@ app.get("/api/v1/debug/auth", (req: Request, res: Response) => {
 app.get("/api/v1/csrf-token", authenticate, sessionTimeout, getCsrfTokenHandler);
 
 // ============================================================================
+// Session Activity Heartbeat
+// Authenticated + sessionTimeout: every call bumps the Redis inactivity TTL.
+// The frontend pings this while the user is actively interacting so an active
+// user browsing cached pages is not treated as idle by the 30-min timeout.
+// ============================================================================
+app.get("/api/v1/auth/activity", authenticate, sessionTimeout, (_req, res) =>
+  res.json({ success: true }),
+);
+
+// ============================================================================
 // Public Routes (No Auth, No CSRF)
 // ============================================================================
 app.use("/api/v1/notifications", notificationRouter);

@@ -728,3 +728,23 @@ describe("session binding (device fingerprint)", () => {
     expect(rejected.body.code).toBe("SESSION_HIJACK_DETECTED");
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/v1/auth/activity (session heartbeat)
+// ─────────────────────────────────────────────────────────────────────────────
+describe("GET /api/v1/auth/activity", () => {
+  it("200 — authenticated ping returns success", async () => {
+    const user = await createUser();
+    const token = generateTestToken(user);
+    const res = await request(app)
+      .get("/api/v1/auth/activity")
+      .set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+  });
+
+  it("401 — unauthenticated ping is rejected", async () => {
+    const res = await request(app).get("/api/v1/auth/activity");
+    expect(res.status).toBe(401);
+  });
+});

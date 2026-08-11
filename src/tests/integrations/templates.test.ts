@@ -1,26 +1,17 @@
 // templates.test.ts
-import { describe, it, expect, beforeEach, afterEach, vi, type MockInstance } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import request from "supertest";
 import app from "../../app.js";
 import { prisma } from "../../lib/prisma.js";
-import { createUser } from "../factories/index.js";
+import { createUser, createAdminUser } from "../factories/index.js";
 import { authHeaders, authWithCsrfHeaders, TestUser } from "../helpers/auth.js";
 import { getRedisClient } from "../../redis/redis.client.js";
-import * as adminConfig from "../../config/admin.config.js";
 
 describe("Templates Module Integration Tests", () => {
   let adminUser: TestUser;
-  let isFocuraAdminSpy: MockInstance;
 
   beforeEach(async () => {
-    adminUser = await createUser({ role: "ADMIN" });
-    isFocuraAdminSpy = vi.spyOn(adminConfig, "isFocuraAdmin").mockImplementation((userId: string) => {
-      return userId === adminUser.id;
-    });
-  });
-
-  afterEach(() => {
-    isFocuraAdminSpy?.mockRestore();
+    adminUser = await createAdminUser();
   });
 
   describe("POST /api/v1/templates", () => {
