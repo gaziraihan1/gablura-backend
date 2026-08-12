@@ -24,6 +24,7 @@ const {
   mockResourceQueries,
   mockResourceMutations,
   mockCronSchedule,
+  mockProcessPendingNotifications,
 } = vi.hoisted(() => {
   const mockPrisma = {
     task: { findMany: vi.fn(), findFirst: vi.fn() },
@@ -165,13 +166,14 @@ const {
   };
 
   const mockCronSchedule = vi.fn();
+  const mockProcessPendingNotifications = vi.fn().mockResolvedValue(0);
 
   return {
     mockPrisma, mockGetRedisClient, mockCacheClient, mockAddSendNotificationJob,
     mockNotificationMutation, mockNotificationQuery, mockGetPublisher, mockPublisherObj,
     mockWorkspaceQuery, mockWorkspaceMutation, mockWorkspaceActivity, mockWorkspaceNotifications,
     mockStorageQuery, mockStorageMutation, mockStorageAccess, mockStorageCache,
-    mockResourceQueries, mockResourceMutations, mockCronSchedule,
+    mockResourceQueries, mockResourceMutations, mockCronSchedule, mockProcessPendingNotifications,
   };
 });
 
@@ -229,7 +231,7 @@ vi.mock('../../modules/notification/notification.query.js', () => ({
   NotificationQuery: mockNotificationQuery,
 }));
 vi.mock('../../modules/notification/cron.utils.js', () => ({
-  processPendingNotifications: vi.fn().mockResolvedValue(0),
+  processPendingNotifications: mockProcessPendingNotifications,
   batchWasAlreadySent: vi.fn().mockResolvedValue(new Set()),
   DEDUP_PREFIX: 'notif:cron:sent:',
 }));
@@ -409,7 +411,7 @@ describe('notification.cron.ts', () => {
   });
 
   it('meeting reminder notifies private attendees and creator', async () => {
-    const start = new Date(Date.now() + 15 * 60 * 1000);
+    const start = new Date(Date.now() + 14 * 60 * 1000);
     mockPrisma.meeting.findMany.mockResolvedValue([{
       id: 'm1', title: 'Sync', visibility: 'PRIVATE', createdById: 'u1',
       workspaceId: 'w1', startTime: start,
@@ -420,12 +422,10 @@ describe('notification.cron.ts', () => {
     ]);
     // Make the shared cron-dispatch mock actually enqueue (it normally returns
     // 0 to keep other cron tests hermetic).
-    const processSpy = vi
-      .spyOn(await import('../../modules/notification/cron.utils.js'), 'processPendingNotifications')
-      .mockImplementation(async (list: any[]) => {
-        for (const n of list) await mockAddSendNotificationJob(n);
-        return list.length;
-      });
+    mockProcessPendingNotifications.mockImplementation(async (list: any[]) => {
+      for (const n of list) await mockAddSendNotificationJob(n);
+      return list.length;
+    });
 
     try {
       const { startMeetingReminderCron } = await import('../../modules/notification/meeting.cron.js');
@@ -439,7 +439,7 @@ describe('notification.cron.ts', () => {
         expect.objectContaining({ type: 'MEETING_REMINDER', userId: 'u2' }),
       );
     } finally {
-      processSpy.mockRestore();
+      mockProcessPendingNotifications.mockResolvedValue(0);
     }
   });
 
