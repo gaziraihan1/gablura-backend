@@ -45,6 +45,9 @@ const {
       findFirst: vi.fn(),
       update: vi.fn(),
     },
+    meeting: {
+      findMany: vi.fn(),
+    },
     workspace: { findUnique: vi.fn() },
     file: { aggregate: vi.fn() },
   };
@@ -362,16 +365,19 @@ describe('notification.cron.ts', () => {
     expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Task reminder cron done'));
   });
 
-  it('task reminder skips tasks with no assignees', async () => {
+  it('task reminder notifies the creator of creator-only tasks (no assignees)', async () => {
+    const dueDate = new Date(Date.now() + 6 * 60 * 60 * 1000);
     mockPrisma.task.findMany
       .mockResolvedValueOnce([{
-        id: 'task-1', title: 'No Assignees', dueDate: new Date(), createdById: 'u1', assignees: [],
+        id: 'task-1', title: 'Creator Only', dueDate, createdById: 'u1', assignees: [],
       }])
       .mockResolvedValueOnce([]);
+    mockPrisma.user.findMany.mockResolvedValue([{ id: 'u1', notifications: true }]);
     const { startTaskReminderCron } = await import('../../modules/notification/notification.cron.js');
     startTaskReminderCron();
     const handler = mockCronSchedule.mock.calls[mockCronSchedule.mock.calls.length - 1][1];
     await handler();
+    expect(mockPrisma.user.findMany).toHaveBeenCalled();
     expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Task reminder cron done'));
   });
 
@@ -390,6 +396,60 @@ describe('notification.cron.ts', () => {
     const handler = mockCronSchedule.mock.calls[mockCronSchedule.mock.calls.length - 1][1];
     await handler();
     expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Task reminder cron done'));
+  });
+
+  it('startMeetingReminderCron registers schedule and runs', async () => {
+    mockPrisma.meeting.findMany.mockResolvedValue([]);
+    const { startMeetingReminderCron } = await import('../../modules/notification/meeting.cron.js');
+    startMeetingReminderCron();
+    expect(mockCronSchedule).toHaveBeenCalledWith('*/5 * * * *', expect.any(Function));
+    const handler = mockCronSchedule.mock.calls[mockCronSchedule.mock.calls.length - 1][1];
+    await handler();
+    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Meeting reminder cron done'));
+  });
+
+  it('meeting reminder notifies private attendees and creator', async () => {
+    const start = new Date(Date.now() + 15 * 60 * 1000);
+    mockPrisma.meeting.findMany.mockResolvedValue([{
+      id: 'm1', title: 'Sync', visibility: 'PRIVATE', createdById: 'u1',
+      workspaceId: 'w1', startTime: start,
+      attendees: [{ userId: 'u2' }], workspace: { slug: 'ws' },
+    }]);
+    mockPrisma.user.findMany.mockResolvedValue([
+      { id: 'u1', notifications: true }, { id: 'u2', notifications: true },
+    ]);
+    // Make the shared cron-dispatch mock actually enqueue (it normally returns
+    // 0 to keep other cron tests hermetic).
+    const processSpy = vi
+      .spyOn(await import('../../modules/notification/cron.utils.js'), 'processPendingNotifications')
+      .mockImplementation(async (list: any[]) => {
+        for (const n of list) await mockAddSendNotificationJob(n);
+        return list.length;
+      });
+
+    try {
+      const { startMeetingReminderCron } = await import('../../modules/notification/meeting.cron.js');
+      startMeetingReminderCron();
+      const handler = mockCronSchedule.mock.calls[mockCronSchedule.mock.calls.length - 1][1];
+      await handler();
+      expect(mockAddSendNotificationJob).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'MEETING_REMINDER', userId: 'u1' }),
+      );
+      expect(mockAddSendNotificationJob).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'MEETING_REMINDER', userId: 'u2' }),
+      );
+    } finally {
+      processSpy.mockRestore();
+    }
+  });
+
+  it('meeting reminder catches errors', async () => {
+    mockPrisma.meeting.findMany.mockRejectedValue(new Error('DB error'));
+    const { startMeetingReminderCron } = await import('../../modules/notification/meeting.cron.js');
+    startMeetingReminderCron();
+    const handler = mockCronSchedule.mock.calls[mockCronSchedule.mock.calls.length - 1][1];
+    await handler();
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('Meeting reminder cron failed'), expect.any(Error));
   });
 
   it('task reminder catches errors', async () => {

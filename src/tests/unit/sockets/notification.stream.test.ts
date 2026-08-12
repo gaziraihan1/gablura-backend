@@ -1,11 +1,20 @@
 import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from 'vitest';
 import { verifyToken } from '../../../lib/auth/backendToken.js';
 import { getSubscriber } from '../../../lib/redis/redis.pubsub.js';
+// consumeSseToken comes from the global tokenRevocation mock in tests/setup.ts
+// (default: returns null = already used/expired). Tests override it per case.
+import { consumeSseToken } from '../../../lib/auth/tokenRevocation.js';
+import { auditLog } from '../../../lib/auth/auditLog.js';
 // import type { Request, Response } from 'express';
 
 // Mock dependencies
 vi.mock('../../../lib/auth/backendToken.js', () => ({
   verifyToken: vi.fn(),
+}));
+
+// auditLog is covered by its own unit tests — keep stream tests hermetic
+vi.mock('../../../lib/auth/auditLog.js', () => ({
+  auditLog: vi.fn(),
 }));
 
 vi.mock('../../../lib/redis/redis.pubsub.js', () => {
@@ -24,7 +33,7 @@ describe('notificationStreamHandler', () => {
   let mockRes: any;
   let mockSubscriber: any;
   let messageHandler: any;
-  
+
   // Module exports
   let notificationStreamHandler: any;
   let getLocalConnectionCount: any;
@@ -57,6 +66,9 @@ describe('notificationStreamHandler', () => {
 
     mockReq = {
       query: {},
+      // Used by getClientIp() inside the audit log calls
+      headers: {},
+      socket: { remoteAddress: '127.0.0.1' },
       on: vi.fn(),
     };
 
@@ -69,11 +81,18 @@ describe('notificationStreamHandler', () => {
     };
   });
 
+  // Helper: make verifyToken + consumeSseToken accept the connection
+  function mockValidSseToken(): void {
+    (verifyToken as any).mockReturnValue({ id: 'user-123', jti: 'jti-123' });
+    vi.mocked(consumeSseToken).mockResolvedValue('user-123');
+  }
+
   it('should return 401 if token is missing', async () => {
     mockReq.query.token = undefined;
     await notificationStreamHandler(mockReq, mockRes);
     expect(mockRes.status).toHaveBeenCalledWith(401);
-    expect(mockRes.json).toHaveBeenCalledWith(expect.objectContaining({ message: 'Missing token' }));
+    expect(mockRes.json).toHaveBeenCalledWith(expect.objectContaining({ message: 'Missing token', code: 'MISSING_TOKEN' }));
+    expect(vi.mocked(consumeSseToken)).not.toHaveBeenCalled();
   });
 
   it('should return 401 if token is invalid', async () => {
@@ -83,18 +102,60 @@ describe('notificationStreamHandler', () => {
     });
     await notificationStreamHandler(mockReq, mockRes);
     expect(mockRes.status).toHaveBeenCalledWith(401);
-    expect(mockRes.json).toHaveBeenCalledWith(expect.objectContaining({ message: 'Invalid or expired token' }));
+    expect(mockRes.json).toHaveBeenCalledWith(expect.objectContaining({ message: 'Invalid or expired token', code: 'INVALID_TOKEN' }));
+    expect(vi.mocked(consumeSseToken)).not.toHaveBeenCalled();
   });
 
-  it('should establish SSE connection for valid token', async () => {
+  it('should only accept sse-type tokens (access tokens are rejected)', async () => {
+    mockReq.query.token = 'access-token';
+    (verifyToken as any).mockImplementation(() => {
+      throw new Error("Expected 'sse', got 'access'");
+    });
+    await notificationStreamHandler(mockReq, mockRes);
+    // The type restriction lives inside verifyToken — assert the handler pins
+    // the expected type so a 15-minute access token can never open a stream.
+    expect(mockRes.status).toHaveBeenCalledWith(401);
+    expect(mockRes.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'INVALID_TOKEN' }));
+  });
+
+  it('should reject a reused/expired token (consume returns null)', async () => {
+    mockReq.query.token = 'used-token';
+    (verifyToken as any).mockReturnValue({ id: 'user-123', jti: 'jti-used' });
+    vi.mocked(consumeSseToken).mockResolvedValue(null);
+
+    await notificationStreamHandler(mockReq, mockRes);
+
+    expect(mockRes.status).toHaveBeenCalledWith(401);
+    expect(mockRes.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'TOKEN_REUSED' }));
+    // The stream must not be opened (no SSE headers, no subscription)
+    expect(mockRes.setHeader).not.toHaveBeenCalled();
+    expect(mockRes.flushHeaders).not.toHaveBeenCalled();
+    expect(mockSubscriber.subscribe).not.toHaveBeenCalled();
+  });
+
+  it('should reject a token consumed by a different user', async () => {
+    mockReq.query.token = 'mismatched-token';
+    (verifyToken as any).mockReturnValue({ id: 'user-123', jti: 'jti-123' });
+    vi.mocked(consumeSseToken).mockResolvedValue('user-999');
+
+    await notificationStreamHandler(mockReq, mockRes);
+
+    expect(mockRes.status).toHaveBeenCalledWith(401);
+    expect(mockRes.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'TOKEN_REUSED' }));
+  });
+
+  it('should establish SSE connection for valid single-use token', async () => {
     mockReq.query.token = 'valid-token';
-    (verifyToken as any).mockReturnValue({ id: 'user-123' });
+    mockValidSseToken();
 
     // Mock successful redis subscription
     mockSubscriber.subscribe.mockImplementation((channel: any, cb: any) => cb(null));
 
     await notificationStreamHandler(mockReq, mockRes);
 
+    expect(verifyToken).toHaveBeenCalledWith('valid-token', 'sse');
+    expect(vi.mocked(consumeSseToken)).toHaveBeenCalledWith('jti-123');
+    expect(auditLog).toHaveBeenCalledWith('SSE_CONNECTED', expect.objectContaining({ userId: 'user-123' }));
     expect(mockRes.setHeader).toHaveBeenCalledWith('Content-Type', 'text/event-stream');
     expect(mockRes.setHeader).toHaveBeenCalledWith('Connection', 'keep-alive');
     expect(mockRes.flushHeaders).toHaveBeenCalled();
@@ -105,7 +166,7 @@ describe('notificationStreamHandler', () => {
 
   it('should handle redis subscription error gracefully', async () => {
     mockReq.query.token = 'valid-token';
-    (verifyToken as any).mockReturnValue({ id: 'user-123' });
+    mockValidSseToken();
 
     // Mock redis subscription failure
     mockSubscriber.subscribe.mockImplementation((channel: any, cb: any) => cb(new Error('Redis Error')));
@@ -118,7 +179,7 @@ describe('notificationStreamHandler', () => {
 
   it('should remove client on request close', async () => {
     mockReq.query.token = 'valid-token';
-    (verifyToken as any).mockReturnValue({ id: 'user-123' });
+    mockValidSseToken();
     mockSubscriber.subscribe.mockImplementation((channel: any, cb: any) => cb(null));
 
     await notificationStreamHandler(mockReq, mockRes);
@@ -131,7 +192,7 @@ describe('notificationStreamHandler', () => {
 
   it('should handle multiple clients for same user', async () => {
     mockReq.query.token = 'valid-token';
-    (verifyToken as any).mockReturnValue({ id: 'user-123' });
+    mockValidSseToken();
     mockSubscriber.subscribe.mockImplementation((channel: any, cb: any) => cb(null));
 
     const mockRes2: any = {
@@ -151,7 +212,7 @@ describe('notificationStreamHandler', () => {
   describe('Redis Message Handling', () => {
     it('should send notification to connected clients', async () => {
       mockReq.query.token = 'valid-token';
-      (verifyToken as any).mockReturnValue({ id: 'user-123' });
+      mockValidSseToken();
       mockSubscriber.subscribe.mockImplementation((channel: any, cb: any) => cb(null));
       await notificationStreamHandler(mockReq, mockRes);
 
@@ -170,7 +231,7 @@ describe('notificationStreamHandler', () => {
 
     it('should handle malformed JSON gracefully', async () => {
       mockReq.query.token = 'valid-token';
-      (verifyToken as any).mockReturnValue({ id: 'user-123' });
+      mockValidSseToken();
       mockSubscriber.subscribe.mockImplementation((channel: any, cb: any) => cb(null));
       await notificationStreamHandler(mockReq, mockRes);
 
@@ -182,7 +243,7 @@ describe('notificationStreamHandler', () => {
 
     it('should remove client if writing fails', async () => {
       mockReq.query.token = 'valid-token';
-      (verifyToken as any).mockReturnValue({ id: 'user-123' });
+      mockValidSseToken();
       mockSubscriber.subscribe.mockImplementation((channel: any, cb: any) => cb(null));
       await notificationStreamHandler(mockReq, mockRes);
 
@@ -199,7 +260,7 @@ describe('notificationStreamHandler', () => {
   describe('Unsubscription and Heartbeat', () => {
     it('should handle unsubscribe error by rolling back state to active', async () => {
       mockReq.query.token = 'valid-token';
-      (verifyToken as any).mockReturnValue({ id: 'user-123' });
+      mockValidSseToken();
       mockSubscriber.subscribe.mockImplementation((channel: any, cb: any) => cb(null));
       await notificationStreamHandler(mockReq, mockRes);
 

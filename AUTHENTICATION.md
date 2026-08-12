@@ -14,7 +14,8 @@ Browser                  Next.js (NextAuth)           Express Backend
    |                           |   HMAC-signed proof          |── verify HMAC
    |                           |                              |── issue RS256 tokens
    |                           |<── { accessToken,            |
-   |                           |     refreshToken }           |
+   |                           |     refreshToken,            |
+   |                           |     sseToken }               |
    |<── session cookie ───────|   stored in HTTP-only JWT    |
    |                           |                              |
    |── GET /api/version/data ─────────────────────────────────────>|
@@ -117,7 +118,8 @@ const signature = crypto
 1. Recomputes HMAC and compares with `crypto.timingSafeEqual`
 2. Rejects proofs older than 60 seconds (replay protection)
 3. Verifies the user exists and email is verified
-4. Issues RS256 token pair and stores refresh token JTI in Redis
+4. Issues an RS256 token pair **plus a 30-second, single-use SSE token**
+   (`sseToken`), stores the refresh token JTI and the SSE token JTI in Redis
 
 ---
 
@@ -161,6 +163,7 @@ Content-Type: application/json
 {
   "accessToken":        "...",
   "refreshToken":       "...",
+  "sseToken":           "...",  // 30s, single-use, for the notification stream
   "accessTokenExpiry":  1234567890123,
   "refreshTokenExpiry": 1234567890123
 }
@@ -170,32 +173,46 @@ Content-Type: application/json
 
 ## Server-Sent Events (SSE)
 
-The SSE stream is **authenticated** — the access token is passed as a query param (EventSource does not support custom headers). The backend verifies the token and extracts `userId` from it. The `userId` in the URL is never trusted.
+The SSE stream is **authenticated** via a **30-second, single-use SSE token**
+(`sseToken`) passed as a query param (EventSource does not support custom
+headers). The 15-minute access token is never used here, so it can never leak
+into URLs, proxy logs, or browser history.
+
+The backend verifies the token (type `sse`), atomically **consumes** it from
+Redis (single-use — replaying a used token returns `401`), and only then opens
+the stream. The `userId` in the URL is never trusted.
 
 ### Endpoint
 
 ```
-GET /api/v1/notifications/stream?token=<accessToken>
+GET /api/v1/notifications/stream?token=<sseToken>
 ```
 
 ### Security model
 
 ```
-Client sends:  GET /stream?token=<accessToken>
-Backend does:  verifyToken(token, "access") → extracts userId from JWT
-               clients.set(userId, res)      ← userId from token only
+Client sends:  GET /stream?token=<sseToken>
+Backend does:  verifyToken(token, "sse")      → rejects access/refresh tokens
+               consumeSseToken(jti)            → atomic get+del, single-use
+               userId from the consumed mapping ← bound to user at issue time
+               clients.set(userId, res)         ← userId from token only
 ```
 
-A user can only ever receive their own notifications — even if they know another user's ID, they cannot subscribe to that user's stream because the userId is always derived from the cryptographically verified token, never from the URL.
+A user can only ever receive their own notifications — even if they know
+another user's ID, they cannot subscribe to that user's stream because the
+userId is always derived from the verified, single-use token binding, never
+from the URL.
 
 ### Connection flow
 
 ```
 Frontend (useNotifications)       Backend
    |                                  |
-   |── GET /stream?token=<jwt> ──────>|── verifyToken()
-   |                                  |── userId from token
+   |── GET /stream?token=<sseToken> ->│── verifyToken(token, "sse")
+   |                                  |── consumeSseToken(jti)  (single-use)
+   |                                  |── userId from consumed binding
    |                                  |── clients.set(userId, res)
+   |                                  |── audit log SSE_CONNECTED
    |<── EventStream ─────────────────|
    |                                  |
    |  onmessage                       |
@@ -536,7 +553,7 @@ All keys are prefixed with `focura:` to avoid collisions.
 | `focura:lockout:attempts:<email>`  | 15 min    | Failed login attempt counter   |
 | `focura:lockout:locked:<email>`    | 15 min    | Account lockout flag           |
 | `focura:csrf:<sessionId>`          | 30 min    | CSRF token per session         |
-| `focura:sse:token:<userId>`        | 5 min     | SSE connection auth token      |
+| `focura:sse:<jti>`                 | 30s       | Single-use SSE token binding   |
 | `focura:db:pool:metrics`           | 10s       | Database connection pool stats |
 
 \* Index members are updated on token store/rotate/revoke; key is removed on revoke-all.
@@ -660,7 +677,7 @@ To rotate RSA keys (e.g. every 90 days or after a breach):
 | Security headers                | CSP, HSTS, X-Frame-Options, etc.            |
 | RBAC                            | 5 roles, 18 granular permissions            |
 | Session timeouts                | 30-min inactivity, 7-day absolute           |
-| SSE security                    | Token verified server-side, 5 conns/user max |
+| SSE security                    | 30s single-use token, atomic consume, 5 conns/user max |
 
 ---
 **Last Updated**: July 27, 2026

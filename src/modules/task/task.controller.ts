@@ -129,7 +129,16 @@ export const updateTask = asyncHandler(async (req: AuthRequest, res: Response) =
 
   const task = await TaskMutation.updateTask(
     req.params.id, req.user!.id, parsed.data,
-    async ({ task, oldStatus, newStatus }) => {
+    async ({ task, oldStatus, newStatus, addedAssigneeIds = [] }) => {
+      // Notify people who were newly assigned through this edit (re-assign / add assignee)
+      if (addedAssigneeIds.length > 0) {
+        void TaskNotifications.notifyAddedAssignees({
+          taskId:    task.id,
+          taskTitle: task.title,
+          addedIds:  addedAssigneeIds,
+          updaterId: req.user!.id,
+        });
+      }
       if (newStatus === 'COMPLETED' && oldStatus && oldStatus !== 'COMPLETED') {
         void TaskNotifications.notifyTaskCompleted({ taskId: task.id, taskTitle: task.title, userId: req.user!.id });
       }

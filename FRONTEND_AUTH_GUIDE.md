@@ -38,7 +38,8 @@ Browser (React)            Next.js (NextAuth)           Express Backend
       │                          │                            │── 3. Verify HMAC
       │                          │                            │── 4. Sign RS256 JWTs
       │                          │<── 5. { accessToken,       │
-      │                          │       refreshToken }       │
+      │                          │       refreshToken,        │
+      │                          │       sseToken }           │
       │<── 6. NextAuth Session ──│   (stored in HTTP-only     │
       │    (HTTP-only cookie)    │    NextAuth JWT cookie)    │
       │                          │                            │
@@ -173,7 +174,7 @@ The login flow is a two-step process: NextAuth authenticates the user, then the 
    b. HMAC signature matches
    c. User exists in database
    d. Email is verified (or auto-verifies on first exchange)
-5. Backend returns: { accessToken, refreshToken, accessTokenExpiry, refreshTokenExpiry }
+5. Backend returns: { accessToken, refreshToken, sseToken, accessTokenExpiry, refreshTokenExpiry }
 6. NextAuth stores tokens in HTTP-only JWT cookie
 7. Browser receives NextAuth session cookie
 ```
@@ -233,6 +234,7 @@ Content-Type: application/json
   "success": true,
   "accessToken": "eyJhbGciOiJSUzI1NiIs...",
   "refreshToken": "eyJhbGciOiJSUzI1NiIs...",
+  "sseToken": "eyJhbGciOiJSUzI1NiIs...",  // 30s, single-use — for the notification stream
   "accessTokenExpiry": 1719877443123,
   "refreshTokenExpiry": 1720481343123
 }
@@ -370,6 +372,7 @@ Content-Type: application/json
   "success": true,
   "accessToken": "eyJhbGciOiJSUzI1NiIs...(new)",
   "refreshToken": "eyJhbGciOiJSUzI1NiIs...(new)",
+  "sseToken": "eyJhbGciOiJSUzI1NiIs...(new)",  // fresh single-use token for SSE reconnects
   "accessTokenExpiry": 1719877443123,
   "refreshTokenExpiry": 1720481343123
 }
@@ -412,9 +415,10 @@ async function attemptTokenRefresh(): Promise<boolean> {
       refreshToken: getRefreshToken(),
     });
 
-    const { accessToken, refreshToken, accessTokenExpiry } = response.data;
+    const { accessToken, refreshToken, sseToken, accessTokenExpiry } = response.data;
     storeAccessToken(accessToken);
     storeRefreshToken(refreshToken);
+    storeSseToken(sseToken);   // latest single-use token for SSE reconnects
     storeAccessExpiry(accessTokenExpiry);
     return true;
   } catch (error) {
@@ -682,32 +686,36 @@ async function refreshCsrfToken(): Promise<string | null> {
 
 ### Authentication
 
-SSE connections are authenticated via a **query parameter** because `EventSource` doesn't support custom headers.
+SSE connections are authenticated via a **query parameter** because `EventSource` doesn't support custom headers. The token is a **short-lived, single-use SSE token** (`sseToken`, 30 seconds) — never the 15-minute access token. Putting the access token in a URL would leak it into proxy logs and browser history.
 
 ```
-GET /api/v1/notifications/stream?token=<accessToken>
+GET /api/v1/notifications/stream?token=<sseToken>
 ```
 
-**Important:** The access token used for SSE is a **regular access token** (15-minute expiry). Some implementations use a short-lived SSE-specific token (30 seconds), but the standard flow uses the normal access token.
+**Important:** `sseToken` is returned by `/auth/exchange` and every `/auth/refresh`. It is single-use: each token opens exactly one stream, then is consumed. When the stream reconnects, use the **latest** `sseToken` from the session (reconnect when it rotates).
 
 ### Security Model
 
 ```
-Client sends:  GET /stream?token=<accessToken>
-Backend does:  verifyToken(token) → extracts userId from JWT
-               clients.set(userId, res)  ← userId from token ONLY
+Client sends:  GET /stream?token=<sseToken>
+Backend does:  verifyToken(token, "sse")  → rejects access/refresh tokens
+               consumeSseToken(jti)        → atomic single-use consume
+               userId from consumed binding ← bound to user at issue time
+               clients.set(userId, res)     ← userId from token ONLY
 ```
 
-The `userId` in the URL is **never trusted**. The backend always derives `userId` from the cryptographically verified token. A user cannot subscribe to another user's notification stream.
+The `userId` in the URL is **never trusted**. The backend always derives `userId` from the verified, single-use token binding. A user cannot subscribe to another user's notification stream.
 
 ### Connection Flow
 
 ```
 Frontend (useNotifications)          Backend
       │                                  │
-      │── GET /stream?token=<jwt> ──────>│── verifyToken()
-      │                                  │── userId from token
+      │── GET /stream?token=<sseToken> ->│── verifyToken(token, "sse")
+      │                                  │── consumeSseToken(jti) (single-use)
+      │                                  │── userId from consumed binding
       │                                  │── clients.set(userId, res)
+      │                                  │── audit log SSE_CONNECTED
       │<── EventStream ─────────────────│
       │                                  │
       │  onmessage                       │
@@ -721,7 +729,8 @@ Frontend (useNotifications)          Backend
 
 - **Heartbeat:** Server sends `: heartbeat` every 25 seconds
 - **Auto-reconnect:** If connection drops, reconnect after 5 seconds
-- **Token rotation:** If the access token rotates during a refresh, the SSE connection should be re-established with the new token
+- **Token rotation:** Reconnect whenever a **fresh `sseToken`** arrives (exchange or refresh) — the old token is consumed/expired by then
+- **401 on the stream:** means the token was consumed, expired, or invalid — reconnect with the newest `sseToken` (trigger a refresh if needed)
 - **One connection per user:** New connections replace previous ones
 - **Retry hint:** Server sends `X-SSE-Retry-After: 30` header suggesting reconnect interval
 
@@ -740,9 +749,9 @@ The backend provides these delivery guarantees:
 ### Implementation Pattern
 
 ```typescript
-function connectSSE(accessToken: string, onNotification: (data: any) => void) {
+function connectSSE(sseToken: string, onNotification: (data: any) => void) {
   const eventSource = new EventSource(
-    `${API_URL}/api/v1/notifications/stream?token=${accessToken}`
+    `${API_URL}/api/v1/notifications/stream?token=${sseToken}`
   );
 
   eventSource.onmessage = (event) => {
@@ -763,8 +772,8 @@ function connectSSE(accessToken: string, onNotification: (data: any) => void) {
 
   eventSource.onerror = () => {
     eventSource.close();
-    // Reconnect after 5 seconds
-    setTimeout(() => connectSSE(accessToken, onNotification), 5000);
+    // Reconnect after 5 seconds with the latest sseToken
+    setTimeout(() => connectSSE(getLatestSseToken(), onNotification), 5000);
   };
 
   return eventSource;
@@ -777,12 +786,12 @@ Always close the SSE connection on component unmount:
 
 ```typescript
 useEffect(() => {
-  const eventSource = connectSSE(accessToken, handleNotification);
+  const eventSource = connectSSE(sseToken, handleNotification);
 
   return () => {
     eventSource.close();
   };
-}, [accessToken]);
+}, [sseToken]);
 ```
 
 ### Complete Notification Hook Example
@@ -805,7 +814,7 @@ interface Notification {
   } | null;
 }
 
-export function useNotifications(accessToken: string | null) {
+export function useNotifications(sseToken: string | null) {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isConnected, setIsConnected] = useState(false);
@@ -816,9 +825,9 @@ export function useNotifications(accessToken: string | null) {
   }, []);
 
   useEffect(() => {
-    if (!accessToken) return;
+    if (!sseToken) return;
 
-    const eventSource = connectSSE(accessToken, handleNotification);
+    const eventSource = connectSSE(sseToken, handleNotification);
 
     eventSource.onopen = () => {
       setIsConnected(true);
@@ -832,7 +841,7 @@ export function useNotifications(accessToken: string | null) {
       eventSource.close();
       setIsConnected(false);
     };
-  }, [accessToken, handleNotification]);
+  }, [sseToken, handleNotification]);
 
   const markAsRead = async (notificationId: string) => {
     await fetch(`${API_URL}/api/v1/notifications/${notificationId}/read`, {
@@ -936,6 +945,8 @@ GET /api/v1/notifications/metrics
 | `401` | `NO_TOKEN` | No `Authorization` header or not `Bearer` scheme | Redirect to login |
 | `401` | `TOKEN_EXPIRED` | Access token has expired | Attempt refresh, then redirect to login |
 | `401` | `INVALID_TOKEN` | JWT signature or claims invalid | Redirect to login |
+| `401` | `MISSING_TOKEN` | SSE stream called without a `token` query param | Reconnect with the latest `sseToken` |
+| `401` | `TOKEN_REUSED` | SSE token already consumed, expired, or never issued | Reconnect with a fresh `sseToken` |
 | `401` | `TOKEN_VERSION_MISMATCH` | Token version != 1 (global invalidation) | Redirect to login |
 | `401` | `INVALID_TOKEN_TYPE` | Used refresh token as access token (code bug) | Fix code |
 | `401` | `TOKEN_REVOKED` | Token was revoked (logout, ban, etc.) | Redirect to login |
@@ -944,7 +955,7 @@ GET /api/v1/notifications/metrics
 | `401` | `PROOF_EXPIRED` | Exchange proof timestamp > 60s old | Retry exchange with fresh timestamp |
 | `401` | `INVALID_PROOF` | HMAC signature mismatch | Check `NEXTAUTH_SECRET` matches |
 | `401` | `SESSION_HIJACK_DETECTED` | Device fingerprint or IP changed suspiciously | Clear all state, redirect to login |
-| `401` | `SESSION_TIMEOUT` | Inactivity (30 min) or absolute (7 day) timeout | Redirect to login |
+| `401` | `SESSION_TIMEOUT` | Inactivity or absolute (7 day) timeout | Redirect to login |
 | `401` | `NOT_AUTHENTICATED` | Auth middleware not applied or user not attached | Code bug — ensure `authenticate` middleware |
 | `403` | `EMAIL_NOT_VERIFIED` | User's email is not verified | Show "verify your email" page |
 | `403` | `ACCOUNT_BANNED` | User account is suspended | Show ban message, clear state |
@@ -1061,7 +1072,7 @@ function handle429(retryAfter: number): void {
 |-----------|-------|
 | Max concurrent sessions per user | **5** |
 | Session TTL | **7 days** |
-| Inactivity timeout | **30 minutes** |
+| Inactivity timeout | **7 days** (aligned with absolute — users stay logged in while active) |
 | Absolute timeout | **7 days** |
 
 ### How Sessions Work
@@ -1088,7 +1099,7 @@ The backend validates that each request comes from the same device and a reasona
 
 ```typescript
 // The backend returns 401 with code "SESSION_TIMEOUT" when:
-// - Inactivity timeout (30 min) exceeded
+// - Inactivity timeout (7 days, aligned with absolute) exceeded
 // - Absolute timeout (7 days) exceeded
 
 api.interceptors.response.use(
@@ -1113,7 +1124,7 @@ api.interceptors.response.use(
 | User logs out from all devices | ALL sessions revoked |
 | Device fingerprint changes | ALL refresh tokens revoked (hijack detection) |
 | IP changes within 5 min | Current request rejected |
-| 30 min inactivity | Session expires |
+| 7 days inactivity (no API/heartbeat traffic) | Session expires |
 | 7 days absolute | Session expires |
 | More than 5 concurrent sessions | Oldest session evicted |
 | Account banned | All sessions invalid (cache invalidated) |
@@ -1416,22 +1427,22 @@ async function attemptTokenRefresh(): Promise<boolean> {
 
 ### Pitfall 3: SSE Connection Dies After Token Refresh
 
-**Symptom:** Notifications stop arriving after access token is refreshed
+**Symptom:** Notifications stop arriving after a refresh
 
-**Cause:** SSE connection was established with old token; new token not propagated
+**Cause:** The `sseToken` is single-use — the stream was opened with a token that has since been consumed or expired
 
-**Fix:** Reconnect SSE when token changes:
+**Fix:** Reconnect SSE whenever a **fresh `sseToken`** arrives (from exchange or refresh):
 
 ```typescript
 useEffect(() => {
-  if (!accessToken) return;
+  if (!sseToken) return;
 
-  const eventSource = connectSSE(accessToken, handleNotification);
+  const eventSource = connectSSE(sseToken, handleNotification);
 
   return () => {
     eventSource.close();
   };
-}, [accessToken]); // Reconnect when token changes
+}, [sseToken]); // Reconnect when the token rotates
 ```
 
 ### Pitfall 4: Exchange Proof Expired
@@ -1528,8 +1539,8 @@ export default async function handler(req, res) {
 
 | Method | Path | Body | Response |
 |--------|------|------|----------|
-| `POST` | `/api/v1/auth/exchange` | `{ userId, email, role, sessionId, timestamp, signature }` | `{ success, accessToken, refreshToken, accessTokenExpiry, refreshTokenExpiry }` |
-| `POST` | `/api/v1/auth/refresh` | `{ refreshToken }` | `{ success, accessToken, refreshToken, accessTokenExpiry, refreshTokenExpiry }` |
+| `POST` | `/api/v1/auth/exchange` | `{ userId, email, role, sessionId, timestamp, signature }` | `{ success, accessToken, refreshToken, sseToken, accessTokenExpiry, refreshTokenExpiry }` |
+| `POST` | `/api/v1/auth/refresh` | `{ refreshToken }` | `{ success, accessToken, refreshToken, sseToken, accessTokenExpiry, refreshTokenExpiry }` |
 | `POST` | `/api/v1/auth/logout` | `{ logoutAll? }` | `{ success, message }` |
 
 ### Auth Endpoints (Auth Required)
@@ -1550,7 +1561,7 @@ export default async function handler(req, res) {
 
 | Method | Path | Auth |
 |--------|------|------|
-| `GET` | `/api/v1/notifications/stream?token=<accessToken>` | Query param |
+| `GET` | `/api/v1/notifications/stream?token=<sseToken>` | Query param (30s, single-use) |
 
 ### Complete Header Reference
 

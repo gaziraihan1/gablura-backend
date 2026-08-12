@@ -4,6 +4,7 @@ import { SubtaskQuery }    from './subtask.query.js';
 import { SubtaskMutation } from './subtask.mutation.js';
 import { SubtaskActivity } from './subtask.activity.js';
 import { notifyUser }      from '../../notification/index.js';
+import { TaskNotifications } from '../task.notifications.js';
 import { asyncHandler, ValidationError } from '../../../errors/index.js';
 import {
   createSubtaskSchema,
@@ -57,6 +58,14 @@ export const createSubtask = asyncHandler(async (req: AuthRequest, res: Response
           });
         }
       }
+
+      // Keep the parent task's creator + assignees in the loop when a new
+      // subtask lands (skip the person who created it).
+      void TaskNotifications.notifySubtaskCreated({
+        parentTaskId,
+        subtaskTitle: subtask.title,
+        creatorId:    req.user!.id,
+      });
     },
   );
 

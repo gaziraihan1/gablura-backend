@@ -199,7 +199,7 @@ function isProviderRateLimit(error: unknown): boolean {
     return true;
   }
   const message = error instanceof Error ? error.message : String(error);
-  return /quota exceeded|rate limit|too many requests|resource_exhausted|\"code\"\s*:\s*429/i.test(
+  return /quota exceeded|rate limit|too many requests|resource_exhausted|"code"\s*:\s*429/i.test(
     message,
   );
 }

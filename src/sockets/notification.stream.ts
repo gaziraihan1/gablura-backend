@@ -3,6 +3,9 @@ import { getSubscriber } from "../lib/redis/redis.pubsub.js";
 import type { SSEPayload } from "../lib/sse/sse.channels.js";
 import { userChannel } from "../lib/sse/sse.channels.js";
 import { verifyToken } from "../lib/auth/backendToken.js";
+import { consumeSseToken } from "../lib/auth/tokenRevocation.js";
+import { auditLog } from "../lib/auth/auditLog.js";
+import { getClientIp } from "../lib/auth/sessionBinding.js";
 import { getRedisClient } from "../redis/redis.client.js";
 
 // ─── Configuration ───────────────────────────────────────────────────────────
@@ -236,7 +239,13 @@ if (!isTest) {
     for (const [, clients] of localClients) {
       for (const res of clients) {
         try {
-          res.write(": heartbeat\n\n");
+          // Data-carrying heartbeat (not a comment-only line): browsers never
+          // fire onmessage for ": comment" lines, so a comment heartbeat would
+          // let the client's 60s watchdog think the stream is stale and close
+          // it mid-lifetime — causing a reconnect gap that misses publishes.
+          // A JSON "heartbeat" event resets the client watchdog and is ignored
+          // by its handler (no notification id).
+          res.write(`data: ${JSON.stringify({ type: "heartbeat" })}\n\n`);
         } catch {
           // cleaned up on next removeClient
         }
@@ -254,18 +263,52 @@ export async function notificationStreamHandler(
   const token = req.query.token as string | undefined;
 
   if (!token) {
-    res.status(401).json({ success: false, message: "Missing token" });
+    res.status(401).json({
+      success: false,
+      message: "Missing token",
+      code: "MISSING_TOKEN",
+    });
     return;
   }
 
-  let userId: string;
+  // Only short-lived, single-use SSE tokens are accepted here. Regular access
+  // tokens (15 min) must never end up in URLs, proxy logs, or browser history
+  // — verifyToken rejects any token whose `type` claim is not "sse".
+  let payload: ReturnType<typeof verifyToken>;
   try {
-    const payload = verifyToken(token);
-    userId = payload.id;
+    payload = verifyToken(token, "sse");
   } catch {
-    res.status(401).json({ success: false, message: "Invalid or expired token" });
+    res.status(401).json({
+      success: false,
+      message: "Invalid or expired token",
+      code: "INVALID_TOKEN",
+    });
     return;
   }
+
+  const userId = payload.id;
+
+  // Single-use enforcement: the token's jti is atomically consumed from Redis
+  // so it can open exactly one stream. A null result means the token was
+  // already used (replay), expired, or never issued — reject it. This check is
+  // deliberately fail-closed: if Redis is unreachable we cannot prove the
+  // token is unused, so no stream is opened.
+  const boundUserId = await consumeSseToken(payload.jti);
+  if (boundUserId !== userId) {
+    res.status(401).json({
+      success: false,
+      message: "Token already used or expired",
+      code: "TOKEN_REUSED",
+    });
+    return;
+  }
+
+  auditLog("SSE_CONNECTED", {
+    userId,
+    jti: payload.jti,
+    ip: getClientIp(req),
+    userAgent: req.headers["user-agent"],
+  });
 
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache, no-transform");
@@ -292,7 +335,14 @@ export async function notificationStreamHandler(
     })}\n\n`,
   );
 
-  req.on("close", () => removeClient(userId, res));
+  req.on("close", () => {
+    removeClient(userId, res);
+    auditLog("SSE_DISCONNECTED", {
+      userId,
+      ip: getClientIp(req),
+      userAgent: req.headers["user-agent"],
+    });
+  });
 }
 
 // ─── Metrics & Monitoring ─────────────────────────────────────────────────────

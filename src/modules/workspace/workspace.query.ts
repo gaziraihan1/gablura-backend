@@ -1,6 +1,7 @@
 import { prisma } from "../../lib/prisma.js";
 import {
   workspaceListInclude,
+  workspacePublicListInclude,
   workspaceDetailInclude,
 } from "./workspace.selects.js";
 import { WorkspaceAccess } from "./workspace.access.js";
@@ -168,6 +169,36 @@ if (workspace.deletedAt) throw new ForbiddenError("This workspace has been suspe
     await CacheClient.set(cacheKey, stats, CACHE_TTL.WORKSPACE_STATS);
 
     return stats;
+  },
+
+  async getPublicWorkspaces(params: {
+    search?: string;
+    page?: number;
+    pageSize?: number;
+  }) {
+    const page = Math.max(1, params.page ?? 1);
+    const pageSize = Math.min(50, Math.max(1, params.pageSize ?? 12));
+    const search = params.search?.trim();
+
+    const where = {
+      isPublic: true,
+      deletedAt: null,
+      ...(search ? { name: { contains: search, mode: "insensitive" as const } } : {}),
+    };
+
+    const [items, total] = await Promise.all([
+      prisma.workspace.findMany({
+        where,
+        // Slim public shape — no member roster, no emails
+        include: workspacePublicListInclude,
+        orderBy: { updatedAt: "desc" },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      prisma.workspace.count({ where }),
+    ]);
+
+    return { items, total, page, pageSize };
   },
 
   async getInvitationByToken(token: string) {

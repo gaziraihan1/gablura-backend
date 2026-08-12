@@ -59,6 +59,21 @@ export const createWorkspace = asyncHandler(
   },
 );
 
+export const getPublicWorkspaces = asyncHandler(
+  async (req: AuthRequest, res: Response) => {
+    const search = typeof req.query.search === "string" ? req.query.search : "";
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const pageSize = Math.min(50, Math.max(1, Number(req.query.limit) || 12));
+
+    const result = await WorkspaceQuery.getPublicWorkspaces({
+      search,
+      page,
+      pageSize,
+    });
+    res.json({ success: true, data: result });
+  },
+);
+
 export const getWorkspace = asyncHandler(
   async (req: AuthRequest, res: Response) => {
     const { slug } = req.params;

@@ -1,7 +1,5 @@
 import {
   notifyUsers,
-  notifyTaskAssignees,
-  notifyMentions,
 } from '../notification/index.js';
 import { prisma } from '../../lib/prisma.js';
 import type { NotificationType } from '@prisma/client';
@@ -72,61 +70,93 @@ export const TaskNotifications = {
   async notifyTaskCompleted(params: {
     taskId:    string;
     taskTitle: string;
-    userId:    string;
+    userId:    string; // who completed it
   }): Promise<void> {
     try {
-      notifyTaskAssignees({
-        taskId:        params.taskId,
-        senderId:      params.userId,
-        type:          'TASK_COMPLETED',
-        title:         'Task Completed',
-        message:       `Task "${params.taskTitle}" was completed`,
-        excludeUserId: params.userId,
-      }).catch((err) => console.error('[TaskNotifications] Failed to notify task completion:', err));
+      const task = await prisma.task.findUnique({
+        where: { id: params.taskId },
+        select: {
+          createdById: true,
+          assignees: { select: { userId: true } },
+        },
+      });
+      if (!task) return;
+
+      // Everyone who should know the task is done: the creator AND all
+      // assignees (excluding the person who completed it), limited to users
+      // who have notifications enabled.
+      const targets = new Set<string>([task.createdById]);
+      for (const a of task.assignees) targets.add(a.userId);
+      targets.delete(params.userId);
+      if (targets.size === 0) return;
+
+      const recipients = await prisma.user.findMany({
+        where: { id: { in: Array.from(targets) }, notifications: true },
+        select: { id: true },
+      });
+      const recipientIds = recipients.map((u) => u.id);
+      if (recipientIds.length === 0) return;
+
+      await notifyUsers(
+        recipientIds.map((userId) => ({
+          userId,
+          senderId:  params.userId,
+          type:      'TASK_COMPLETED' as NotificationType,
+          title:     'Task Completed',
+          message:   `Task "${params.taskTitle}" was completed`,
+          actionUrl: `/dashboard/tasks/${params.taskId}`,
+        })),
+      );
     } catch (error) {
       console.error('Failed to notify task completion:', error);
     }
   },
 
-  async notifyNewComment(params: {
-    taskId:        string;
-    taskTitle:     string;
-    commenterId:   string;
-    commenterName: string;
+  /**
+   * Notify a subtask's parent-task stakeholders (creator + assignees) that a
+   * new subtask was created, so the parent's people stay in the loop. The
+   * subtask's own assignee is notified separately by the controller.
+   */
+  async notifySubtaskCreated(params: {
+    parentTaskId: string;
+    subtaskTitle: string;
+    creatorId:    string;
   }): Promise<void> {
     try {
-      notifyTaskAssignees({
-        taskId:        params.taskId,
-        senderId:      params.commenterId,
-        type:          'TASK_COMMENTED',
-        title:         'New Comment',
-        message:       `${params.commenterName} commented on "${params.taskTitle}"`,
-        excludeUserId: params.commenterId,
-      }).catch((err) => console.error('[TaskNotifications] Failed to notify new comment:', err));
-    } catch (error) {
-      console.error('Failed to notify new comment:', error);
-    }
-  },
+      const task = await prisma.task.findUnique({
+        where: { id: params.parentTaskId },
+        select: {
+          title:       true,
+          createdById: true,
+          assignees: { select: { userId: true } },
+        },
+      });
+      if (!task) return;
 
-  async notifyCommentMentions(params: {
-    taskId:      string;
-    taskTitle:   string;
-    commentText: string;
-    workspaceId: string;
-    senderId:    string;
-    senderName:  string;
-  }): Promise<void> {
-    try {
-      notifyMentions({
-        text:        params.commentText,
-        workspaceId: params.workspaceId,
-        senderId:    params.senderId,
-        senderName:  params.senderName,
-        context:     `task "${params.taskTitle}"`,
-        actionUrl:   `/dashboard/tasks/${params.taskId}`,
-      }).catch((err) => console.error('[TaskNotifications] Failed to notify comment mentions:', err));
+      const targets = new Set<string>([task.createdById]);
+      for (const a of task.assignees) targets.add(a.userId);
+      targets.delete(params.creatorId);
+      if (targets.size === 0) return;
+
+      const recipients = await prisma.user.findMany({
+        where: { id: { in: Array.from(targets) }, notifications: true },
+        select: { id: true },
+      });
+      const recipientIds = recipients.map((u) => u.id);
+      if (recipientIds.length === 0) return;
+
+      await notifyUsers(
+        recipientIds.map((userId) => ({
+          userId,
+          senderId:  params.creatorId,
+          type:      'TASK_COMMENTED' as NotificationType,
+          title:     'New Subtask',
+          message:   `A subtask "${params.subtaskTitle}" was added to "${task.title}"`,
+          actionUrl: `/dashboard/tasks/${params.parentTaskId}`,
+        })),
+      );
     } catch (error) {
-      console.error('Failed to notify comment mentions:', error);
+      console.error('Failed to notify parent task of new subtask:', error);
     }
   },
 };

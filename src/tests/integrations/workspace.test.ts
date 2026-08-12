@@ -248,6 +248,68 @@ describe("GET /api/v1/workspaces/:slug", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// GET /api/v1/workspaces/public  (public workspace directory)
+// ─────────────────────────────────────────────────────────────────────────────
+describe("GET /api/v1/workspaces/public", () => {
+  it("200 — lists only public workspaces, paginated", async () => {
+    const { workspace: publicWs } = await createWorkspaceWithOwner({}, { isPublic: true });
+    await createWorkspaceWithOwner({}, { isPublic: false });
+    const viewer = await createUser();
+
+    const res = await request(app)
+      .get("/api/v1/workspaces/public")
+      .set(authHeaders(viewer));
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.total).toBeGreaterThanOrEqual(1);
+    expect(res.body.data.page).toBe(1);
+    expect(res.body.data.items.map((w: any) => w.id)).toContain(publicWs.id);
+
+    // A newly created private workspace must never appear in the directory
+    const { workspace: privateWs } = await createWorkspaceWithOwner({}, { isPublic: false });
+    const confirmRes = await request(app)
+      .get("/api/v1/workspaces/public?limit=50")
+      .set(authHeaders(viewer));
+    const confirmedIds = confirmRes.body.data.items.map((w: any) => w.id);
+    expect(confirmedIds).not.toContain(privateWs.id);
+  });
+
+  it("200 — filters public workspaces by name (case-insensitive)", async () => {
+    await createWorkspaceWithOwner({}, { name: "Alpha Team Space", isPublic: true });
+    await createWorkspaceWithOwner({}, { name: "Beta Squad", isPublic: true });
+    const viewer = await createUser();
+
+    const res = await request(app)
+      .get("/api/v1/workspaces/public?search=alpha")
+      .set(authHeaders(viewer));
+
+    expect(res.status).toBe(200);
+    const names = res.body.data.items.map((w: any) => w.name.toLowerCase());
+    expect(names.some((n: string) => n.includes("alpha"))).toBe(true);
+    expect(names.some((n: string) => n.includes("beta"))).toBe(false);
+  });
+
+  it("200 — returns empty list when no public workspaces exist", async () => {
+    await createWorkspaceWithOwner({}, { isPublic: false });
+    const viewer = await createUser();
+
+    const res = await request(app)
+      .get("/api/v1/workspaces/public")
+      .set(authHeaders(viewer));
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.items).toEqual([]);
+    expect(res.body.data.total).toBe(0);
+  });
+
+  it("401 — requires authentication", async () => {
+    const res = await request(app).get("/api/v1/workspaces/public");
+    expect(res.status).toBe(401);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // GET /api/v1/workspaces/:slug/overview
 // ─────────────────────────────────────────────────────────────────────────────
 describe("GET /api/v1/workspaces/:slug/overview", () => {

@@ -3,7 +3,8 @@ import request from "supertest";
 import app from "../../app.js";
 import { prisma } from "../../lib/prisma.js";
 import { createUser } from "../factories/index.js";
-import { authWithCsrfHeaders } from "../helpers/auth.js";
+import { authHeaders, authWithCsrfHeaders } from "../helpers/auth.js";
+import { verifyToken } from "../../lib/auth/backendToken.js";
 
 const BASE = "/api/v1/notifications";
 
@@ -44,5 +45,26 @@ describe("Notification API", () => {
     expect(res.status).toBe(200);
     const updated = await prisma.notification.findUnique({ where: { id: notif.id } });
     expect(updated?.read).toBe(true);
+  });
+
+  it("GET /sse-token — mints a fresh single-use sse token bound to the user", async () => {
+    const user = await createUser();
+
+    const res = await request(app)
+      .get(`${BASE}/sse-token`)
+      .set(authHeaders(user));
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(typeof res.body.sseToken).toBe("string");
+
+    // It is a real sse-type token for this user (usable on the stream)
+    const decoded = verifyToken(res.body.sseToken, "sse");
+    expect(decoded.id).toBe(user.id);
+  });
+
+  it("GET /sse-token — 401 without authentication", async () => {
+    const res = await request(app).get(`${BASE}/sse-token`);
+    expect(res.status).toBe(401);
   });
 });

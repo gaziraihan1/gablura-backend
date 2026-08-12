@@ -53,11 +53,53 @@ export function looksLikeServerToServerRequest(req: Request): boolean {
   return !req.headers["accept-language"] && !req.headers["accept-encoding"];
 }
 
+/**
+ * Reduce a user-agent to stable, version-insensitive device signals
+ * (browser family + OS family + mobile flag) so browser updates, extension
+ * UA tweaks, or mobile/desktop emulation toggles never invalidate a session
+ * fingerprint on their own.
+ */
+export function normalizeUserAgent(userAgent: string): string {
+  const ua = userAgent || '';
+  const mobile = /Mobile|Android|iPhone|iPad|iPod/i.test(ua);
+  const browser = /Edg\//i.test(ua)
+    ? 'Edge'
+    : /OPR\/|Opera/i.test(ua)
+      ? 'Opera'
+      : /Firefox\/|FxiOS/i.test(ua)
+        ? 'Firefox'
+        : /CriOS\/|Chrome\//i.test(ua)
+          ? 'Chrome'
+          : /Safari\//i.test(ua)
+            ? 'Safari'
+            : 'Other';
+  const os = /Android/i.test(ua)
+    ? 'Android'
+    : /iPhone|iPad|iPod/i.test(ua)
+      ? 'iOS'
+      : /Windows/i.test(ua)
+        ? 'Windows'
+        : /Macintosh|Mac OS X/i.test(ua)
+          ? 'macOS'
+          : /Linux/i.test(ua)
+            ? 'Linux'
+            : 'Other';
+  return `${browser}|${os}|${mobile ? 'mobile' : 'desktop'}`;
+}
+
+/** First language subtag of Accept-Language (e.g. "en-US,en;q=0.9" → "en"). */
+function primaryLanguage(acceptLanguage: string): string {
+  const first = (acceptLanguage || '').split(',')[0].trim();
+  return first ? first.split('-')[0].toLowerCase() : '';
+}
+
 export function generateDeviceFingerprint(req: Request): string {
+  // Device signals only — accept-encoding is intentionally excluded: it varies
+  // with proxy/compression negotiation and is not device-specific, so hashing
+  // it produced false DEVICE_MISMATCH logouts.
   const components = [
-    req.headers['user-agent'] || '',
-    req.headers['accept-language'] || '',
-    req.headers['accept-encoding'] || '',
+    normalizeUserAgent(req.headers['user-agent'] || ''),
+    primaryLanguage(req.headers['accept-language'] || ''),
   ].join('|');
 
   return crypto

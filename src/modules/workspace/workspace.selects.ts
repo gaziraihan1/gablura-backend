@@ -18,6 +18,16 @@ export const workspaceListInclude = {
   _count: { select: { projects: true, members: true } },
 } as const;
 
+/**
+ * Slim shape for the public workspace directory: workspace metadata + owner
+ * name/avatar + counts, but NO member roster and no member emails, so a
+ * browse-all endpoint never leaks private contact details.
+ */
+export const workspacePublicListInclude = {
+  owner: { select: { id: true, name: true, image: true } },
+  _count: { select: { projects: true, members: true } },
+} as const;
+
 export const workspaceDetailInclude = {
   owner: { select: ownerSelect },
   members: {

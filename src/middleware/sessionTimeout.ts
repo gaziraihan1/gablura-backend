@@ -7,7 +7,10 @@ import { getRedisClient } from '../redis/redis.client.js';
 import { AuthRequest } from './auth.js';
 
 // Configuration (in seconds)
-const INACTIVITY_TIMEOUT = parseInt(process.env.SESSION_INACTIVITY_TIMEOUT || '1800', 10); // 30 min
+// Inactivity timeout is aligned with the absolute session lifetime (7 days) so
+// users stay logged in while they are actively on the site; only the absolute
+// cap ends the session. Override via env if a shorter idle window is desired.
+const INACTIVITY_TIMEOUT = parseInt(process.env.SESSION_INACTIVITY_TIMEOUT || '604800', 10); // 7 days
 const ABSOLUTE_TIMEOUT = parseInt(process.env.SESSION_ABSOLUTE_TIMEOUT || '604800', 10); // 7 days
 
 const SESSION_CREATED_PREFIX = 'session:created:';
@@ -93,7 +96,10 @@ export async function isSessionInactive(sessionId: string): Promise<boolean> {
     return exists !== 1; // If key doesn't exist, session is inactive
   } catch (error) {
     console.error('❌ Failed to check session inactivity:', error);
-    return true; // Assume inactive on error (safe default)
+    // Fail open: treat as ACTIVE when Redis is unavailable so a Redis blip never
+    // force-logs-out every authenticated user (isSessionTracked and the rest of
+    // the auth stack already fail open on Redis errors).
+    return false;
   }
 }
 

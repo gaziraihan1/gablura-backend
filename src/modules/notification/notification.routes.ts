@@ -4,6 +4,7 @@ import { authenticate } from "../../middleware/auth.js";
 import {
   getNotifications,
   getUnreadCount,
+  getSseToken,
   markAsRead,
   markAllAsRead,
   deleteNotification,
@@ -19,6 +20,9 @@ router.get("/stream", notificationStreamHandler);
 
 // ─── All other endpoints require Bearer auth ─────────────────
 router.use(authenticate);
+
+// ─── Mint a fresh 30s single-use token for the SSE stream ────
+router.get("/sse-token", getSseToken);
 
 // ─── Debug metrics endpoint (dev only) ──────────────────────────────────────
 if (process.env.NODE_ENV === "development") {

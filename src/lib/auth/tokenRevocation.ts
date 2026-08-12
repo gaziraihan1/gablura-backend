@@ -1,4 +1,5 @@
 import { getRedisClient } from "../../redis/redis.client.js";
+import { parseExpiry, SSE_TOKEN_EXPIRY } from "./backendToken.js";
 
 const refreshIndexKey = (userId: string) => `focura:refresh:index:${userId}`;
 const refreshTokenKey = (userId: string, jti: string) => `focura:refresh:${userId}:${jti}`;
@@ -111,7 +112,13 @@ export async function rotateRefreshToken(
 
 export async function storeSseToken(jti: string, userId: string): Promise<void> {
   try {
-    await getRedisClient().setex(`focura:sse:${jti}`, 30, userId);
+    // TTL is derived from the token's own expiry (30s) so the two can never
+    // drift apart when SSE_TOKEN_EXPIRY changes.
+    await getRedisClient().setex(
+      `focura:sse:${jti}`,
+      parseExpiry(SSE_TOKEN_EXPIRY) / 1000,
+      userId,
+    );
   } catch (err) {
     console.error("[TokenRevocation] Failed to store SSE token:", err);
   }
@@ -121,10 +128,18 @@ export async function consumeSseToken(jti: string): Promise<string | null> {
   try {
     const redis = getRedisClient();
     const key = `focura:sse:${jti}`;
-    const userId = await redis.get(key);
-    if (!userId) return null;
-    await redis.del(key);
-    return userId;
+    // Atomic get-and-delete via Lua: exactly ONE concurrent stream connection
+    // may consume the token. A naive get-then-del races — two replays could
+    // both observe the key before either deletes it. Single round-trip, no
+    // TOCTOU window, no extra commands.
+    const userId = await redis.eval(
+      `local v = redis.call("GET", KEYS[1])
+       if v then redis.call("DEL", KEYS[1]) end
+       return v`,
+      1,
+      key,
+    );
+    return typeof userId === "string" ? userId : null;
   } catch (err) {
     console.error("[TokenRevocation] Failed to consume SSE token:", err);
     return null;

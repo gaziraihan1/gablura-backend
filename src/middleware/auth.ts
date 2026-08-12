@@ -180,22 +180,55 @@ export const authenticate = async (
             });
           } else {
             const bindingValidation = validateSessionBinding(req, metadata);
+            const currentIp = getClientIp(req);
 
             if (!bindingValidation.valid) {
-              // Revoke all tokens, drop the cached auth result, and log the
-              // suspicious activity before erroring.
-              await revokeAllRefreshTokens(decoded.sub);
-              if (decoded.jti) {
-                await CacheClient.delete(CACHE_KEYS.authResult(decoded.jti));
+              // Same IP + different device fingerprint is almost always a
+              // legitimate device switch — DevTools mobile emulation, a
+              // browser update, or moving between browsers on the same
+              // machine — NOT a hijack. Re-bind the session to the current
+              // device instead of revoking every token (which force-logs-out
+              // the user mid-session). Only a device change from a DIFFERENT
+              // IP (a stolen token replayed from another network) is treated
+              // as a hijack.
+              //
+              // Security trade-off (deliberate): an attacker sharing the
+              // victim's network (same NAT) could replay a stolen refresh
+              // token and get a silent re-bind instead of a revocation. This
+              // is accepted because the real boundary remains the RS256
+              // tokens + HMAC exchange proof + rotation (device binding is a
+              // soft secondary signal, and runtime-style clients already
+              // bypass it). Every re-bind is recorded via the
+              // SESSION_REBOUND audit event for review.
+              const isSameIpDeviceChange =
+                bindingValidation.reason === "DEVICE_MISMATCH" &&
+                currentIp === metadata.ipAddress;
+
+              if (isSameIpDeviceChange) {
+                metadata.deviceId = generateDeviceFingerprint(req);
+                metadata.userAgent = req.headers["user-agent"] || "unknown";
+                auditLog("SESSION_REBOUND", {
+                  userId: decoded.sub,
+                  sessionId: decoded.sessionId,
+                  ip: currentIp,
+                  userAgent: metadata.userAgent,
+                });
+              } else {
+                // Genuine hijack — revoke all tokens, drop the cached auth
+                // result, and log the suspicious activity before erroring.
+                await revokeAllRefreshTokens(decoded.sub);
+                if (decoded.jti) {
+                  await CacheClient.delete(CACHE_KEYS.authResult(decoded.jti));
+                }
+                auditLog("SESSION_HIJACK_DETECTED", {
+                  userId: decoded.sub,
+                  sessionId: decoded.sessionId,
+                  reason: bindingValidation.reason,
+                  ip: currentIp,
+                  userAgent: req.headers["user-agent"],
+                });
+                return next(new SessionHijackError(bindingValidation.reason));
               }
-              auditLog("SESSION_HIJACK_DETECTED", {
-                userId: decoded.sub,
-                sessionId: decoded.sessionId,
-                reason: bindingValidation.reason,
-                ip: getClientIp(req),
-                userAgent: req.headers["user-agent"],
-              });
-              return next(new SessionHijackError(bindingValidation.reason));
             }
           }
 

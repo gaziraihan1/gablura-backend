@@ -21,6 +21,7 @@ export type AuditEventType =
   | "EMAIL_NOT_VERIFIED"
   // Session security events
   | "SESSION_BOUND"
+  | "SESSION_REBOUND"
   | "SESSION_HIJACK_DETECTED"
   | "SESSION_TIMEOUT"
   | "SESSION_REVOKED"
@@ -93,6 +94,7 @@ const SEVERITY: Record<AuditEventType, AuditEvent["severity"]> = {
   // Session security
   SESSION_HIJACK_DETECTED: "critical",
   SESSION_BOUND: "info",
+  SESSION_REBOUND: "info",
   SESSION_TIMEOUT: "info",
   MAX_SESSIONS_REACHED: "warn",
   SESSION_REVOKED: "info",

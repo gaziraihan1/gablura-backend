@@ -19,6 +19,7 @@ router.post('/invitations/:token/accept', WorkspaceController.acceptInvitation);
 
 router.get('/', WorkspaceController.getAllWorkspaces);
 router.post('/', requireWorkspaceCreationSlot, WorkspaceController.createWorkspace);
+router.get('/public', WorkspaceController.getPublicWorkspaces);
 router.get('/:slug/overview', WorkspaceController.getWorkspaceOverview);
 router.get('/:workspaceSlug/tasks', WorkspaceController.getWorkspaceTasks);
 router.get('/:slug', WorkspaceController.getWorkspace);

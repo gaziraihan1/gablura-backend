@@ -347,7 +347,7 @@ const server = app
     console.log(
       `🛡️  CSRF Protection: ENABLED (ioredis @ ${process.env.REDIS_URL ?? "redis://localhost:6379"})`,
     );
-    console.log(`📡 SSE: /api/v1/notifications/stream/:userId?token=`);
+    console.log(`📡 SSE: /api/v1/notifications/stream?token=<sseToken>`);
     console.log(
       `📅 Daily Tasks: /api/v1/daily-tasks (PRIMARY/SECONDARY prioritization)`,
     );

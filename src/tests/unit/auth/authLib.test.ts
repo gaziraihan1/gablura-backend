@@ -235,6 +235,11 @@ describe("auditLog", () => {
       "ROLE_CHANGED",
       "SUBSCRIPTION_CREATED",
       "SUBSCRIPTION_CANCELLED",
+      "SESSION_BOUND",
+      "SESSION_REBOUND",
+      "SESSION_TIMEOUT",
+      "SESSION_REVOKED",
+      "SESSIONS_REVOKED",
     ];
 
     for (const event of infoEvents) {
@@ -276,12 +281,32 @@ describe("sessionBinding", () => {
       );
     });
 
-    it("produces different fingerprint for different user-agent", () => {
+    it("produces different fingerprint for a different browser family", () => {
       const fp1 = generateDeviceFingerprint(
-        mockReq({ headers: { "user-agent": "A" } })
+        mockReq({ headers: { "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36" } })
       );
       const fp2 = generateDeviceFingerprint(
-        mockReq({ headers: { "user-agent": "B" } })
+        mockReq({ headers: { "user-agent": "Mozilla/5.0 (X11; Linux x86_64; rv:121.0) Gecko/20100101 Firefox/121.0" } })
+      );
+      expect(fp1).not.toBe(fp2);
+    });
+
+    it("is stable across browser version updates", () => {
+      const fp1 = generateDeviceFingerprint(
+        mockReq({ headers: { "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36" } })
+      );
+      const fp2 = generateDeviceFingerprint(
+        mockReq({ headers: { "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36" } })
+      );
+      expect(fp1).toBe(fp2);
+    });
+
+    it("distinguishes mobile from desktop", () => {
+      const fp1 = generateDeviceFingerprint(
+        mockReq({ headers: { "user-agent": "Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Mobile Safari/537.36" } })
+      );
+      const fp2 = generateDeviceFingerprint(
+        mockReq({ headers: { "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36" } })
       );
       expect(fp1).not.toBe(fp2);
     });
@@ -296,20 +321,29 @@ describe("sessionBinding", () => {
       expect(fp1).not.toBe(fp2);
     });
 
-    it("produces different fingerprint for different accept-encoding", () => {
+    it("is stable across accept-encoding changes (not a device signal)", () => {
       const fp1 = generateDeviceFingerprint(
         mockReq({ headers: { "accept-encoding": "gzip" } })
       );
       const fp2 = generateDeviceFingerprint(
-        mockReq({ headers: { "accept-encoding": "br" } })
+        mockReq({ headers: { "accept-encoding": "br, zstd" } })
       );
-      expect(fp1).not.toBe(fp2);
+      expect(fp1).toBe(fp2);
     });
 
     it("treats missing headers as empty strings", () => {
       const req = mockReq({ headers: {} });
       const fp = generateDeviceFingerprint(req);
       expect(fp).toMatch(/^[a-f0-9]{32}$/);
+    });
+
+    it("is stable across unknown/empty user-agents (Other collapse)", () => {
+      // Unmatched UAs normalize to the same coarse fingerprint, so a session
+      // bound by an unknown UA stays valid for other unknown UAs — they are
+      // never treated as a DEVICE_MISMATCH against each other.
+      const fp1 = generateDeviceFingerprint(mockReq({ headers: { "user-agent": "" } }));
+      const fp2 = generateDeviceFingerprint(mockReq({ headers: { "user-agent": "SomeUnknownBrowser/9.9" } }));
+      expect(fp1).toBe(fp2);
     });
   });
 
@@ -456,11 +490,11 @@ describe("sessionBinding", () => {
       expect(result.reason).toBeUndefined();
     });
 
-    it("returns invalid with DEVICE_MISMATCH on different user-agent", () => {
-      const req1 = mockReq({ headers: { "user-agent": "AgentA/1.0" } });
+    it("returns invalid with DEVICE_MISMATCH on different browser family", () => {
+      const req1 = mockReq({ headers: { "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36" } });
       const meta = { ...createSessionMetadata(req1), deviceId: generateDeviceFingerprint(req1) };
 
-      const req2 = mockReq({ headers: { "user-agent": "AgentB/1.0" } });
+      const req2 = mockReq({ headers: { "user-agent": "Mozilla/5.0 (X11; Linux x86_64; rv:121.0) Gecko/20100101 Firefox/121.0" } });
       const result = validateSessionBinding(req2, meta);
 
       expect(result.valid).toBe(false);
@@ -503,13 +537,13 @@ describe("sessionBinding", () => {
 
     it("returns DEVICE_MISMATCH before checking IP (device checked first)", () => {
       const req1 = mockReq({
-        headers: { "user-agent": "AgentA/1.0" },
+        headers: { "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36" },
         remoteAddress: "1.1.1.1",
       });
       const meta = { ...createSessionMetadata(req1), deviceId: generateDeviceFingerprint(req1) };
 
       const req2 = mockReq({
-        headers: { "user-agent": "AgentB/1.0" },
+        headers: { "user-agent": "Mozilla/5.0 (X11; Linux x86_64; rv:121.0) Gecko/20100101 Firefox/121.0" },
         remoteAddress: "2.2.2.2",
       });
       const result = validateSessionBinding(req2, meta);
@@ -1487,28 +1521,29 @@ describe("tokenRevocation", () => {
   });
 
   describe("consumeSseToken", () => {
-    it("returns userId and deletes token when it exists", async () => {
-      mockRedis.get.mockResolvedValueOnce("user1");
-      mockRedis.del.mockResolvedValueOnce(1);
+    it("returns userId via atomic Lua get-and-delete when the token exists", async () => {
+      mockRedis.eval.mockResolvedValueOnce("user1");
 
       const result = await consumeSseToken("jti-sse");
 
       expect(result).toBe("user1");
-      expect(mockRedis.get).toHaveBeenCalledWith("focura:sse:jti-sse");
-      expect(mockRedis.del).toHaveBeenCalledWith("focura:sse:jti-sse");
+      expect(mockRedis.eval).toHaveBeenCalledWith(
+        expect.stringContaining("redis.call"),
+        1,
+        "focura:sse:jti-sse",
+      );
     });
 
     it("returns null when token does not exist", async () => {
-      mockRedis.get.mockResolvedValueOnce(null);
+      mockRedis.eval.mockResolvedValueOnce(null);
 
       const result = await consumeSseToken("jti-sse");
 
       expect(result).toBeNull();
-      expect(mockRedis.del).not.toHaveBeenCalled();
     });
 
     it("returns null on Redis error", async () => {
-      mockRedis.get.mockRejectedValueOnce(new Error("REDIS DOWN"));
+      mockRedis.eval.mockRejectedValueOnce(new Error("REDIS DOWN"));
 
       const result = await consumeSseToken("jti-sse");
 
@@ -1517,7 +1552,7 @@ describe("tokenRevocation", () => {
 
     it("logs error on Redis failure", async () => {
       const spy = vi.spyOn(console, "error").mockImplementation(() => {});
-      mockRedis.get.mockRejectedValueOnce(new Error("REDIS DOWN"));
+      mockRedis.eval.mockRejectedValueOnce(new Error("REDIS DOWN"));
 
       await consumeSseToken("jti-sse");
 
@@ -1528,15 +1563,16 @@ describe("tokenRevocation", () => {
       spy.mockRestore();
     });
 
-    it("consumes token atomically (get then delete)", async () => {
-      mockRedis.get.mockResolvedValueOnce("user1");
-      mockRedis.del.mockResolvedValueOnce(1);
+    it("consumes in a single atomic Lua round-trip (no get-then-del race)", async () => {
+      mockRedis.eval.mockResolvedValueOnce("user1");
 
       await consumeSseToken("jti-sse");
 
-      const getOrder = mockRedis.get.mock.invocationCallOrder[0];
-      const delOrder = mockRedis.del.mock.invocationCallOrder[0];
-      expect(getOrder).toBeLessThan(delOrder);
+      // One eval only — the GET+DEL happen inside the script, so two
+      // concurrent replays can never both observe the key before deletion.
+      expect(mockRedis.eval).toHaveBeenCalledTimes(1);
+      expect(mockRedis.get).not.toHaveBeenCalled();
+      expect(mockRedis.del).not.toHaveBeenCalled();
     });
   });
 });

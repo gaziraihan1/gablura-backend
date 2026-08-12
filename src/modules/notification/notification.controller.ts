@@ -13,6 +13,8 @@
 
 import type { Response } from "express";
 import type { AuthRequest } from "../../middleware/auth.js";
+import { createSseToken, extractJti } from "../../lib/auth/backendToken.js";
+import { storeSseToken } from "../../lib/auth/tokenRevocation.js";
 import { NotificationQuery } from "./notification.query.js";
 import { NotificationMutation } from "./notification.mutation.js";
 
@@ -23,6 +25,26 @@ function requireUserId(req: AuthRequest, res: Response): string | null {
   }
   return req.user.id;
 }
+
+/**
+ * Mint a fresh 30-second, single-use SSE token on demand. The notification
+ * stream accepts only these tokens, and each one opens exactly one connection
+ * — so the frontend calls this endpoint before every (re)connect instead of
+ * reusing a session token (which would 401 TOKEN_REUSED on the second try).
+ */
+export const getSseToken = async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = requireUserId(req, res);
+    if (!userId) return;
+
+    const sseToken = createSseToken(userId);
+    await storeSseToken(extractJti(sseToken), userId);
+    res.json({ success: true, sseToken });
+  } catch (error) {
+    console.error("Get SSE token error:", error);
+    res.status(500).json({ success: false, message: "Failed to issue SSE token" });
+  }
+};
 
 export const getNotifications = async (req: AuthRequest, res: Response) => {
   try {

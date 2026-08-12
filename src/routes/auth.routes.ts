@@ -3,6 +3,7 @@ import crypto from "crypto";
 import { prisma } from "../lib/prisma.js";
 import {
   createTokenPair,
+  createSseToken,
   verifyToken,
   extractJti,
   parseExpiry,
@@ -10,6 +11,7 @@ import {
 } from "../lib/auth/backendToken.js";
 import {
   storeRefreshToken,
+  storeSseToken,
   rotateRefreshToken,
   revokeAccessToken,
   revokeAllRefreshTokens,
@@ -168,6 +170,13 @@ router.post(
       parseExpiry(REFRESH_TOKEN_EXPIRY) / 1000,
     );
 
+    // Mint a short-lived, single-use SSE token for the notification stream.
+    // It is bound to the user in Redis so the stream can atomically consume
+    // it — replaying a used token is rejected (401). Being 30s/one-use, it is
+    // safe to pass as a query parameter, unlike the 15-minute access token.
+    const sseToken = createSseToken(user.id);
+    await storeSseToken(extractJti(sseToken), user.id);
+
     // Record the session so the server can enforce inactivity timeout,
     // absolute timeout, session binding (device/IP), and max concurrent
     // sessions. Best-effort: the tokens are already issued and the rest of
@@ -188,6 +197,7 @@ router.post(
     const tokenPayload = {
       accessToken: tokens.accessToken,
       refreshToken: tokens.refreshToken,
+      sseToken,
       accessTokenExpiry: tokens.accessTokenExpiry,
       refreshTokenExpiry: tokens.refreshTokenExpiry,
     };
@@ -296,6 +306,11 @@ router.post(
         sessionId: decoded.sessionId,
       });
 
+      // Fresh single-use SSE token on every rotation — the stream reconnects
+      // with the newest one, so a rotated/consumed token never lingers.
+      const sseToken = createSseToken(decoded.id);
+      await storeSseToken(extractJti(sseToken), decoded.id);
+
       const rotated = await rotateRefreshToken(
         decoded.id,
         decoded.jti,
@@ -328,6 +343,7 @@ router.post(
         success: true,
         accessToken: tokens.accessToken,
         refreshToken: tokens.refreshToken,
+        sseToken,
         accessTokenExpiry: tokens.accessTokenExpiry,
         refreshTokenExpiry: tokens.refreshTokenExpiry,
       };

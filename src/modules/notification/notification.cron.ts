@@ -26,6 +26,7 @@ import {
   startProjectReminderCron,
   startProjectAutoArchiveCron,
 } from "./project.cron.js";
+import { startMeetingReminderCron } from "./meeting.cron.js";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -178,9 +179,10 @@ async function runTaskReminderCron(): Promise<void> {
 
     const pending: PendingNotification[] = [];
     for (const task of tasks) {
-      if (!task.assignees.length) continue;
-
-      // Get all recipients (creator + assignees, deduplicated)
+      // Recipients = task creator + all assignees (deduplicated by
+      // getRecipients). We deliberately do NOT skip tasks without assignees:
+      // a creator-only task still needs its due-soon/overdue reminders, and
+      // getRecipients always includes the creator.
       const recipients = await getRecipients(task.createdById, task.assignees);
       pending.push(...buildPendingNotifs(task, recipients, now));
     }
@@ -227,4 +229,5 @@ export function initNotificationCrons(): void {
   startNotificationCleanupCron();
   startProjectReminderCron();
   startProjectAutoArchiveCron();
+  startMeetingReminderCron();
 }

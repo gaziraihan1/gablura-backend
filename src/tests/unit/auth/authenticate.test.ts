@@ -384,6 +384,84 @@ describe("authenticate middleware", () => {
     expect(auditLog).toHaveBeenCalledWith("SESSION_HIJACK_DETECTED", expect.any(Object));
   });
 
+  it("re-binds instead of revoking when the device changes from the same IP", async () => {
+    const fakeMetadata = JSON.stringify({
+      deviceId: "bound-device-fp",
+      ipAddress: "127.0.0.1",
+      userAgent: "Mozilla/5.0 Chrome/150.0.0.0",
+      lastActivity: Date.now(),
+    });
+    mockRedisGet.mockResolvedValueOnce(fakeMetadata);
+
+    const { auditLog } = await import("../../../lib/auth/auditLog.js");
+    const { validateSessionBinding } = await import("../../../lib/auth/sessionBinding.js");
+    vi.mocked(validateSessionBinding).mockReturnValueOnce({
+      valid: false,
+      reason: "DEVICE_MISMATCH",
+    });
+
+    const { revokeAllRefreshTokens } = await import("../../../lib/auth/tokenRevocation.js");
+    vi.mocked(prisma.user.findUnique).mockResolvedValue(mockUser as any);
+
+    const next = makeNext();
+    const token = generateTestToken(mockUser, { sessionId: "rebound-session" });
+    await authenticate(makeReq(`Bearer ${token}`), makeRes(), next);
+
+    // Request continues — no hijack error, user attached
+    expect(vi.mocked(next).mock.calls[0][0]).toBeUndefined();
+    expect(prisma.user.findUnique).toHaveBeenCalled();
+
+    // Nothing was revoked; the session was re-bound instead
+    expect(revokeAllRefreshTokens).not.toHaveBeenCalled();
+    expect(auditLog).toHaveBeenCalledWith("SESSION_REBOUND", expect.any(Object));
+    expect(auditLog).not.toHaveBeenCalledWith("SESSION_HIJACK_DETECTED", expect.any(Object));
+
+    // New fingerprint persisted to Redis
+    const metadataWrite = mockRedisSetex.mock.calls.find((c) =>
+      String(c[0]).includes("rebound-session")
+    );
+    expect(metadataWrite).toBeDefined();
+    const saved = JSON.parse(metadataWrite![2]);
+    expect(saved.deviceId).toBe("device-fp-123");
+    expect(saved.ipAddress).toBe("127.0.0.1");
+  });
+
+  it("keeps re-binding on repeated same-IP device changes without revoking", async () => {
+    const fakeMetadata = JSON.stringify({
+      deviceId: "bound-device-fp",
+      ipAddress: "127.0.0.1",
+      userAgent: "Mozilla/5.0 Chrome/150.0.0.0",
+      lastActivity: Date.now(),
+    });
+
+    const { auditLog } = await import("../../../lib/auth/auditLog.js");
+    const { validateSessionBinding } = await import("../../../lib/auth/sessionBinding.js");
+    const { revokeAllRefreshTokens } = await import("../../../lib/auth/tokenRevocation.js");
+    vi.mocked(prisma.user.findUnique).mockResolvedValue(mockUser as any);
+
+    const token = generateTestToken(mockUser, { sessionId: "oscillating-session" });
+
+    // Simulate the user toggling device emulation back and forth: each call
+    // reports a DEVICE_MISMATCH from the same IP, and the middleware must
+    // keep re-binding instead of ever revoking.
+    for (let i = 0; i < 5; i++) {
+      mockRedisGet.mockResolvedValueOnce(fakeMetadata);
+      vi.mocked(validateSessionBinding).mockReturnValueOnce({
+        valid: false,
+        reason: "DEVICE_MISMATCH",
+      });
+
+      const next = makeNext();
+      await authenticate(makeReq(`Bearer ${token}`), makeRes(), next);
+
+      expect(vi.mocked(next).mock.calls[0][0]).toBeUndefined();
+      expect(revokeAllRefreshTokens).not.toHaveBeenCalled();
+    }
+
+    expect(auditLog).toHaveBeenCalledWith("SESSION_REBOUND", expect.any(Object));
+    expect(auditLog).not.toHaveBeenCalledWith("SESSION_HIJACK_DETECTED", expect.any(Object));
+  });
+
   it("skips binding enforcement for server-to-server requests (Next.js SSR)", async () => {
     const fakeMetadata = JSON.stringify({
       deviceId: null,

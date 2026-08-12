@@ -563,7 +563,7 @@ All mutating authenticated routes additionally require `X-CSRF-Token`.
 
 | Method | Route | CSRF | Description |
 |--------|-------|------|-------------|
-| `GET` | `/api/v1/notifications/stream` | — | SSE stream (query-string token auth) |
+| `GET` | `/api/v1/notifications/stream` | — | SSE stream (30s single-use token in query string) |
 | `GET` | `/api/v1/notifications` | — | Paginated list (read replica) |
 | `GET` | `/api/v1/notifications/unread-count` | — | Badge count (primary DB) |
 | `PATCH` | `/api/v1/notifications/:id/read` | ✓ | Mark as read |
@@ -780,8 +780,10 @@ All mutating authenticated routes additionally require `X-CSRF-Token`.
 ## 📡 Real-Time Notifications (SSE + Redis Pub/Sub)
 
 ```
-Client -> GET /api/v1/notifications/stream?token=<accessToken>
-Backend -> verifyToken() -> extract userId
+Client -> GET /api/v1/notifications/stream?token=<sseToken>   (30s, single-use)
+Backend -> verifyToken(token, "sse")   -> rejects access/refresh tokens
+       -> consumeSseToken(jti)         -> atomic single-use consume (replay -> 401)
+       -> userId from consumed binding
        -> await SUBSCRIBE sse:user:<userId> (Redis confirmed)
        -> write "connected" handshake
        -> keep connection open

@@ -155,6 +155,11 @@ vi.mock('../lib/auth/tokenRevocation.js', () => ({
   revokeAllRefreshTokens: vi.fn().mockResolvedValue(undefined),
   storeRefreshToken:      vi.fn().mockResolvedValue(undefined),
   rotateRefreshToken:     vi.fn().mockResolvedValue(true),
+  // SSE single-use tokens — default: store succeeds, consume finds nothing
+  // (null ⇒ already used/expired). Tests that need a live token override the
+  // consume mock to return the bound userId.
+  storeSseToken:          vi.fn().mockResolvedValue(undefined),
+  consumeSseToken:        vi.fn().mockResolvedValue(null),
 }));
 
 // ── MOCK: refreshLock ─────────────────────────────────────────────────────────

@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added self-service data export — a JSON bundle of your data is generated and emailed on request
 - Added self-service account deletion with ownership-transfer guards
 - Hardened SSE authentication — notification streams now use a 30-second, single-use token instead of the 15-minute access token
+- Added `GET /api/v1/notifications/sse-token` so each stream connection mints a fresh single-use token; the stream now sends data-carrying heartbeats so idle connections stay alive
+- Notification coverage: meeting reminders (24h/1h/15m before start), creator + assignee notification on task completion, assignee-added notifications on re-assignment, parent-task notifications for new subtasks, workspace-membership validation for meeting attendees, and due-date reminders for creator-only tasks
 
 ## [1.1.0] - 2026-08-11
 

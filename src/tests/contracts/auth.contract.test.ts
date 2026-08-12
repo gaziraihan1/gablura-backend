@@ -19,6 +19,7 @@ describe('Auth API Contract Tests', () => {
     success: z.literal(true),
     accessToken: z.string(),
     refreshToken: z.string(),
+    sseToken: z.string(),
     accessTokenExpiry: z.number(),
     refreshTokenExpiry: z.number(),
   });

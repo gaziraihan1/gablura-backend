@@ -1,5 +1,6 @@
 import { MeetingQuery }    from './meeting.query.js';
 import { MeetingMutation } from './meeting.mutation.js';
+import { prisma }          from '../../lib/prisma.js';
 import {
   notifyMeetingCreatedPrivate,
   notifyMeetingCreatedPublic,
@@ -12,6 +13,29 @@ const ADMIN_ROLES = new Set(['OWNER', 'ADMIN']);
 
 function isAdmin(role: string | null | undefined): boolean {
   return role != null && ADMIN_ROLES.has(role);
+}
+
+/**
+ * Ensure every attendee is a member of the workspace so nobody is notified
+ * about (or attached to) a meeting they cannot actually access. Mirrors the
+ * private-announcement target validation.
+ */
+async function assertAttendeesAreWorkspaceMembers(
+  workspaceId: string,
+  attendeeIds: string[] | undefined,
+): Promise<void> {
+  if (!attendeeIds || attendeeIds.length === 0) return;
+
+  const members = await prisma.workspaceMember.findMany({
+    where: { workspaceId },
+    select: { userId: true },
+  });
+  const memberIds = new Set(members.map((m) => m.userId));
+
+  const invalid = attendeeIds.filter((uid) => !memberIds.has(uid));
+  if (invalid.length > 0) {
+    throw new BadRequestError('Some attendees are not workspace members');
+  }
 }
 
 export const MeetingService = {
@@ -52,6 +76,8 @@ export const MeetingService = {
       throw new BadRequestError('Private meetings require at least one attendee');
     }
 
+    await assertAttendeesAreWorkspaceMembers(ctx.workspaceId, input.attendeeIds);
+
     const meeting = await MeetingMutation.create({
       input,
       workspaceId: ctx.workspaceId,
@@ -86,6 +112,8 @@ export const MeetingService = {
     if (input.visibility === 'PRIVATE' && input.attendeeIds !== undefined && input.attendeeIds.length === 0) {
       throw new BadRequestError('Private meetings require at least one attendee');
     }
+
+    await assertAttendeesAreWorkspaceMembers(ctx.workspaceId, input.attendeeIds);
 
     const meeting = await MeetingMutation.update({ meetingId, input });
 
