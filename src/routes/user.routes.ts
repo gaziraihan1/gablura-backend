@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import { authenticate } from '../middleware/auth.js';
-import { getUserProfile, updateUserProfile, changePassword } from '../controllers/user.controller.js';
+import { getUserProfile, updateUserProfile, changePassword, exportUserData, deleteAccount } from '../controllers/user.controller.js';
 import {
   getSecuritySettings,
   setupTwoFactor,
@@ -23,6 +23,10 @@ router.get('/profile', authenticate, getUserProfile);
 router.put('/profile', authenticate, updateUserProfile);
 
 router.put('/password', authenticate, changePassword);
+
+// Self-service data export + account deletion
+router.post('/export-data', authenticate, exportUserData);
+router.delete('/account', authenticate, deleteAccount);
 
 router.get('/security', authenticate, getSecuritySettings);
 

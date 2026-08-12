@@ -1,8 +1,13 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth.js';
 import { prisma } from '../lib/prisma.js';
-import { UserCache } from '../lib/redis/cache.client.js';
+import { UserCache, WorkspaceCache } from '../lib/redis/cache.client.js';
 import argon2 from 'argon2';
+import { buildUserExportBundle } from '../lib/dataExport.js';
+import { addSendEmailJob } from '../queue/index.js';
+import { auditLog } from '../lib/auth/auditLog.js';
+import { revokeAllRefreshTokens, markSessionRevoked } from '../lib/auth/tokenRevocation.js';
+import { getUserActiveSessions, revokeUserSession } from '../lib/auth/sessionManager.js';
 
 export const getUserProfile = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -281,5 +286,152 @@ export const changePassword = async (req: AuthRequest, res: Response): Promise<v
       success: false,
       message: 'Failed to change password',
     });
+  }
+};
+export const exportUserData = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    if (!req.user?.id) {
+      res.status(401).json({ success: false, message: 'Unauthorized' });
+      return;
+    }
+
+    const bundle = await buildUserExportBundle(req.user.id);
+
+    if (!bundle.profile) {
+      res.status(404).json({ success: false, message: 'User not found' });
+      return;
+    }
+
+    const json = JSON.stringify(bundle, null, 2);
+    const fileName = `focura-export-${bundle.profile.id}-${new Date().toISOString().slice(0, 10)}.json`;
+
+    if (json.length > 4 * 1024 * 1024) {
+      console.warn(`[DataExport] Large export (${json.length} bytes) for user ${req.user.id}`);
+    }
+
+    await addSendEmailJob({
+      type: 'data-export-email',
+      to: bundle.profile.email,
+      subject: 'Your Focura data export is ready',
+      data: {
+        toEmail: bundle.profile.email,
+        toName: bundle.profile.name,
+        fileName,
+        json,
+      },
+    });
+
+    auditLog('DATA_EXPORT', {
+      userId: bundle.profile.id,
+      email: bundle.profile.email,
+      reason: 'Self-service data export',
+      meta: {
+        fileName,
+        recordCount: {
+          projects: bundle.projects.length,
+          tasks: bundle.tasks.length,
+          comments: bundle.comments.length,
+          focusSessions: bundle.focusSessions.length,
+          timeEntries: bundle.timeEntries.length,
+        },
+      },
+    });
+
+    res.status(202).json({
+      success: true,
+      message: 'Data export requested - the JSON bundle will be emailed to you shortly.',
+    });
+  } catch (error) {
+    console.error('❌ Data export error:', error);
+    res.status(500).json({ success: false, message: 'Failed to generate data export' });
+  }
+};
+
+export const deleteAccount = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    if (!req.user?.id) {
+      res.status(401).json({ success: false, message: 'Unauthorized' });
+      return;
+    }
+
+    const userId = req.user.id;
+    const email = req.user.email;
+
+    // Re-authentication: irreversible action — require the account password
+    // when one is set (OAuth-only accounts have no password and are already
+    // authenticated via the access token).
+    const account = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, password: true },
+    });
+    if (!account) {
+      res.status(404).json({ success: false, message: 'User not found' });
+      return;
+    }
+    if (account.password) {
+      const { password } = req.body ?? {};
+      if (typeof password !== 'string' || password.length === 0) {
+        res.status(400).json({ success: false, message: 'Password is required to delete your account.' });
+        return;
+      }
+      const isValidPassword = await argon2.verify(account.password, password);
+      if (!isValidPassword) {
+        res.status(401).json({ success: false, message: 'Incorrect password.' });
+        return;
+      }
+    }
+
+    // Guard: block deletion while the user is the sole owner of workspaces
+    // that have other members - ownership must be transferred first.
+    // Workspaces owned without other members are deleted via cascade.
+    const guardedWorkspaces = await prisma.workspace.findMany({
+      where: {
+        ownerId: userId,
+        members: { some: { userId: { not: userId } } },
+      },
+      select: { id: true, name: true, slug: true },
+    });
+
+    if (guardedWorkspaces.length > 0) {
+      res.status(409).json({
+        success: false,
+        message: 'Transfer ownership of the workspaces below before deleting your account.',
+        data: { workspaces: guardedWorkspaces },
+      });
+      return;
+    }
+
+    // Delete the user first (everything else cascades). Null out the
+    // nullable FKs that would otherwise block the cascade delete.
+    await prisma.$transaction([
+      prisma.notification.updateMany({ where: { senderId: userId }, data: { senderId: null } }),
+      prisma.integration.updateMany({ where: { connectedById: userId }, data: { connectedById: null } }),
+      prisma.user.delete({ where: { id: userId } }),
+    ]);
+
+    // Lock out immediately: revoke refresh tokens + tracked sessions, then
+    // invalidate caches. Deletion already invalidates the access token
+    // (authenticate reads the user from the DB), so revoking after deletion
+    // never strands an account if the delete itself fails.
+    await revokeAllRefreshTokens(userId);
+    const sessions = await getUserActiveSessions(userId);
+    for (const session of sessions) {
+      await markSessionRevoked(session.sessionId);
+      await revokeUserSession(userId, session.sessionId);
+    }
+    await UserCache.invalidateProfile(userId);
+    await WorkspaceCache.invalidateUserWorkspaces(userId);
+
+    auditLog('DATA_DELETION', {
+      userId,
+      email,
+      reason: 'Self-service account deletion',
+      meta: { guardedWorkspaces: guardedWorkspaces.length },
+    });
+
+    res.status(200).json({ success: true, message: 'Account deleted successfully.' });
+  } catch (error) {
+    console.error('❌ Account deletion error:', error);
+    res.status(500).json({ success: false, message: 'Failed to delete account' });
   }
 };

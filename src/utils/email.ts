@@ -102,3 +102,70 @@ export async function sendInvitationEmail(
     throw error;
   }
 }
+
+export async function sendDataExportEmail(params: {
+  toEmail: string;
+  toName?: string | null;
+  fileName: string;
+  json: string;
+}): Promise<void> {
+  const { toEmail, toName, fileName, json } = params;
+  const greeting = toName ? escape(toName) : "there";
+
+  const transporter = getTransporter();
+  if (!transporter) {
+    console.log(`[email] Skipping data export to ${toEmail} — SMTP not configured.`);
+    return;
+  }
+
+  try {
+    await transporter.sendMail({
+      from: `"Focura" <${getFromAddress()}>`,
+      to: toEmail,
+      subject: "Your Focura data export is ready",
+      html: baseWrapper(`
+        <h2 style="margin:0 0 8px;font-size:18px;font-weight:700;color:#0a0a0a;">Your data export is ready</h2>
+        <p style="margin:0 0 16px;font-size:14px;color:#525252;line-height:1.7;">Hi ${greeting},</p>
+        <p style="margin:0 0 16px;font-size:14px;color:#525252;line-height:1.7;">
+          As requested, here is a JSON export of your Focura account data — your
+          profile, workspaces, projects, tasks, comments, focus sessions, time
+          entries, notifications, and activity.
+        </p>
+        <p style="margin:0 0 16px;font-size:14px;color:#525252;line-height:1.7;">
+          The file is attached as <strong>${escape(fileName)}</strong>. Keep it
+          somewhere safe — it contains personal data.
+        </p>
+        <p style="margin:0 0 8px;font-size:13px;color:#737373;line-height:1.6;">
+          Exports are generated on request from Settings &rarr; Account &rarr; Privacy.
+          If you didn&rsquo;t request this export, contact
+          <a href="mailto:privacy@focura.app" style="color:#0a0a0a;">privacy@focura.app</a>.
+        </p>
+        <p style="margin:0;font-size:13px;color:#737373;">— The Focura Team</p>
+      `),
+      text: [
+        "Your data export is ready",
+        "",
+        `Hi ${greeting},`,
+        "",
+        "As requested, here is a JSON export of your Focura account data — profile, workspaces, projects, tasks, comments, focus sessions, time entries, notifications, and activity.",
+        "",
+        `The file is attached as ${fileName}. Keep it somewhere safe — it contains personal data.`,
+        "",
+        "Exports are generated on request from Settings > Account > Privacy.",
+        "If you didn't request this export, contact privacy@focura.app.",
+        "",
+        "— The Focura Team",
+      ].join("\n") + plainTextFooter(),
+      attachments: [
+        {
+          filename: fileName,
+          content: json,
+          contentType: "application/json",
+        },
+      ],
+    });
+  } catch (error) {
+    console.error(`[email] Failed to send data export to ${toEmail}:`, error);
+    throw error;
+  }
+}

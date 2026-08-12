@@ -1,7 +1,7 @@
 import { Worker, Job } from "bullmq";
 import { sendAdminContactNotification, sendUserAutoReply } from "../../modules/contact/contact.email.js";
 import { sendBanEmail, sendWorkspaceDeletedEmail, sendWorkspaceLimitsChangedEmail } from "../../admin/admin.email.js";
-import { sendInvitationEmail } from "../../utils/email.js";
+import { sendInvitationEmail, sendDataExportEmail } from "../../utils/email.js";
 import type { SendEmailJobData } from "../queues/email.queue.js";
 
 const EMAIL_WORKER_NAME = "email-worker";
@@ -52,6 +52,15 @@ export function createEmailWorker() {
 
         case "invitation-email":
           await sendInvitationEmail(to, data.invitation);
+          break;
+
+        case "data-export-email":
+          await sendDataExportEmail({
+            toEmail: data.toEmail,
+            toName: data.toName,
+            fileName: data.fileName,
+            json: data.json,
+          });
           break;
 
         default:

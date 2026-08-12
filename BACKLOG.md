@@ -1,11 +1,11 @@
 # v1.2.0 Backlog
 
 Items for v1.2.0. Status:
-- **DONE** — SSE token hardening (item 2)
-- **DONE** — Notification coverage audit + gap fixes (item 4)
-- **PLANNED** — GA consent banner (item 1), data export + account deletion (item 3)
+- **DONE** — SSE token hardening (item 2), GA consent banner (item 1), data export + account deletion (item 3)
 
-This file is mirrored in both repos (`Focura-backend` / `Focura-client`).
+This file is mirrored in both repos (`Focura-backend` / `Focura-client`). The
+backend copy also tracks the notification-coverage work (meeting reminders,
+task-completion/assignment/subtask notifications, attendee access checks).
 Changelog entries live in each repo's `CHANGELOG.md` under `[Unreleased]`.
 
 ---
@@ -15,6 +15,10 @@ Changelog entries live in each repo's `CHANGELOG.md` under `[Unreleased]`.
 **Why:** Google Analytics loads unconditionally on every page
 (`app/layout.tsx` → `components/Analytics/GoogleAnalytics.tsx`). The legal
 pages describe analytics as opt-out; a real consent gate is the proper fix.
+
+**Status:** implemented — consent banner with localStorage persistence and
+GA gating behind explicit opt-in, with component tests for the banner and
+GA gating.
 
 **Approach**
 - New `components/Consent/ConsentBanner.tsx` (client component): fixed
@@ -47,9 +51,8 @@ pages describe analytics as opt-out; a real consent gate is the proper fix.
 puts a full access token in URLs (proxy logs, browser history). The 30-second
 single-use SSE token infrastructure already exists but is unused.
 
-**Status:** implemented and verified end-to-end against the live stack
-(14-check live verification + browser confirmation). See below for the
-final implementation notes.
+**Status:** implemented and verified live (notifications arrive in the bell
+without a refresh). See the implementation notes below.
 
 **Backend**
 - `src/lib/auth/backendToken.ts`: `createSseToken()` exists (30s expiry,
@@ -84,26 +87,19 @@ final implementation notes.
 > Frontend: Notification streams now authenticate with a short-lived,
 > single-use token.
 
-**Implementation notes (final)**
-- Backend: `sseToken` issued + stored in `/exchange` and `/refresh` (and
-  the idempotency/refresh-dedup caches); stream accepts only `type: "sse"`
-  tokens and atomically consumes them (Lua get-and-delete) — reuse returns
-  `401 TOKEN_REUSED`, access tokens `401 INVALID_TOKEN`. New authenticated
-  `GET /api/v1/notifications/sse-token` mint endpoint so every (re)connect
-  gets a fresh token. `consumeSseToken` TTL is derived from `SSE_TOKEN_EXPIRY`.
-- Heartbeat fix: the stream now sends **data-carrying** heartbeats
-  (`data: {"type":"heartbeat"}`) instead of comment-only lines — browsers
-  ignore `: comment` lines, so the old heartbeat let the client's 60s
-  watchdog kill healthy streams every minute and miss publishes. Streams
-  now stay open indefinitely.
-- Frontend: `session.sseToken` carried through exchange/refresh; the SSE
-  hook mints a fresh token per connection (fallback to the session token),
-  reconnects with backoff, and has an in-flight guard against duplicate
-  connects. Dead `currentTokenRef` removed.
-- Docs updated: `AUTHENTICATION.md`, `FRONTEND_AUTH_GUIDE.md`, `README.md`.
-- Verified live: exchange → mint → stream opens (200, `connected`
-  handshake), reused/access tokens rejected, real notifications arrive in
-  the bell without a refresh.
+**Implementation notes (frontend)**
+- `lib/auth/authOptions.ts`: `sseToken` carried from the `/exchange` and
+  `/refresh` responses into the NextAuth session (`session.sseToken`),
+  including type augmentations and the failure paths.
+- SSE hook (`hooks/useNotificationSSE.ts`): mints a fresh single-use token
+  via `GET /api/v1/notifications/sse-token` before **every** connection,
+  falls back to `session.sseToken` when minting fails, retries with
+  exponential backoff, and has an in-flight guard against duplicate
+  concurrent connects. Dead `currentTokenRef` removed.
+- `hooks/useNotifications.ts` passes `sseToken` through (only call site).
+- The backend's data-carrying heartbeat keeps the stream alive past the
+  client's 60s watchdog, so idle connections no longer reconnect every
+  minute (which used to miss publishes).
 
 ---
 
@@ -112,6 +108,10 @@ final implementation notes.
 **Why:** the Privacy/Terms pages and help docs promise self-service export
 and deletion, but the backend has neither. The legal pages currently say
 "request via email"; self-service makes those promises real.
+
+**Status:** implemented — backend export/delete endpoints with ownership
+guards, email delivery, audit logging and tests; frontend Privacy + Danger
+Zone cards in Settings with ownership-transfer surfacing.
 
 **Backend**
 - Export: `POST /api/v1/user/export-data` (authenticated). Build a JSON
@@ -148,52 +148,3 @@ and deletion, but the backend has neither. The legal pages currently say
 > and account deletion with ownership-transfer guards.
 > Frontend: Added Data Export and Account Deletion to Settings — matching
 > the promises in the legal pages.
-
----
-
-## 4. Notification coverage audit + gap fixes (backend) — ✅ DONE
-
-**Why:** an audit of every notification trigger (task, meeting, announcement,
-comment, subtask) found several silent gaps: meeting reminders did not exist
-at all, task creators were not notified on completion, re-assigning a task
-sent nothing, creator-only tasks got no due-date reminders, and meeting
-attendees were never verified as workspace members.
-
-**Status:** implemented, unit-tested (622 affected tests green), and review
-passed.
-
-**What was implemented**
-- **Meeting reminders** (new `src/modules/notification/meeting.cron.ts`):
-  `MEETING_REMINDER` at 24h / 1h / 15m before start time; private meetings →
-  attendees + creator, public → all workspace members; preference-filtered
-  and Redis-deduped (25h TTL); registered in `initNotificationCrons`.
-- **Task completed → creator + assignees**: `notifyTaskCompleted` now
-  notifies the creator AND assignees (completer excluded), respecting the
-  per-user notification preference.
-- **Assignee added on task update**: `notifyAddedAssignees` wired into the
-  task-update controller (was dead code).
-- **Subtask created → parent's people**: new `notifySubtaskCreated` notifies
-  the parent task's creator + assignees (excluding the subtask creator).
-- **Meeting attendees access-checked**: `assertAttendeesAreWorkspaceMembers`
-  rejects non-members on meeting create/update (mirrors the private-
-  announcement target validation).
-- **Creator-only tasks get reminders**: removed the
-  `if (!task.assignees.length) continue;` skip so a task with no assignees
-  still reminds its creator at 6h/3h/30m and overdue marks.
-- **Dead code removed**: `notifyNewComment` / `notifyCommentMentions`
-  (never called) deleted from `task.notifications.ts`.
-
-**Acceptance criteria**
-- A meeting within 24h/1h/15m of starting notifies attendees (or members).
-- Completing a task notifies both creator and assignees (except the doer).
-- Re-assigning a task notifies the newly added assignees.
-- Creating a subtask notifies the parent task's stakeholders.
-- Meeting attendees are guaranteed to be workspace members.
-- Creator-only tasks receive due-soon / overdue reminders.
-
-**Changelog entry (backend)**
-> Notification coverage: added meeting reminders (24h/1h/15m before start),
-> creator + assignee notification on task completion, assignee-added
-> notifications on task re-assignment, parent-task notifications for new
-> subtasks, workspace-membership validation for meeting attendees, and
-> due-date reminders for creator-only tasks.
