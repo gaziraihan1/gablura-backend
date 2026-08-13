@@ -29,6 +29,7 @@ import { auditLog } from "../lib/auth/auditLog.js";
 import { acquireRefreshLock, releaseRefreshLock } from "../lib/auth/refreshLock.js";
 import { getClientIp } from "../lib/auth/sessionBinding.js";
 import { getRedisClient } from "../redis/redis.client.js";
+import { rateLimitMiddleware } from "../middleware/rateLimiter.js";
 
 import {
   asyncHandler,
@@ -67,8 +68,11 @@ async function cacheRefreshResponse(cacheKey: string, payload: string): Promise<
 }
 
 function verifyExchangeProof(payload: string, signature: string): boolean {
+  if (!process.env.NEXTAUTH_SECRET) {
+    return false; // no shared secret configured — reject rather than throw
+  }
   const expected = crypto
-    .createHmac("sha256", process.env.NEXTAUTH_SECRET!)
+    .createHmac("sha256", process.env.NEXTAUTH_SECRET)
     .update(payload)
     .digest("hex");
   try {
@@ -85,6 +89,9 @@ function verifyExchangeProof(payload: string, signature: string): boolean {
 
 router.post(
   "/exchange",
+  // Per-IP throttle (defense in depth — the frontend already limits logins by
+  // IP+email). Fail-open: a Redis outage must never block the token exchange.
+  rateLimitMiddleware(60, 60, undefined, { failOpen: true }),
   asyncHandler(async (req, res) => {
     const ip = getClientIp(req);
     
@@ -219,6 +226,10 @@ router.post(
 
 router.post(
   "/refresh",
+  // Generous per-IP limit: silent refresh fires on page loads and tab wakes,
+  // so legit bursts are common. Fail-open keeps refreshes working if Redis
+  // is down (the auth stack degrades gracefully, not with 429s).
+  rateLimitMiddleware(120, 60, undefined, { failOpen: true }),
   asyncHandler(async (req, res) => {
     const ip = getClientIp(req);
     
@@ -363,7 +374,11 @@ router.post(
 // Logout is always best-effort — it must never fail the client even if Redis
 // is down or the token is already invalid. So we don't use asyncHandler here.
 
-router.post("/logout", async (req, res) => {
+router.post(
+  "/logout",
+  // Cheap to enforce, harmless when Redis is down (fail-open).
+  rateLimitMiddleware(60, 60, undefined, { failOpen: true }),
+  async (req, res) => {
   const ip = getClientIp(req);
   const { logoutAll = false } = req.body ?? {};
 

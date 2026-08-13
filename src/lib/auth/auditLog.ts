@@ -17,6 +17,8 @@ export type AuditEventType =
   | "SSE_CONNECTED"
   | "SSE_DISCONNECTED"
   | "ACCOUNT_LOCKED"
+  | "TOTP_VERIFIED"
+  | "TOTP_FAILED"
   | "PERMISSION_DENIED"
   | "EMAIL_NOT_VERIFIED"
   // Session security events
@@ -88,6 +90,8 @@ const SEVERITY: Record<AuditEventType, AuditEvent["severity"]> = {
 
   // Account events
   ACCOUNT_LOCKED: "critical",
+  TOTP_VERIFIED: "info",
+  TOTP_FAILED: "warn",
   PERMISSION_DENIED: "warn",
   EMAIL_NOT_VERIFIED: "warn",
 

@@ -64,7 +64,7 @@ without a refresh). See the implementation notes below.
 - `src/sockets/notification.stream.ts` (~line 254): verify the token with
   `verifyToken(token, "sse")`, then consume via `consumeSseToken`; reject
   invalid/expired/reused tokens. Stop accepting regular access tokens here.
-- Update `AUTHENTICATION.md` and `FRONTEND_AUTH_GUIDE.md` SSE sections.
+- Update `AUTHENTICATION.md` SSE sections.
 - Tests: exchange/refresh return a 30s sseToken; stream accepts it once;
   reuse is rejected; access tokens are rejected on the stream.
 

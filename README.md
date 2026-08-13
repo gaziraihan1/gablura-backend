@@ -41,8 +41,8 @@ Built with a **modular monolith architecture** — each domain is fully self-con
 | ORM | Prisma | 5.22.0 |
 | Auth | RS256 JWT (asymmetric) | jsonwebtoken 9.0.2 |
 | Real-time | Server-Sent Events (SSE) + Redis pub/sub | ioredis 5.10.0 |
-| Caching | Upstash Redis (REST) | @upstash/redis 1.36.2 |
-| Rate Limiting | Sliding-window (Redis + in-memory fallback) | @upstash/ratelimit 2.0.8 |
+| Caching | Redis (ioredis) — billing/subscription cache | ioredis 5.10.0 |
+| Rate Limiting | Sliding-window (ioredis zsets) | ioredis 5.10.0 |
 | CSRF Protection | Double-submit cookie pattern (ioredis-backed) | - |
 | Job Queue | BullMQ | 5.80.2 |
 | Cron Jobs | node-cron | 4.2.1 |
@@ -1067,11 +1067,8 @@ JWT_PUBLIC_KEY_PATH=./keys/public.pem
 # Must match frontend NEXTAUTH_SECRET — used to verify HMAC exchange proof
 NEXTAUTH_SECRET=
 
-# Upstash Redis REST — caching, rate limiting, token revocation, CSRF tokens
-UPSTASH_REDIS_REST_URL=
-UPSTASH_REDIS_REST_TOKEN=
-
-# ioredis TCP — Redis pub/sub for SSE fan-out
+# Redis (ioredis) — the single client: sessions, revocation, CSRF, lockout,
+# rate limiting, and pub/sub for SSE fan-out
 REDIS_URL=rediss://...
 
 # Sentry
@@ -1164,7 +1161,6 @@ This runs: `tsc && prisma migrate deploy && node dist/index.js`
 - [**CONTRIBUTING.md**](./CONTRIBUTING.md) — Contribution guide (setup, architecture rules, testing)
 - [**DATABASE_POOL_FIXES.md**](./DATABASE_POOL_FIXES.md) — DB connection pool fixes
 - [**DEPLOYMENT.MD**](./DEPLOYMENT.MD) — Deployment guide
-- [**FRONTEND_AUTH_GUIDE.md**](./FRONTEND_AUTH_GUIDE.md) — Frontend auth integration guide
 - [**PERFORMANCE_TESTING.md**](./PERFORMANCE_TESTING.md) — Performance testing guide
 - [**PROJECT_VISION.md**](./PROJECT_VISION.md) — Project vision and roadmap
 - [**SENTRY_SETUP.md**](./SENTRY_SETUP.md) — Sentry error tracking setup

@@ -78,6 +78,42 @@ describe("rateLimitMiddleware (used on 2FA endpoints)", () => {
     expect(res.body.code).toBe("RATE_LIMIT_SERVICE_UNAVAILABLE");
   });
 
+  it("fails open (lets the request through) on redis error when failOpen is set (auth endpoints)", async () => {
+    mockRedis.pipeline.mockImplementation(() => {
+      throw new Error("redis down");
+    });
+    const next: NextFunction = vi.fn();
+    const res = makeRes();
+    await rateLimitMiddleware(60, 60, undefined, { failOpen: true })(
+      { headers: {}, ip: "127.0.0.1" } as any,
+      res,
+      next,
+    );
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(res.statusCode).toBe(0);
+  });
+
+  it("keys the bucket off the trust-proxy req.ip, not the spoofable first x-forwarded-for entry", async () => {
+    mockRedis.pipeline.mockReturnValue(pipelineWithCount(1));
+    const next: NextFunction = vi.fn();
+    const res = makeRes();
+    // A client can set X-Forwarded-For to anything; req.ip is computed by
+    // Express from the trusted proxy hop (rightmost entry). The bucket must
+    // follow req.ip, otherwise an attacker rotates the first XFF value to
+    // dodge the limit.
+    await rateLimitMiddleware(10, 60)(
+      {
+        headers: { "x-forwarded-for": "1.2.3.4, 203.0.113.9" },
+        ip: "203.0.113.9",
+      } as any,
+      res,
+      next,
+    );
+    const key = (mockRedis.pipeline.mock.results[0].value.zadd as any).mock.calls[0][0];
+    expect(key).toBe("rl:backend:203.0.113.9");
+    expect(next).toHaveBeenCalledTimes(1);
+  });
+
   it("throttles per-user when keyFn is provided (2FA per-user brute-force guard)", async () => {
     mockRedis.pipeline.mockReturnValue(pipelineWithCount(11));
     const next: NextFunction = vi.fn();

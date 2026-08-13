@@ -129,7 +129,7 @@ export function getClientIp(req: Request): string {
     return forwarded.split(',')[0].trim();
   }
 
-  const ip = req.socket.remoteAddress || 'unknown';
+  const ip = req.socket?.remoteAddress || 'unknown';
   return ip.startsWith('::ffff:') ? ip.slice(7) : ip;
 }
 

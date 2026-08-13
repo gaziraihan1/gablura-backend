@@ -22,6 +22,11 @@ const redisSetStore = new Map<string, Set<string>>();
 const createInMemoryRedisMock = () => {
   const mock = {
     get:    vi.fn(async (key: string) => redisStore.get(key) ?? null),
+    getdel:  vi.fn(async (key: string) => {
+      const value = redisStore.get(key) ?? null;
+      redisStore.delete(key);
+      return value;
+    }),
     exists:   vi.fn(async (key: string) => redisStore.has(key) ? 1 : 0),
     set:    vi.fn(async (key: string, value: string) => { redisStore.set(key, value); return 'OK'; }),
     setex:  vi.fn(async (key: string, _ttl: number, value: string) => { redisStore.set(key, value); return 'OK'; }),

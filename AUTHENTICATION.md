@@ -1,6 +1,6 @@
 # Authentication System
 
-This document describes the authentication architecture, covering JWT-based flows, token exchange, server-sent events (SSE), rate limiting, and React client integration.
+This is the **canonical** authentication document for Focura. It covers the full system: the Express backend (JWT flows, token exchange, SSE, rate limiting, lockout, audit) and the Next.js/React client (NextAuth integration, interceptors, protected routes, multi-tab coordination). It supersedes the retired `FRONTEND_AUTH_GUIDE.md` — the client is implemented and the code documents itself (see `lib/auth/` and `lib/axios/`).
 
 ---
 
@@ -29,6 +29,32 @@ Browser                  Next.js (NextAuth)           Express Backend
 - The frontend (Next.js) manages sessions via NextAuth cookies only — no signing, no private key
 - The browser never directly sees the refresh token — it lives inside the HTTP-only NextAuth JWT cookie
 - All tokens are RS256-signed with a version field for global invalidation
+
+---
+
+## Authentication Flows (client)
+
+### Sign up with credentials
+
+1. User submits the signup form → `POST /api/auth/callback/credentials`
+2. NextAuth `CredentialsProvider` checks email uniqueness, hashes the password with Argon2id, and creates the user via Prisma
+3. The `jwt` callback signs an HMAC exchange proof and calls `POST /api/v1/auth/exchange` **server-side**
+4. The backend validates the proof and issues an RS256 pair plus a single-use SSE token; all tokens are stored in the HTTP-only NextAuth cookie
+5. User is redirected to the dashboard
+
+### Sign in with credentials
+
+1. `POST /api/auth/callback/credentials` — NextAuth finds the user, verifies the email, compares the Argon2id hash, and updates `lastLoginAt`
+2. A fresh `sessionId` (UUID) is generated and the exchange proof is signed + exchanged (see Token Exchange Flow)
+3. Session updated → redirect to dashboard
+4. Failed attempts are recorded via `POST /api/v1/internal/failed-attempt` and cleared on success (`/clear-attempts`); after 10 failures the account locks for 15 minutes (see Account Lockout)
+
+### Sign in with Google
+
+1. Redirect to the Google consent screen; Google redirects back with an authorization code
+2. NextAuth exchanges the code for an ID token + profile and creates-or-updates the user via the Prisma adapter
+3. The `signIn` guard rejects an unverified Google email from claiming an existing password account (this mitigates the risk of `allowDangerousEmailAccountLinking`)
+4. Exchange proof → tokens → session → redirect to dashboard
 
 ---
 
@@ -76,6 +102,20 @@ Browser                  Next.js (NextAuth)           Express Backend
 - If an already-rotated JTI is presented, it is treated as a **replay attack** and logged as `TOKEN_REPLAY_DETECTED`
 - `revokeAllRefreshTokens(userId)` supports logout-from-all-devices
 - Duplicate/concurrent refresh requests for the same old JTI are handled idempotently for a short window to avoid false replay outcomes during network retries
+
+---
+
+### Session storage (NextAuth)
+
+Tokens never reach the browser directly — they live inside NextAuth's HTTP-only JWT session cookie. The refresh token stays inside the cookie; the client only ever sees the access token and its expiry:
+
+```typescript
+interface Session {
+  user: { id: string; email: string; name?: string; image?: string; role: string; emailVerified?: Date };
+  backendToken: string;       // access token
+  backendTokenExpiry: number; // ms epoch
+}
+```
 
 ---
 
@@ -168,6 +208,53 @@ Content-Type: application/json
   "refreshTokenExpiry": 1234567890123
 }
 ```
+
+---
+
+## Client-Side Implementation (NextAuth jwt callback)
+
+Both the initial exchange and the silent refresh run inside NextAuth's `jwt` callback in `lib/auth/authOptions.ts` (server-side — never in the browser).
+
+**Initial mint** (on login, when `user` is present and `token.backendToken` is not yet set):
+
+```typescript
+const sessionId = crypto.randomUUID();
+const { timestamp, signature } = createExchangeProof(user.id, user.email, user.role, sessionId);
+const res = await fetch(`${process.env.BACKEND_URL}/api/v1/auth/exchange`, {
+  method: "POST",
+  body: JSON.stringify({ userId: user.id, email: user.email, role: user.role, sessionId, timestamp, signature }),
+});
+const tokens = await res.json();
+token.backendToken = tokens.accessToken;
+token.refreshToken = tokens.refreshToken;            // stays inside the cookie
+token.backendTokenExpiry = tokens.accessTokenExpiry;
+```
+
+**Silent refresh** (on every request, when the access token is within 60 seconds of expiry):
+
+```typescript
+const nearExpiry = Date.now() > (token.backendTokenExpiry - 60_000);
+if (nearExpiry && token.refreshToken) {
+  const existing = refreshLocks.get(sessionId);
+  if (existing) return existing.catch(() => null);   // in-process lock: one refresh per session
+  const promise = (async () => {
+    const res = await fetch(`${process.env.BACKEND_URL}/api/v1/auth/refresh`, {
+      method: "POST",
+      body: JSON.stringify({ refreshToken: token.refreshToken }),
+    });
+    if (res.ok) {
+      const newTokens = await res.json();
+      token.backendToken = newTokens.accessToken;
+      token.refreshToken = newTokens.refreshToken;
+      token.backendTokenExpiry = newTokens.accessTokenExpiry;
+    }
+  })();
+  refreshLocks.set(sessionId, promise);
+  try { await promise; } finally { refreshLocks.delete(sessionId); }
+}
+```
+
+**Failure model:** neither the exchange nor the silent refresh ever throws — a failed refresh leaves the previous (possibly expired) access token in place and the session alive. The next API call 401s, and the axios interceptor in `lib/axios/client.ts` decides between retry, silent degradation, or force-logout.
 
 ---
 
@@ -320,9 +407,10 @@ Authorization: Bearer <accessToken>   (optional — logout succeeds even if expi
 
 ## Internal Backend-to-Backend Endpoints
 
-Mounted at `/api/v1/internal` and authenticated with either a short-lived HMAC
+Mounted at `/api/v1/internal` and authenticated with a short-lived HMAC
 proof signed with `NEXTAUTH_SECRET` (the Next.js server — same scheme as
-`/exchange`, no extra env vars) or the optional `INTERNAL_AUTH_SECRET` header.
+`/exchange`, no extra env vars). HMAC-only: there is no static header
+credential to rotate or leak.
 
 | Endpoint | Purpose |
 |----------|---------|
@@ -594,8 +682,6 @@ GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
 BACKEND_URL=              # Server-side only (no NEXT_PUBLIC)
 NEXT_PUBLIC_API_URL=      # Client-side, for SSE connection
-UPSTASH_REDIS_REST_URL=
-UPSTASH_REDIS_REST_TOKEN=
 NODE_OPTIONS=--dns-result-order=ipv4first
 ```
 
@@ -608,14 +694,18 @@ JWT_PUBLIC_KEY_PATH=./keys/public.pem
 # Production (base64 encoded):
 # JWT_PRIVATE_KEY=
 # JWT_PUBLIC_KEY=
-UPSTASH_REDIS_REST_URL=
-UPSTASH_REDIS_REST_TOKEN=
 ALLOWED_ORIGIN=http://localhost:3000
 REDIS_URL=                        # ioredis — sessions, revocation, CSRF, lockout
 TRUST_PROXY_HOPS=1                # reverse-proxy hops for req.ip (Railway: 1; 0 disables)
-INTERNAL_AUTH_SECRET=             # optional shared secret for /api/v1/internal tooling
 SESSION_INACTIVITY_TIMEOUT=604800 # seconds (default 7 days)
 SESSION_ABSOLUTE_TIMEOUT=604800   # seconds (default 7 days)
+```
+
+### Generating secrets
+
+```bash
+openssl rand -base64 32        # NEXTAUTH_SECRET (must match across repos)
+node scripts/generate-keys.js  # RSA key pair (backend only)
 ```
 
 ---
@@ -668,6 +758,88 @@ const res = await fetch(`${process.env.BACKEND_URL}/api/data`, {
 });
 ```
 
+### App Router middleware (`middleware.ts`)
+
+```typescript
+import { withAuth } from "next-auth/middleware";
+export default withAuth({ pages: { signIn: "/authentication/login" } });
+export const config = { matcher: ["/dashboard/:path*", "/workspace/:path*", "/settings/:path*"] };
+```
+
+### Route-level protection
+
+```typescript
+if (!session) return redirect("/authentication/login");
+if (requiredRole && session.user.role !== requiredRole) return redirect("/unauthorized");
+```
+
+### Client component protection
+
+```typescript
+"use client";
+const { data: session, status } = useSession();
+if (status === "loading") return <div>Loading...</div>;
+if (status === "unauthenticated") redirect("/authentication/login");
+```
+
+### Server component protection
+
+```typescript
+const session = await getServerSession(authOptions);
+if (!session) redirect("/authentication/login");
+```
+
+---
+
+## Multi-Tab Coordination & Offline Handling
+
+### Multi-tab
+
+- Tabs coordinate through a `BroadcastChannel` (`focura-auth`, see `lib/axios/broadcast.ts`) using `refresh-start` / `refresh-complete` / `logout-all` events.
+- Only one tab refreshes at a time; the others queue or wait for the completion event.
+- A `logout-all` event from any tab stops timers, invalidates the token cache, and (in the initiating tab) performs the redirect.
+- A **hidden tab never kills the session** — inactivity enforcement and heartbeat pings are suspended while hidden; on becoming visible the tab re-syncs with the live session before restarting timers.
+
+### Offline / transient failures
+
+- The axios layer distinguishes a **dead session** (force-logout) from a **transient blip** (stay logged in; refresh retried, throttled to once per 30 s).
+- A failed silent refresh never logs the user out.
+- SSE auto-reconnects (5 s backoff) and re-establishes with the newest single-use token after each rotation.
+
+---
+
+## Error Reference & Troubleshooting
+
+### Common auth errors
+
+| Error | Cause | Handling |
+|-------|-------|----------|
+| `INVALID_CREDENTIALS` | Wrong password | Show error, let the user retry |
+| `USER_NOT_FOUND` | Email doesn't exist | Show signup link |
+| `EMAIL_NOT_VERIFIED` | Email not verified | Show verification prompt |
+| `TOKEN_EXPIRED` | Access token expired | Auto-refresh via interceptor |
+| `TOKEN_REPLAY_DETECTED` | Refresh JTI already used | Force re-login (security) |
+| `SESSION_TIMEOUT` | Inactivity/absolute timeout | Redirect to login |
+| `TOKEN_REVOKED` | Session evicted or revoked | Redirect to login |
+| `SESSION_HIJACK_DETECTED` | Device/IP binding mismatch | Revoke all sessions, force re-login |
+| `ACCOUNT_LOCKED` | 10 failed attempts | Show "temporarily locked" with unlock time |
+| `RATE_LIMIT_EXCEEDED` | Too many requests | Retry after `retryAfter` seconds |
+
+### Error response format
+
+```json
+{ "success": false, "code": "TOKEN_EXPIRED", "message": "Your session has expired. Please login again." }
+```
+
+### Troubleshooting
+
+- **"Session not found"** — the axios client could not fetch a session; ensure the request runs after `useSession()` resolves, or use the `api` wrapper, which handles it.
+- **"Token expired" on every request** — token-cache invalidation or clock skew (> 60 s). Call `invalidateTokenCache()` / check server time sync.
+- **"HMAC verification failed"** — `NEXTAUTH_SECRET` mismatch between frontend and backend.
+- **"Refresh token not rotating"** — check the Network tab for `POST /refresh` ~1 minute before expiry; a stuck in-process lock clears on the next request.
+- **SSE drops randomly** — network or token rotation; the hook auto-reconnects after 5 s with the newest token.
+- **401 on a valid token** — user deleted, email unverified, or the token was globally invalidated (version bump).
+
 ---
 
 ## Key Rotation
@@ -708,4 +880,28 @@ To rotate RSA keys (e.g. every 90 days or after a breach):
 | SSE security                    | 30s single-use token, atomic consume, 5 conns/user max |
 
 ---
+### Password hashing
+
+Argon2id, with dummy-hash verification to equalize timing when the account does not exist:
+
+```typescript
+const hash = await argon2.hash(password);            // signup
+const isValid = await argon2.verify(hash, password); // login
+await argon2.verify(DUMMY_HASH, "invalid");          // user not found → consume time
+```
+
+### Security checklist
+
+- HTTPS only (production); secure cookies (`httpOnly`, `secure`, `sameSite=Lax`)
+- CORS with explicit origins (`CLIENT_URL` / `FRONTEND_URL` exact match)
+- No secrets in frontend code or version control
+- Audit logging of security events (see Audit Logging)
+- Key rotation strategy (90 days or on breach)
+- Timing-safe comparisons (`timingSafeEqual`)
+- Input validation & sanitization; output escaping (React auto-escapes)
+- CSRF tokens on state-changing requests; security headers (CSP, HSTS, X-Frame-Options)
+- Account lockout after failed attempts; session binding to IP + device fingerprint
+
+---
+
 **Last Updated**: August 13, 2026

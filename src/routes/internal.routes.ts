@@ -15,6 +15,9 @@ import {
   revokeUserSession,
 } from "../lib/auth/sessionManager.js";
 import { prisma } from "../lib/prisma.js";
+import { verifyTOTPToken } from "../lib/totp.js";
+import { rateLimitMiddleware } from "../middleware/rateLimiter.js";
+import { getRedisClient } from "../redis/redis.client.js";
 import { asyncHandler } from "../errors/index.js";
 
 const router = Router();
@@ -71,22 +74,15 @@ function verifyInternalProof(req: Request): boolean {
   }
 }
 
-function requireInternalSecret(req: Request, res: Response, next: NextFunction) {
-  // Accept either the dedicated x-internal-secret header (for server tooling
-  // that holds INTERNAL_AUTH_SECRET) or the HMAC proof used by Next.js.
-  const secret = req.headers["x-internal-secret"];
-  if (
-    secret &&
-    process.env.INTERNAL_AUTH_SECRET &&
-    secret === process.env.INTERNAL_AUTH_SECRET
-  ) {
-    return next();
-  }
+function requireInternalProof(req: Request, res: Response, next: NextFunction) {
+  // HMAC proof only — signed with the NEXTAUTH_SECRET the Next.js server
+  // already shares with /exchange. No static header credential to rotate or
+  // leak; a missing shared secret rejects cleanly instead of throwing.
   if (verifyInternalProof(req)) return next();
   return res.status(401).json({ success: false, message: "Unauthorized" });
 }
 
-router.use(requireInternalSecret);
+router.use(requireInternalProof);
 
 router.post("/failed-attempt", asyncHandler(async (req, res) => {
   const { email } = req.body ?? {};
@@ -143,6 +139,65 @@ router.post("/revoke-sessions", asyncHandler(async (req, res) => {
     });
   }
   return res.json({ success: true });
+}));
+
+// ─── Google sign-in 2FA completion ──────────────────────────────────────────
+// The Next.js server verifies the TOTP locally (clean user-facing errors) and
+// calls /2fa-verify to mint a short-lived Redis marker; the NextAuth jwt
+// callback consumes it via /2fa-check when the session updates. Fail-closed:
+// a Redis outage must NOT make 2FA appear verified.
+router.post(
+  "/2fa-verify",
+  // Per-user throttle — an attacker rotating IPs still hits the same bucket.
+  rateLimitMiddleware(10, 60, (req) => (req.body as { userId?: string })?.userId),
+  asyncHandler(async (req, res) => {
+    const { userId, totpCode } = req.body ?? {};
+    if (
+      typeof userId !== "string" ||
+      !userId ||
+      typeof totpCode !== "string" ||
+      !totpCode.trim()
+    ) {
+      return res.status(400).json({ success: false, error: "userId and totpCode are required" });
+    }
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { email: true, twoFactorEnabled: true, twoFactorSecret: true },
+    });
+    if (!user?.twoFactorSecret) {
+      return res.status(400).json({ success: false, error: "Two-factor authentication is not configured" });
+    }
+    const valid = await verifyTOTPToken(totpCode.trim(), user.twoFactorSecret);
+    auditLog(valid ? "TOTP_VERIFIED" : "TOTP_FAILED", {
+      userId,
+      email: user.email,
+      reason: "Google sign-in 2FA",
+    });
+    if (!valid) {
+      return res.status(400).json({ success: false, error: "Invalid verification code. Please try again." });
+    }
+    try {
+      await getRedisClient().setex(`focura:2fa:verified:${userId}`, 600, "1");
+    } catch (err) {
+      console.error("[2fa-verify] Failed to set Redis marker:", err);
+      return res.status(503).json({ success: false, error: "Verification service unavailable. Please try again." });
+    }
+    return res.json({ success: true });
+  }),
+);
+
+router.post("/2fa-check", asyncHandler(async (req, res) => {
+  const { userId } = req.body ?? {};
+  if (typeof userId !== "string" || !userId) {
+    return res.status(400).json({ success: false, verified: false });
+  }
+  let verified = false;
+  try {
+    verified = (await getRedisClient().exists(`focura:2fa:verified:${userId}`)) === 1;
+  } catch {
+    // Redis down → fail closed: 2FA must never be skipped.
+  }
+  return res.json({ success: true, verified });
 }));
 
 export default router;
