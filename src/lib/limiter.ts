@@ -1,5 +1,4 @@
-import { Redis } from "@upstash/redis";
-import { redis } from "./redis.js";
+import { getRedisClient } from "../redis/redis.client.js";
 
 export interface RateLimitResult {
   success: boolean;
@@ -10,23 +9,23 @@ export interface RateLimitResult {
 
 const USER_TIER_LIMITS = { free: 60, pro: 300, enterprise: 1000 } as const;
 
+// Sliding-window limiter backed by the shared ioredis client — the backend's
+// single Redis client (the former Upstash REST client was consolidated away).
 class RedisRateLimiter {
-  private redis: Redis;
-  constructor() {
-    this.redis = redis
-  }
   async limit(key: string, customLimit = 60): Promise<RateLimitResult> {
     const now = Date.now(),
       window = 60_000,
       windowStart = now - window,
       limitKey = `focura:rl:${key}`;
-    const pipeline = this.redis.pipeline();
+    const pipeline = getRedisClient().pipeline();
     pipeline.zremrangebyscore(limitKey, 0, windowStart);
     pipeline.zcard(limitKey);
-    pipeline.zadd(limitKey, { score: now, member: `${now}:${Math.random()}` });
+    pipeline.zadd(limitKey, now, `${now}:${Math.random()}`);
     pipeline.expire(limitKey, 60);
+    // ioredis resolves exec() as [err, result][] tuples — zcard is index 1.
     const results = await pipeline.exec();
-    const count = (results[1] as number) || 0;
+    const [, zcardResult] = results?.[1] ?? [];
+    const count = typeof zcardResult === "number" ? zcardResult : 0;
     return {
       success: count < customLimit,
       remaining: Math.max(0, customLimit - count - 1),
@@ -58,7 +57,7 @@ class DevRateLimiter {
 }
 
 const limiterInstance =
-  process.env.NODE_ENV === "production" && process.env.UPSTASH_REDIS_REST_URL
+  process.env.NODE_ENV === "production"
     ? new RedisRateLimiter()
     : new DevRateLimiter();
 

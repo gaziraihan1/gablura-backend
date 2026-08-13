@@ -110,16 +110,26 @@ export function generateDeviceFingerprint(req: Request): string {
 }
 
 export function getClientIp(req: Request): string {
+  // Prefer Express's trust-proxy-computed req.ip. With `trust proxy` set
+  // (see index.ts/app.ts), Express walks the X-Forwarded-For chain from the
+  // trusted proxy hop and takes the rightmost entry — the one the proxy
+  // appended — so a client can no longer spoof the first XFF value the way
+  // hand-parsing the header could.
+  if (typeof req.ip === 'string' && req.ip.length > 0) {
+    // Normalize IPv4-mapped IPv6 addresses (`::ffff:127.0.0.1` → `127.0.0.1`)
+    // so the same client is not seen as a different IP across requests,
+    // which would false-positive the 5-minute IP-change check.
+    return req.ip.startsWith('::ffff:') ? req.ip.slice(7) : req.ip;
+  }
+
+  // Fallbacks for requests without an Express IP (unit tests, unusual
+  // transports): first XFF entry, then the socket address.
   const forwarded = req.headers['x-forwarded-for'];
-  
   if (typeof forwarded === 'string') {
     return forwarded.split(',')[0].trim();
   }
-  
+
   const ip = req.socket.remoteAddress || 'unknown';
-  // Normalize IPv4-mapped IPv6 addresses (`::ffff:127.0.0.1` → `127.0.0.1`)
-  // so the same localhost client is not seen as a different IP across
-  // requests, which would false-positive the 5-minute IP-change check.
   return ip.startsWith('::ffff:') ? ip.slice(7) : ip;
 }
 

@@ -97,31 +97,6 @@ vi.mock('ioredis', () => ({
   Redis:   RedisMock,
 }));
 
-// ── MOCK: @upstash/redis (only used by contactRateLimit + templates) ───────────
-vi.mock('@upstash/redis', () => ({
-  Redis: vi.fn().mockImplementation(() => createInMemoryRedisMock()),
-}));
-
-// ── MOCK: @upstash/ratelimit ──────────────────────────────────────────────────
-vi.mock('@upstash/ratelimit', () => {
-  const RatelimitMock = vi.fn().mockImplementation(() => ({
-    limit: vi.fn().mockResolvedValue({
-      success: true,
-      remaining: 99,
-      reset: Date.now() + 60_000,
-    }),
-  })) as unknown as typeof import('@upstash/ratelimit').Ratelimit & {
-    slidingWindow: ReturnType<typeof vi.fn>;
-    fixedWindow:   ReturnType<typeof vi.fn>;
-    tokenBucket:   ReturnType<typeof vi.fn>;
-  };
-
-  (RatelimitMock as any).slidingWindow = vi.fn().mockReturnValue("mocked-limiter");
-  (RatelimitMock as any).fixedWindow   = vi.fn().mockReturnValue("mocked-limiter");
-  (RatelimitMock as any).tokenBucket   = vi.fn().mockReturnValue("mocked-limiter");
-
-  return { Ratelimit: RatelimitMock };
-});
 
 // ── MOCK: redis/redis.client.ts ───────────────────────────────────────────
 const noopRedisClient = createInMemoryRedisMock();
@@ -141,10 +116,6 @@ vi.mock('../redis/redis.client.js', () => ({
   },
 }));
 
-// ── MOCK: lib/redis.ts (shim — only used by Upstash ratelimit files) ──────────
-vi.mock('../lib/redis.js', () => ({
-  redis: createInMemoryRedisMock(),
-}));
 
 // ── MOCK: tokenRevocation ─────────────────────────────────────────────────────
 vi.mock('../lib/auth/tokenRevocation.js', () => ({

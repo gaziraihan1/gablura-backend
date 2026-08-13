@@ -250,6 +250,16 @@ Content-Type: application/json
 | `401` | `USER_NOT_FOUND` | User ID doesn't exist in DB |
 | `401` | `EMAIL_NOT_VERIFIED` | Email not verified and doesn't match |
 
+### Account Lockout
+
+The credentials flow records failed attempts with the backend
+(`POST /api/v1/internal/failed-attempt`) and clears them on success
+(`/clear-attempts`). After **10 failed attempts** the account is locked for
+**15 minutes** — the login form shows a "temporarily locked … please try again
+in X minutes" message, and further attempts emit `LOGIN_BLOCKED` until the
+lock expires. All internal calls are HMAC-signed with `NEXTAUTH_SECRET` and
+are strictly best-effort: they never block or fail a login.
+
 ### Idempotency
 
 The exchange endpoint is **idempotent for 90 seconds** per `sessionId`. If the same `sessionId` is used in a duplicate request within 90 seconds, the backend returns the cached token pair from the first successful exchange.
@@ -1128,6 +1138,8 @@ api.interceptors.response.use(
 | 7 days absolute | Session expires |
 | More than 5 concurrent sessions | Oldest session evicted |
 | Account banned | All sessions invalid (cache invalidated) |
+| Password changed | ALL **other** sessions revoked (current stays logged in) |
+| Password reset | ALL sessions revoked + refresh tokens cleared |
 
 ---
 

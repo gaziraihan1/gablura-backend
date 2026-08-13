@@ -318,40 +318,61 @@ Authorization: Bearer <accessToken>   (optional — logout succeeds even if expi
 
 ---
 
+## Internal Backend-to-Backend Endpoints
+
+Mounted at `/api/v1/internal` and authenticated with either a short-lived HMAC
+proof signed with `NEXTAUTH_SECRET` (the Next.js server — same scheme as
+`/exchange`, no extra env vars) or the optional `INTERNAL_AUTH_SECRET` header.
+
+| Endpoint | Purpose |
+|----------|---------|
+| `POST /failed-attempt` | Record a failed login (returns `locked`/`unlocksAt`); audits `ACCOUNT_LOCKED` on the lock transition |
+| `POST /clear-attempts` | Clear the failure counter + lock on successful login |
+| `POST /audit` | Emit login audit events (`LOGIN_SUCCESS`/`LOGIN_FAILED`/`LOGIN_BLOCKED`) — whitelisted only |
+| `POST /revoke-sessions` | Revoke ALL sessions + refresh tokens for a user (password reset) |
+
+---
+
 ## Session Binding & Hijack Detection
 
-Each session is bound to the client's IP and User-Agent at login time. Every authenticated request checks these fingerprints — if either changes, the session is flagged and the user is forced to re-authenticate.
+Each session is bound to a device fingerprint (normalized browser family + OS + language) and an IP address. Every authenticated request checks these signals; a change is either a legitimate re-bind (`SESSION_REBOUND`) or a hijack (`SESSION_HIJACK_DETECTED`, which revokes all refresh tokens).
 
-**Redis key:** `focura:session:binding:<sessionId>`
+**Redis key:** `session:metadata:<sessionId>`
 **TTL:** 7 days (matches refresh token lifetime)
 
-On login, the backend stores:
-```json
-{ "ip": "192.168.1.1", "userAgent": "Mozilla/5.0..." }
-```
-
-On each request, `sessionBinding.ts` middleware compares current IP/User-Agent with the stored values. A mismatch logs `SESSION_BINDING_MISMATCH` and clears the session.
+The token exchange runs server-to-server (NextAuth), so the binding is left pending (`deviceId: null`) and adopted from the first real browser request — never rejected as a mismatch. Same-IP device changes (DevTools emulation, browser updates) silently re-bind; only a device change from a different IP is treated as a hijack. IP changes within 5 minutes of last activity are flagged as suspicious; after 5 minutes they are allowed.
 
 ### Account Lockout
 
-After **10 failed login attempts** within 15 minutes, the account is locked for **15 minutes**.
+After **10 failed login attempts**, the account is locked for **15 minutes**. The
+Next.js credentials flow records failures and clears them on success via the
+internal endpoints (`POST /api/v1/internal/failed-attempt` and
+`/clear-attempts`, HMAC-signed with `NEXTAUTH_SECRET`); a locked account
+receives a "temporarily locked" message on the login page. Audit events:
+`ACCOUNT_LOCKED` (critical, emitted on the lock transition), `LOGIN_FAILED`,
+`LOGIN_BLOCKED`, `LOGIN_SUCCESS`.
 
 | Parameter | Value |
 |-----------|-------|
 | Max failed attempts | 10 |
-| Lockout window | 15 minutes |
-| Counter TTL | 15 minutes |
+| Lockout duration | 15 minutes |
+| Failure-count window | 60 minutes |
 
 **Redis keys:**
-- `focura:lockout:attempts:<email>` — incrementing counter
-- `focura:lockout:locked:<email>` — flag once locked
+- `focura:lockout:failures:<email>` — incrementing failure counter (60-min window)
+- `focura:lockout:locked:<email>` — lock flag (15-min TTL)
 
 ### Concurrent Session Management
 
-Each user is limited to **5 active sessions**. On the 6th login, the oldest session is revoked.
+Each user is limited to **5 active sessions**. On the 6th login, the least-active session is evicted and tombstoned.
 
-- Tracked via `focura:session:binding:<sessionId>` keys per user
-- Oldest session removed automatically when limit exceeded
+- Tracked via `user:sessions:<userId>` (Redis set) plus `session:metadata:<sessionId>`
+- The evicted session's tokens can no longer authenticate or refresh (`focura:session:revoked:<sessionId>` tombstone)
+
+### Session Revocation on Credential Changes
+
+- `PUT /api/v1/user/password` (change password) revokes **every other session** immediately — the current session stays logged in.
+- A password reset (Next.js `POST /api/auth/reset-password`) calls `POST /api/v1/internal/revoke-sessions` to revoke **all** sessions and refresh tokens.
 
 ### Distributed Refresh Lock
 
@@ -382,12 +403,12 @@ Two timeout mechanisms enforced by `sessionTimeout.ts` middleware:
 
 | Type | Duration | Behavior |
 |------|----------|----------|
-| Inactivity timeout | 30 minutes | Clears session on idle |
-| Absolute timeout | 7 days | Forces re-login regardless of activity |
+| Inactivity timeout | 7 days (`SESSION_INACTIVITY_TIMEOUT`, env-overridable) | Clears session on idle |
+| Absolute timeout | 7 days (`SESSION_ABSOLUTE_TIMEOUT`) | Forces re-login regardless of activity |
 
-**Redis key:** `focura:session:lastActivity:<sessionId>`
+**Redis keys:** `session:created:<sessionId>` and `session:activity:<sessionId>` (both 7-day TTL)
 
-Updated on each authenticated request. If the gap exceeds 30 minutes, the session is cleared and the user is redirected to login.
+Updated on each authenticated request (and by the `/api/v1/auth/activity` heartbeat). If the inactivity gap exceeds the timeout, the session is rejected with `SESSION_TIMEOUT`.
 
 ---
 
@@ -545,13 +566,15 @@ All keys are prefixed with `focura:` to avoid collisions.
 | `focura:revoked:access:<jti>`      | 900s      | Revoked access token JTIs      |
 | `focura:refresh:<userId>:<jti>`    | 7 days    | Valid refresh token JTIs       |
 | `focura:refresh:index:<userId>`    | no TTL*   | Set of refresh-token keys per user for fast revoke-all |
-| `focura:refresh:result:<userId>:<oldJti>` | 10s | Cached refresh response for idempotent duplicate refresh handling |
-| `focura:refresh:lock:<sessionId>`  | 10s       | Distributed lock for refresh rotation |
+| `focura:refresh:result:<userId>:<oldJti>` | 30s | Cached refresh response for idempotent duplicate refresh handling |
+| `focura:refresh:lock:<sessionId>`  | 45s       | Distributed lock for refresh rotation |
 | `focura:rl:<key>`                  | 60s       | Rate limiting sliding window   |
-| `focura:session:binding:<sessionId>` | 7 days  | IP + User-Agent fingerprint    |
-| `focura:session:lastActivity:<sessionId>` | 30 min | Inactivity tracking         |
-| `focura:lockout:attempts:<email>`  | 15 min    | Failed login attempt counter   |
-| `focura:lockout:locked:<email>`    | 15 min    | Account lockout flag           |
+| `session:metadata:<sessionId>`     | 7 days    | Device + IP fingerprint + last activity |
+| `session:created:<sessionId>`      | 7 days    | Absolute session lifetime marker |
+| `session:activity:<sessionId>`     | 7 days    | Inactivity tracking              |
+| `focura:session:revoked:<sessionId>` | 7 days | Tombstone for evicted/revoked sessions |
+| `focura:lockout:failures:<email>`  | 60 min    | Failed login attempt counter     |
+| `focura:lockout:locked:<email>`    | 15 min    | Account lockout flag             |
 | `focura:csrf:<sessionId>`          | 30 min    | CSRF token per session         |
 | `focura:sse:<jti>`                 | 30s       | Single-use SSE token binding   |
 | `focura:db:pool:metrics`           | 10s       | Database connection pool stats |
@@ -588,6 +611,11 @@ JWT_PUBLIC_KEY_PATH=./keys/public.pem
 UPSTASH_REDIS_REST_URL=
 UPSTASH_REDIS_REST_TOKEN=
 ALLOWED_ORIGIN=http://localhost:3000
+REDIS_URL=                        # ioredis — sessions, revocation, CSRF, lockout
+TRUST_PROXY_HOPS=1                # reverse-proxy hops for req.ip (Railway: 1; 0 disables)
+INTERNAL_AUTH_SECRET=             # optional shared secret for /api/v1/internal tooling
+SESSION_INACTIVITY_TIMEOUT=604800 # seconds (default 7 days)
+SESSION_ABSOLUTE_TIMEOUT=604800   # seconds (default 7 days)
 ```
 
 ---
@@ -670,14 +698,14 @@ To rotate RSA keys (e.g. every 90 days or after a breach):
 | Audit trail                     | Structured JSON, severity-tagged            |
 | Session management              | HTTP-only cookie via NextAuth               |
 | Session binding                 | IP + User-Agent fingerprint via Redis       |
-| Account lockout                 | 10 failed attempts → 15-min lock            |
+| Account lockout                 | 10 failed attempts → 15-min lock (wired via internal endpoints) |
 | Concurrent session limit        | 5 sessions per user, oldest revoked         |
 | Distributed refresh lock        | Redis lock prevents duplicate rotation      |
 | CSRF protection                 | Per-session token, timing-safe verification |
 | Security headers                | CSP, HSTS, X-Frame-Options, etc.            |
 | RBAC                            | 5 roles, 18 granular permissions            |
-| Session timeouts                | 30-min inactivity, 7-day absolute           |
+| Session timeouts                | 7-day inactivity, 7-day absolute             |
 | SSE security                    | 30s single-use token, atomic consume, 5 conns/user max |
 
 ---
-**Last Updated**: July 27, 2026
+**Last Updated**: August 13, 2026

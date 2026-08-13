@@ -276,6 +276,28 @@ export const changePassword = async (req: AuthRequest, res: Response): Promise<v
     // Invalidate user cache
     await UserCache.invalidateProfile(req.user.id);
 
+    // Session lifecycle: the password just changed, so every OTHER session
+    // must die immediately — a stolen session on another device must not
+    // outlive the credential rotation. The current session keeps working
+    // (the user just proved knowledge of the old password). Best-effort: the
+    // Redis helpers swallow their own errors so a Redis blip never turns a
+    // successful password change into a 500.
+    try {
+      const sessions = await getUserActiveSessions(req.user.id);
+      const others = sessions.filter((s) => s.sessionId !== req.user?.sessionId);
+      for (const session of others) {
+        await markSessionRevoked(session.sessionId);
+        await revokeUserSession(req.user.id, session.sessionId);
+      }
+      auditLog('SESSIONS_REVOKED', {
+        userId: req.user.id,
+        sessionId: req.user.sessionId,
+        meta: { reason: 'password_changed', count: others.length },
+      });
+    } catch (err) {
+      console.error('❌ Failed to revoke other sessions after password change:', err);
+    }
+
     res.status(200).json({
       success: true,
       message: 'Password changed successfully',

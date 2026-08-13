@@ -1,6 +1,5 @@
 import express, { Application, NextFunction, Request, Response } from "express";
 import cors from "cors";
-import helmet from "helmet";
 
 import { prisma } from "./lib/prisma.js";
 import { authenticate } from "./middleware/auth.js";
@@ -23,6 +22,7 @@ import { storageRouter } from "./modules/storage/index.js";
 import { analyticsRouter } from "./modules/analytics/index.js";
 import { fileManagementRouter } from "./modules/file/index.js";
 import logoutRoutes from "./routes/auth.routes.js";
+import internalRouter from "./routes/internal.routes.js";
 import { workspaceUsageRouter } from "./modules/workspaceUsage/index.js";
 import { announcementRouter } from "./modules/announcement/index.js";
 import { meetingRoutes } from "./modules/meeting/index.js";
@@ -39,7 +39,7 @@ import {
 } from "./modules/announcement/index.js";
 import { errorHandler, notFoundHandler } from "./errors/errorHandler.js";
 import { adminResourceRouter, publicResourceRouter } from "./modules/resource/index.js";
-import { securityHeaders } from "./middleware/securityHeaders.js";
+import { applySecurity } from "./middleware/securityHeaders.js";
 import { requireFocuraAdmin } from "./middleware/focuraAdmin.js";
 import apiKeyRouter from "./modules/apikey/apikey.routes.js";
 import { integrationRouter, workspaceIntegrationRouter, integrationWebhookRouter } from "./modules/integration/index.js";
@@ -54,6 +54,13 @@ const allowedOrigins = [
 ].filter(Boolean) as string[];
 
 const app: Application = express();
+
+// Behind a reverse proxy (e.g. Railway), Express must trust N hops so req.ip
+// reflects the real client IP from X-Forwarded-For instead of the proxy's
+// socket address. Default 1 (Railway appends one hop); set TRUST_PROXY_HOPS=0
+// to disable or to the number of trusted proxy hops.
+const trustProxyHops = parseInt(process.env.TRUST_PROXY_HOPS ?? "", 10);
+app.set("trust proxy", Number.isFinite(trustProxyHops) ? trustProxyHops : 1);
 
 // ── Stripe webhook (RAW body required) ─────────────────────
 app.use(webhookRouter);
@@ -108,33 +115,9 @@ app.use(
 );
 
 // ── Security (match index.ts) ──────────────────────────────
-app.use(
-  helmet({
-    contentSecurityPolicy: isProd
-      ? {
-          directives: {
-            defaultSrc: ["'self'"],
-            scriptSrc: ["'self'"],
-            styleSrc: ["'self'", "'unsafe-inline'"],
-            imgSrc: ["'self'", "data:", "https:"],
-            fontSrc: ["'self'", "data:"],
-            connectSrc: ["'self'", ...allowedOrigins],
-            frameSrc: ["'none'"],
-            frameAncestors: ["'none'"],
-            objectSrc: ["'none'"],
-            baseUri: ["'self'"],
-            formAction: ["'self'"],
-            mediaSrc: ["'self'"],
-          },
-        }
-      : false,
-    crossOriginResourcePolicy: { policy: "cross-origin" },
-    frameguard: { action: "deny" },
-  }),
-);
-
-// ── Additional security headers ───────────────────────────
-app.use(securityHeaders);
+// ── Security headers (helmet + explicit header policy — single source of
+//    truth in src/middleware/securityHeaders.ts) ─────────────────────────────
+applySecurity(app);
 
 // ── Dev debug logger (enhanced) ────────────────────────────
 app.use((req: Request, _res: Response, next) => {
@@ -183,6 +166,7 @@ app.use("/api/v1/contact", contactRouter);
 app.use("/api/v1/jobs", jobRouter);
 app.use("/api/v1/templates", templatesRouter);
 app.use("/api/v1/auth", logoutRoutes);
+app.use("/api/v1/internal", internalRouter); // Backend-to-backend (lockout, audit, session revocation)
 
 // ── Protected routes ───────────────────────────────────────
 app.use(

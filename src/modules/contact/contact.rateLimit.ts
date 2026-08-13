@@ -1,46 +1,47 @@
 import { Request, Response, NextFunction } from "express";
-import { redis } from "../../lib/redis.js";
+import { getRedisClient } from "../../redis/redis.client.js";
 
-// ─── Lazy loader for Ratelimit (mirrors auth helper pattern) ──────────────────
-async function getRatelimitSafe() {
-  try {
-    const mod = await import("@upstash/ratelimit");
-    return mod.Ratelimit;
-  } catch {
-    return null;
-  }
-}
+// ─── Helpers ────────────────────────────────────────────────────────────────
 
-// ─── Safe limiter creator ─────────────────────────────────────────────────────
-async function createLimiterSafe(config: {
-  tokens: number;
-  window: string;
-  prefix: string;
-}) {
-  const Ratelimit = await getRatelimitSafe();
-
-  if (!Ratelimit) return null;
-
-  // Try modern API
-  if (typeof (Ratelimit as any).slidingWindow === "function") {
-    return new Ratelimit({
-      redis,
-      limiter: (Ratelimit as any).slidingWindow(config.tokens, config.window),
-      prefix: config.prefix,
-    });
-  }
-
-  // If API mismatch → disable limiter (like CSRF fallback)
-  return null;
-}
-
-// ─── Helper ──────────────────────────────────────────────────────────────────
 function getRealIp(req: Request): string {
+  // Trusted IP: the RIGHTMOST X-Forwarded-For entry is the one the trusted
+  // proxy appended; earlier entries are client-spoofable. Falls back to the
+  // socket address.
   const forwarded = req.headers["x-forwarded-for"];
   if (typeof forwarded === "string") {
-    return forwarded.split(",")[0].trim();
+    const entries = forwarded
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (entries.length > 0) return entries[entries.length - 1];
   }
   return req.socket.remoteAddress ?? "unknown";
+}
+
+async function slidingWindowLimit(
+  key: string,
+  tokens: number,
+  windowSeconds: number,
+): Promise<{ success: boolean; reset: number }> {
+  const redis = getRedisClient();
+  const now = Date.now();
+  const windowStart = now - windowSeconds * 1000;
+  const limitKey = `focura:contact:${key}`;
+
+  const pipeline = redis.pipeline();
+  pipeline.zremrangebyscore(limitKey, 0, windowStart);
+  pipeline.zcard(limitKey);
+  pipeline.zadd(limitKey, now, `${now}:${Math.random()}`);
+  pipeline.expire(limitKey, windowSeconds);
+  // ioredis resolves exec() as [err, result][] tuples — zcard is index 1.
+  const results = await pipeline.exec();
+  const [, zcardResult] = results?.[1] ?? [];
+  const count = typeof zcardResult === "number" ? zcardResult : 0;
+
+  return {
+    success: count < tokens,
+    reset: windowStart + windowSeconds * 1000,
+  };
 }
 
 // ─── Middleware ──────────────────────────────────────────────────────────────
@@ -49,73 +50,62 @@ export async function contactRateLimit(
   res: Response,
   next: NextFunction
 ): Promise<void> {
-  // ✅ Same pattern as your auth/CSRF helpers
+  // Same pattern as the auth/CSRF helpers — never block in tests.
   if (process.env.NODE_ENV === "test") {
     return next();
   }
 
-  const ipLimiter = await createLimiterSafe({
-    tokens: 3,
-    window: "1 h",
-    prefix: "focura:contact:ip",
-  });
+  try {
+    const ip = getRealIp(req);
 
-  const emailLimiter = await createLimiterSafe({
-    tokens: 2,
-    window: "24 h",
-    prefix: "focura:contact:email",
-  });
+    // ── IP check: 3 requests / hour ──────────────────────────────────────
+    const ipResult = await slidingWindowLimit(`ip:${ip}`, 3, 3600);
 
-  // If limiter unavailable → fail closed (reject to prevent abuse)
-  if (!ipLimiter) {
-    console.warn("[contactRateLimit] Rate limiter unavailable — rejecting request");
-    res.status(429).json({
-      success: false,
-      error: "RATE_LIMIT_UNAVAILABLE",
-      message: "Rate limiting service is temporarily unavailable. Please try again later.",
-    });
-    return;
-  }
-
-  const ip = getRealIp(req);
-
-  // ── IP check ─────────────────────────────────────────────────────────────
-  const ipResult = await ipLimiter.limit(ip);
-
-  if (!ipResult.success) {
-    const minutes = Math.ceil((ipResult.reset - Date.now()) / 60000);
-
-    res.status(429).json({
-      success: false,
-      error: "TOO_MANY_REQUESTS",
-      message: `Too many requests. Try again in ${minutes} minute${
-        minutes !== 1 ? "s" : ""
-      }.`,
-    });
-    return;
-  }
-
-  // ── Email check ──────────────────────────────────────────────────────────
-  const email: string | undefined = req.body?.email?.toLowerCase?.().trim();
-
-  if (email && emailLimiter) {
-    const emailResult = await emailLimiter.limit(email);
-
-    if (!emailResult.success) {
-      const hours = Math.ceil(
-        (emailResult.reset - Date.now()) / 3600000
-      );
+    if (!ipResult.success) {
+      const minutes = Math.ceil((ipResult.reset - Date.now()) / 60000);
 
       res.status(429).json({
         success: false,
         error: "TOO_MANY_REQUESTS",
-        message: `Email limit reached. Try again in ${hours} hour${
-          hours !== 1 ? "s" : ""
+        message: `Too many requests. Try again in ${minutes} minute${
+          minutes !== 1 ? "s" : ""
         }.`,
       });
       return;
     }
-  }
 
-  next();
+    // ── Email check: 2 requests / 24 hours ───────────────────────────────
+    const email: string | undefined = req.body?.email?.toLowerCase?.().trim();
+
+    if (email) {
+      const emailResult = await slidingWindowLimit(`email:${email}`, 2, 86400);
+
+      if (!emailResult.success) {
+        const hours = Math.ceil((emailResult.reset - Date.now()) / 3600000);
+
+        res.status(429).json({
+          success: false,
+          error: "TOO_MANY_REQUESTS",
+          message: `Email limit reached. Try again in ${hours} hour${
+            hours !== 1 ? "s" : ""
+          }.`,
+        });
+        return;
+      }
+    }
+
+    next();
+  } catch (err) {
+    // Fail closed: reject when the limiter can't be verified.
+    console.warn(
+      "[contactRateLimit] Rate limiter unavailable — rejecting request",
+      err,
+    );
+    res.status(429).json({
+      success: false,
+      error: "RATE_LIMIT_UNAVAILABLE",
+      message:
+        "Rate limiting service is temporarily unavailable. Please try again later.",
+    });
+  }
 }

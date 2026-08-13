@@ -2,10 +2,53 @@
 // Security Headers Middleware
 // ═══════════════════════════════════════════════════════════════
 
-import { Request, Response, NextFunction } from 'express';
+import { Application, Request, Response, NextFunction } from 'express';
+import helmet from 'helmet';
 
 const isProd = process.env.NODE_ENV === 'production';
 const API_URL = process.env.BACKEND_URL || 'http://localhost:5000';
+
+/**
+ * Single source of truth for the security-header stack shared by BOTH app
+ * instances (src/index.ts server entry and src/app.ts used by integration
+ * tests). helmet applies its baseline protections; securityHeaders then
+ * applies the explicit Focura header policy — its values intentionally win
+ * where they overlap with helmet's defaults (CSP, X-Frame-Options, CORP).
+ */
+export function applySecurity(app: Application): void {
+  const allowedOrigins = [
+    process.env.CLIENT_URL,
+    process.env.FRONTEND_URL,
+    ...(!isProd ? ['http://localhost:3000', 'http://localhost:3001'] : []),
+  ].filter(Boolean) as string[];
+
+  app.use(
+    helmet({
+      contentSecurityPolicy: isProd
+        ? {
+            directives: {
+              defaultSrc: ["'self'"],
+              scriptSrc: ["'self'"],
+              styleSrc: ["'self'", "'unsafe-inline'"],
+              imgSrc: ["'self'", "data:", "https:"],
+              fontSrc: ["'self'", "data:"],
+              connectSrc: ["'self'", ...allowedOrigins],
+              frameSrc: ["'none'"],
+              frameAncestors: ["'none'"],
+              objectSrc: ["'none'"],
+              baseUri: ["'self'"],
+              formAction: ["'self'"],
+              mediaSrc: ["'self'"],
+            },
+          }
+        : false,
+      crossOriginResourcePolicy: { policy: 'cross-origin' },
+      frameguard: { action: 'deny' },
+    }),
+  );
+
+  app.use(securityHeaders);
+}
 
 /**
  * Security Headers Middleware

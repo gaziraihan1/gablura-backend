@@ -31,7 +31,7 @@ export async function recordSessionCreation(sessionId: string): Promise<void> {
       now.toString()
     );
 
-    // Activity timeout (30 minutes, auto-resets on activity)
+    // Activity timeout (INACTIVITY_TIMEOUT, auto-resets on activity)
     await redis.setex(
       `${SESSION_ACTIVITY_PREFIX}${sessionId}`,
       INACTIVITY_TIMEOUT,
@@ -54,7 +54,7 @@ async function updateSessionActivity(sessionId: string): Promise<boolean> {
     const now = Date.now();
     const key = `${SESSION_ACTIVITY_PREFIX}${sessionId}`;
 
-    // Reset the TTL (refreshes 30-min counter)
+    // Reset the TTL (refreshes the inactivity counter)
     const result = await redis.setex(key, INACTIVITY_TIMEOUT, now.toString());
     return !!result;
   } catch (error) {
@@ -106,7 +106,7 @@ export async function isSessionInactive(sessionId: string): Promise<boolean> {
 /**
  * Session Timeout Middleware
  * - Checks absolute timeout (7 days)
- * - Checks inactivity timeout (30 min)
+ * - Checks inactivity timeout (INACTIVITY_TIMEOUT)
  * - Updates activity on each request
  */
 export const sessionTimeout = async (
@@ -139,7 +139,7 @@ export const sessionTimeout = async (
       });
     }
 
-    // Update activity (refresh the 30-min counter)
+    // Update activity (refresh the inactivity counter)
     await updateSessionActivity(sessionId);
 
     next();

@@ -1,5 +1,5 @@
 // templates.test.ts
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import request from "supertest";
 import app from "../../app.js";
 import { prisma } from "../../lib/prisma.js";
