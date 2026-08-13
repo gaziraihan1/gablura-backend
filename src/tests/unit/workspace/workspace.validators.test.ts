@@ -18,7 +18,6 @@ describe("createWorkspaceSchema", () => {
       color: "#FF5733",
       logo: "https://example.com/logo.png",
       isPublic: true,
-      plan: "PRO",
     });
     expect(result.success).toBe(true);
   });
@@ -59,18 +58,24 @@ describe("createWorkspaceSchema", () => {
     expect(result.success).toBe(false);
   });
 
-  it("rejects invalid plan value", () => {
+  it("strips a client-supplied plan (plan is server-controlled)", () => {
     const result = createWorkspaceSchema.safeParse({
       name: "Test",
-      plan: "ULTRA",
+      plan: "ENTERPRISE",
     });
-    expect(result.success).toBe(false);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data).not.toHaveProperty("plan");
+    }
   });
 
-  it("accepts all valid plan values", () => {
-    for (const plan of ["FREE", "PRO", "BUSINESS", "ENTERPRISE"]) {
+  it("ignores any plan value the client sends", () => {
+    for (const plan of ["FREE", "PRO", "BUSINESS", "ENTERPRISE", "ULTRA"]) {
       const result = createWorkspaceSchema.safeParse({ name: "Test", plan });
       expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data).not.toHaveProperty("plan");
+      }
     }
   });
 
@@ -121,6 +126,38 @@ describe("updateWorkspaceSchema", () => {
       logo: "bad-url",
     });
     expect(result.success).toBe(false);
+  });
+
+  it("strips a client-supplied plan on update too", () => {
+    const result = updateWorkspaceSchema.safeParse({
+      name: "X",
+      plan: "ENTERPRISE",
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data).not.toHaveProperty("plan");
+    }
+  });
+
+  it("strips a client-supplied slug (slug is server-owned)", () => {
+    const result = updateWorkspaceSchema.safeParse({
+      name: "X",
+      slug: "my-workspace",
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data).not.toHaveProperty("slug");
+    }
+  });
+
+  it("ignores any slug value the client sends", () => {
+    for (const slug of ["my-slug", "a", "x".repeat(60), "UPPER Slug!"]) {
+      const result = updateWorkspaceSchema.safeParse({ name: "X", slug });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data).not.toHaveProperty("slug");
+      }
+    }
   });
 });
 

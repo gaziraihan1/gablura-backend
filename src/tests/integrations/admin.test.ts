@@ -727,18 +727,19 @@ describe('PATCH /api/v1/admin/workspaces/:slug/restore', () => {
 
   it('invalidates the cached workspace on restore (no stale deletedAt)', async () => {
     const admin = await createAdminUser();
-    const { workspace } = await createWorkspaceWithOwner();
+    const { user: owner, workspace } = await createWorkspaceWithOwner();
     const headers = await authWithCsrfHeaders(admin);
 
-    // Simulate a workspace read that populated the metadata cache while the
-    // workspace was suspended (deletedAt present in the cached copy).
+    // Simulate a workspace read that populated the (user-scoped) metadata
+    // cache while the workspace was suspended (deletedAt present in the
+    // cached copy).
     const staleCopy = {
       id: workspace.id,
       slug: workspace.slug,
       name: workspace.name,
       deletedAt: new Date(),
     };
-    await CacheClient.set(CACHE_KEYS.workspaceBySlug(workspace.slug), staleCopy, 3600);
+    await CacheClient.set(CACHE_KEYS.workspaceBySlug(workspace.slug, owner.id), staleCopy, 3600);
 
     // Soft-delete then restore
     await request(app)
@@ -751,7 +752,7 @@ describe('PATCH /api/v1/admin/workspaces/:slug/restore', () => {
 
     // The cached copy must be gone — otherwise members would still see the
     // workspace as suspended/not-found for up to the TTL after a restore.
-    const cached = await CacheClient.get<any>(CACHE_KEYS.workspaceBySlug(workspace.slug));
+    const cached = await CacheClient.get<any>(CACHE_KEYS.workspaceBySlug(workspace.slug, owner.id));
     expect(cached).toBeNull();
   });
 });

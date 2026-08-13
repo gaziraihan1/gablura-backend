@@ -7,7 +7,8 @@ export interface CreateWorkspaceInput {
   color?: string;
   logo?: string;
   isPublic?: boolean;
-  plan?: WorkspacePlan;
+  // `plan` is intentionally absent — creation always starts on FREE and the
+  // plan is only ever changed by billing/admin flows.
 }
 
 export interface UpdateWorkspaceInput {

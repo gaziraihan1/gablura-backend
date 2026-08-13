@@ -22,8 +22,10 @@ export const WorkspaceQuery = {
   },
 
   async getBySlug(slug: string, userId: string) {
-    // Try cache first
-    const cacheKey = CACHE_KEYS.workspaceBySlug(slug);
+    // Try cache first — key is user-scoped so a cached payload (which
+    // includes the member roster) is only served to the user whose
+    // authorized query produced it.
+    const cacheKey = CACHE_KEYS.workspaceBySlug(slug, userId);
     const cached = await CacheClient.get(cacheKey);
     if (cached) {
       if ((cached as any).deletedAt) throw new NotFoundError("Workspace");
@@ -50,7 +52,7 @@ if (!workspace) throw new NotFoundError("Workspace");
   },
 
   async getById(id: string, userId: string) {
-    const cacheKey = CACHE_KEYS.workspaceById(id);
+    const cacheKey = CACHE_KEYS.workspaceById(id, userId);
     const cached = await CacheClient.get(cacheKey);
     if (cached) {
       if ((cached as any).deletedAt) throw new NotFoundError("Workspace");
@@ -94,8 +96,8 @@ if (!workspace) throw new NotFoundError("Workspace");
 },
 
   async getOverview(slug: string, userId: string) {
-    // Try cache first
-    const cacheKey = CACHE_KEYS.workspaceOverview(slug);
+    // Try cache first — key is user-scoped (same rationale as getBySlug)
+    const cacheKey = CACHE_KEYS.workspaceOverview(slug, userId);
     const cached = await CacheClient.get(cacheKey);
     if (cached) {
       if ((cached as any)?.workspace?.deletedAt) {

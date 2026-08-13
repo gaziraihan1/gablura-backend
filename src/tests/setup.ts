@@ -44,6 +44,12 @@ const createInMemoryRedisMock = () => {
       const regex = new RegExp(`^${pattern.replaceAll('*', '.*')}$`);
       return [...redisStore.keys()].filter((k) => regex.test(k));
     }),
+    // One-shot SCAN (cursor → '0'): needed by CacheClient.deletePattern, which
+    // uses `scan(cursor, 'MATCH', pattern, 'COUNT', n)` to find keys to delete.
+    scan:   vi.fn(async (_cursor: string, _mode: string, pattern: string) => {
+      const regex = new RegExp(`^${pattern.replaceAll('*', '.*')}$`);
+      return ['0', [...redisStore.keys()].filter((k) => regex.test(k))];
+    }),
     decr:   vi.fn().mockResolvedValue(0),
     incr:   vi.fn().mockResolvedValue(1),
     incrby: vi.fn(async (key: string, n: number) => {

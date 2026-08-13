@@ -3,17 +3,19 @@ import request from "supertest";
 import { WorkspaceRole } from "@prisma/client";
 import {
   addMemberToWorkspace,
+  createAdminUser,
   createTask,
   createUnverifiedUser,
   createUser,
   createWorkspaceWithOwner,
 } from "../factories/index.js";
 import {
-  authHeaders,
+  authWithCsrfHeaders,
   expiredAuthHeaders,
   invalidAuthHeaders,
 } from "../helpers/auth.js";
 import { prisma } from "../../lib/prisma.js";
+import { CacheClient, CACHE_KEYS } from "../../lib/redis/cache.client.js";
 import app from "../../app.js";
 
 // Prevent real SMTP calls during invite tests
@@ -30,7 +32,7 @@ describe("POST /api/v1/workspaces", () => {
 
     const res = await request(app)
       .post("/api/v1/workspaces")
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ name: "My Workspace" }); // slug is server-generated from name
 
     expect(res.status).toBe(201);
@@ -59,7 +61,7 @@ describe("POST /api/v1/workspaces", () => {
 
     const res = await request(app)
       .post("/api/v1/workspaces")
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({
         name: "Full WS",
         description: "desc",
@@ -107,7 +109,7 @@ describe("POST /api/v1/workspaces", () => {
     const user = await createUnverifiedUser();
     const res = await request(app)
       .post("/api/v1/workspaces")
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ name: "Unverified" });
 
     expect(res.status).toBe(403);
@@ -118,7 +120,7 @@ describe("POST /api/v1/workspaces", () => {
     const user = await createUser();
     const res = await request(app)
       .post("/api/v1/workspaces")
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ description: "no name field" });
 
     expect(res.status).toBe(400);
@@ -129,11 +131,29 @@ describe("POST /api/v1/workspaces", () => {
     const user = await createUser();
     const res = await request(app)
       .post("/api/v1/workspaces")
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ name: "Color WS", color: "red" });
 
     expect(res.status).toBe(400);
     expect(res.body.code).toBe("VALIDATION_ERROR");
+  });
+
+  it("201 — ignores a client-supplied plan (workspaces always start FREE)", async () => {
+    const user = await createUser();
+
+    const res = await request(app)
+      .post("/api/v1/workspaces")
+      .set(await authWithCsrfHeaders(user))
+      .send({ name: "Plan Bypass Attempt", plan: "ENTERPRISE" });
+
+    expect(res.status).toBe(201);
+    expect(res.body.data.plan).toBe("FREE");
+
+    const ws = await prisma.workspace.findUnique({
+      where: { id: res.body.data.id },
+      select: { plan: true },
+    });
+    expect(ws?.plan).toBe("FREE");
   });
 });
 
@@ -147,7 +167,7 @@ describe("GET /api/v1/workspaces", () => {
 
     const res = await request(app)
       .get("/api/v1/workspaces")
-      .set(authHeaders(user));
+      .set(await authWithCsrfHeaders(user));
 
     expect(res.status).toBe(200);
     const ids = (res.body.data as { id: string }[]).map((w) => w.id);
@@ -162,7 +182,7 @@ describe("GET /api/v1/workspaces", () => {
 
     const res = await request(app)
       .get("/api/v1/workspaces")
-      .set(authHeaders(user));
+      .set(await authWithCsrfHeaders(user));
 
     expect(res.status).toBe(200);
     const ids = (res.body.data as { id: string }[]).map((w) => w.id);
@@ -188,7 +208,7 @@ describe("GET /api/v1/workspaces/:slug", () => {
 
     const res = await request(app)
       .get(`/api/v1/workspaces/${workspace.slug}`)
-      .set(authHeaders(user));
+      .set(await authWithCsrfHeaders(user));
 
     expect(res.status).toBe(200);
     expect(res.body.data.id).toBe(workspace.id);
@@ -200,7 +220,7 @@ describe("GET /api/v1/workspaces/:slug", () => {
 
     const res = await request(app)
       .get(`/api/v1/workspaces/${workspace.id}`)
-      .set(authHeaders(user));
+      .set(await authWithCsrfHeaders(user));
 
     expect(res.status).toBe(200);
     expect(res.body.data.id).toBe(workspace.id);
@@ -213,7 +233,7 @@ describe("GET /api/v1/workspaces/:slug", () => {
 
     const res = await request(app)
       .get(`/api/v1/workspaces/${workspace.slug}`)
-      .set(authHeaders(member));
+      .set(await authWithCsrfHeaders(member));
 
     expect(res.status).toBe(200);
     expect(res.body.data.id).toBe(workspace.id);
@@ -225,9 +245,40 @@ describe("GET /api/v1/workspaces/:slug", () => {
 
     const res = await request(app)
       .get(`/api/v1/workspaces/${workspace.slug}`)
-      .set(authHeaders(outsider));
+      .set(await authWithCsrfHeaders(outsider));
 
     expect(res.status).toBe(404);
+  });
+
+  it("404 — non-member still gets 404 after a member's read warmed the cache (authz regression)", async () => {
+    const { user: owner, workspace } = await createWorkspaceWithOwner();
+    const outsider = await createUser();
+
+    // Owner (member) read populates the detail cache under the owner's
+    // user-scoped key. Before the fix this cached the payload globally and
+    // any authenticated user could then read member-only data.
+    const ownerRes = await request(app)
+      .get(`/api/v1/workspaces/${workspace.slug}`)
+      .set(await authWithCsrfHeaders(owner));
+    expect(ownerRes.status).toBe(200);
+
+    // The member's cache entry exists and is keyed to the owner.
+    const cached = await CacheClient.get<any>(
+      CACHE_KEYS.workspaceBySlug(workspace.slug, owner.id),
+    );
+    expect(cached).not.toBeNull();
+
+    // The outsider must NOT receive the cached member-scoped payload.
+    const outsiderRes = await request(app)
+      .get(`/api/v1/workspaces/${workspace.slug}`)
+      .set(await authWithCsrfHeaders(outsider));
+    expect(outsiderRes.status).toBe(404);
+
+    // And no entry was created under the outsider's own key.
+    const outsiderCached = await CacheClient.get<any>(
+      CACHE_KEYS.workspaceBySlug(workspace.slug, outsider.id),
+    );
+    expect(outsiderCached).toBeNull();
   });
 
   it("404 — non-existent slug", async () => {
@@ -235,7 +286,7 @@ describe("GET /api/v1/workspaces/:slug", () => {
 
     const res = await request(app)
       .get("/api/v1/workspaces/does-not-exist-xyz-999")
-      .set(authHeaders(user));
+      .set(await authWithCsrfHeaders(user));
 
     expect(res.status).toBe(404);
   });
@@ -258,7 +309,7 @@ describe("GET /api/v1/workspaces/public", () => {
 
     const res = await request(app)
       .get("/api/v1/workspaces/public")
-      .set(authHeaders(viewer));
+      .set(await authWithCsrfHeaders(viewer));
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
@@ -270,7 +321,7 @@ describe("GET /api/v1/workspaces/public", () => {
     const { workspace: privateWs } = await createWorkspaceWithOwner({}, { isPublic: false });
     const confirmRes = await request(app)
       .get("/api/v1/workspaces/public?limit=50")
-      .set(authHeaders(viewer));
+      .set(await authWithCsrfHeaders(viewer));
     const confirmedIds = confirmRes.body.data.items.map((w: any) => w.id);
     expect(confirmedIds).not.toContain(privateWs.id);
   });
@@ -282,7 +333,7 @@ describe("GET /api/v1/workspaces/public", () => {
 
     const res = await request(app)
       .get("/api/v1/workspaces/public?search=alpha")
-      .set(authHeaders(viewer));
+      .set(await authWithCsrfHeaders(viewer));
 
     expect(res.status).toBe(200);
     const names = res.body.data.items.map((w: any) => w.name.toLowerCase());
@@ -296,7 +347,7 @@ describe("GET /api/v1/workspaces/public", () => {
 
     const res = await request(app)
       .get("/api/v1/workspaces/public")
-      .set(authHeaders(viewer));
+      .set(await authWithCsrfHeaders(viewer));
 
     expect(res.status).toBe(200);
     expect(res.body.data.items).toEqual([]);
@@ -318,7 +369,7 @@ describe("GET /api/v1/workspaces/:slug/overview", () => {
 
     const res = await request(app)
       .get(`/api/v1/workspaces/${workspace.slug}/overview`)
-      .set(authHeaders(user));
+      .set(await authWithCsrfHeaders(user));
 
     expect(res.status).toBe(200);
     expect(res.body.data.workspace.id).toBe(workspace.id);
@@ -339,7 +390,7 @@ describe("GET /api/v1/workspaces/:slug/overview", () => {
 
     const res = await request(app)
       .get(`/api/v1/workspaces/${workspace.slug}/overview`)
-      .set(authHeaders(member));
+      .set(await authWithCsrfHeaders(member));
 
     expect(res.status).toBe(200);
   });
@@ -350,7 +401,7 @@ describe("GET /api/v1/workspaces/:slug/overview", () => {
 
     const res = await request(app)
       .get(`/api/v1/workspaces/${workspace.slug}/overview`)
-      .set(authHeaders(outsider));
+      .set(await authWithCsrfHeaders(outsider));
 
     expect(res.status).toBe(404);
   });
@@ -360,7 +411,7 @@ describe("GET /api/v1/workspaces/:slug/overview", () => {
 
     const res = await request(app)
       .get("/api/v1/workspaces/no-such-workspace/overview")
-      .set(authHeaders(user));
+      .set(await authWithCsrfHeaders(user));
 
     expect(res.status).toBe(404);
   });
@@ -375,7 +426,7 @@ describe("PUT /api/v1/workspaces/:id", () => {
 
     const res = await request(app)
       .put(`/api/v1/workspaces/${workspace.id}`)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ name: "Renamed Workspace" });
 
     expect(res.status).toBe(200);
@@ -394,7 +445,7 @@ describe("PUT /api/v1/workspaces/:id", () => {
 
     const res = await request(app)
       .put(`/api/v1/workspaces/${workspace.id}`)
-      .set(authHeaders(admin))
+      .set(await authWithCsrfHeaders(admin))
       .send({ name: "Admin Renamed" });
 
     expect(res.status).toBe(200);
@@ -406,12 +457,32 @@ describe("PUT /api/v1/workspaces/:id", () => {
 
     const res = await request(app)
       .put(`/api/v1/workspaces/${workspace.id}`)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ description: "New description" });
 
     expect(res.status).toBe(200);
     expect(res.body.data.description).toBe("New description");
     expect(res.body.data.name).toBe(workspace.name);
+  });
+
+  it("200 — client-supplied slug is stripped (slug is immutable)", async () => {
+    const { user, workspace } = await createWorkspaceWithOwner();
+
+    const res = await request(app)
+      .put(`/api/v1/workspaces/${workspace.id}`)
+      .set(await authWithCsrfHeaders(user))
+      .send({ name: "Renamed", slug: "hacked-slug" });
+
+    expect(res.status).toBe(200);
+    // The update succeeds, other fields apply, but the slug never changes.
+    expect(res.body.data.name).toBe("Renamed");
+    expect(res.body.data.slug).toBe(workspace.slug);
+
+    const updated = await prisma.workspace.findUnique({
+      where: { id: workspace.id },
+    });
+    expect(updated?.name).toBe("Renamed");
+    expect(updated?.slug).toBe(workspace.slug);
   });
 
   it("403 — MEMBER cannot update workspace", async () => {
@@ -421,7 +492,7 @@ describe("PUT /api/v1/workspaces/:id", () => {
 
     const res = await request(app)
       .put(`/api/v1/workspaces/${workspace.id}`)
-      .set(authHeaders(member))
+      .set(await authWithCsrfHeaders(member))
       .send({ name: "Hijacked" });
 
     expect(res.status).toBe(403);
@@ -434,7 +505,7 @@ describe("PUT /api/v1/workspaces/:id", () => {
 
     const res = await request(app)
       .put(`/api/v1/workspaces/${workspace.id}`)
-      .set(authHeaders(guest))
+      .set(await authWithCsrfHeaders(guest))
       .send({ name: "Guest Attempt" });
 
     expect(res.status).toBe(403);
@@ -446,10 +517,28 @@ describe("PUT /api/v1/workspaces/:id", () => {
 
     const res = await request(app)
       .put(`/api/v1/workspaces/${workspace.id}`)
-      .set(authHeaders(outsider))
+      .set(await authWithCsrfHeaders(outsider))
       .send({ name: "Outsider" });
 
     expect(res.status).toBe(403);
+  });
+
+  it("200 — client-supplied slug is stripped (slug is immutable)", async () => {
+    const { user, workspace } = await createWorkspaceWithOwner();
+
+    const res = await request(app)
+      .put(`/api/v1/workspaces/${workspace.id}`)
+      .set(await authWithCsrfHeaders(user))
+      .send({ name: "Renamed", slug: "hacked-slug" });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.slug).toBe(workspace.slug);
+    expect(res.body.data.name).toBe("Renamed");
+
+    const updated = await prisma.workspace.findUnique({
+      where: { id: workspace.id },
+    });
+    expect(updated?.slug).toBe(workspace.slug);
   });
 
   it("400 — invalid color format", async () => {
@@ -457,7 +546,7 @@ describe("PUT /api/v1/workspaces/:id", () => {
 
     const res = await request(app)
       .put(`/api/v1/workspaces/${workspace.id}`)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ color: "not-a-hex" });
 
     expect(res.status).toBe(400);
@@ -477,19 +566,43 @@ describe("PUT /api/v1/workspaces/:id", () => {
 // DELETE /api/v1/workspaces/:id
 // ─────────────────────────────────────────────────────────────────────────────
 describe("DELETE /api/v1/workspaces/:id", () => {
-  it("200 — OWNER can delete workspace", async () => {
+  it("200 — OWNER delete is a soft delete (recoverable, no cascade wipe)", async () => {
     const { user, workspace } = await createWorkspaceWithOwner();
 
     const res = await request(app)
       .delete(`/api/v1/workspaces/${workspace.id}`)
-      .set(authHeaders(user));
+      .set(await authWithCsrfHeaders(user));
 
     expect(res.status).toBe(200);
 
+    // The row stays (marked deletedAt) so admins can restore it — no cascade.
     const deleted = await prisma.workspace.findUnique({
       where: { id: workspace.id },
     });
-    expect(deleted).toBeNull();
+    expect(deleted).not.toBeNull();
+    expect(deleted?.deletedAt).not.toBeNull();
+    expect(deleted?.deletedById).toBe(user.id);
+    expect(deleted?.deleteReason).toBe("Deleted by owner");
+
+    // It disappears for users immediately.
+    const getRes = await request(app)
+      .get(`/api/v1/workspaces/${workspace.id}`)
+      .set(await authWithCsrfHeaders(user));
+    expect(getRes.status).toBe(404);
+
+    // And the admin restore path brings it back (the recovery route).
+    const admin = await createAdminUser();
+    const restoreRes = await request(app)
+      .patch(`/api/v1/admin/workspaces/${workspace.slug}/restore`)
+      .set(await authWithCsrfHeaders(admin));
+    expect(restoreRes.status).toBe(200);
+
+    const restored = await prisma.workspace.findUnique({
+      where: { id: workspace.id },
+    });
+    expect(restored?.deletedAt).toBeNull();
+    expect(restored?.deletedById).toBeNull();
+    expect(restored?.deleteReason).toBeNull();
   });
 
   it("403 — ADMIN cannot delete workspace (only OWNER can)", async () => {
@@ -499,7 +612,7 @@ describe("DELETE /api/v1/workspaces/:id", () => {
 
     const res = await request(app)
       .delete(`/api/v1/workspaces/${workspace.id}`)
-      .set(authHeaders(admin));
+      .set(await authWithCsrfHeaders(admin));
 
     expect(res.status).toBe(403);
 
@@ -518,7 +631,7 @@ describe("DELETE /api/v1/workspaces/:id", () => {
 
   //   const res = await request(app)
   //     .get(`/api/v1/workspaces/${workspace.slug}`)
-  //     .set(authHeaders(user));
+  //     .set(await authWithCsrfHeaders(user));
 
   //   expect(res.status).toBe(403);
   //   expect(res.body.code).toBe('WORKSPACE_SUSPENDED');
@@ -531,7 +644,7 @@ describe("DELETE /api/v1/workspaces/:id", () => {
 
     const res = await request(app)
       .delete(`/api/v1/workspaces/${workspace.id}`)
-      .set(authHeaders(member));
+      .set(await authWithCsrfHeaders(member));
 
     expect(res.status).toBe(403);
   });
@@ -542,7 +655,7 @@ describe("DELETE /api/v1/workspaces/:id", () => {
 
     const res = await request(app)
       .delete(`/api/v1/workspaces/${workspace.id}`)
-      .set(authHeaders(outsider));
+      .set(await authWithCsrfHeaders(outsider));
 
     expect(res.status).toBe(403);
   });
@@ -567,7 +680,7 @@ describe("GET /api/v1/workspaces/:id/members", () => {
 
     const res = await request(app)
       .get(`/api/v1/workspaces/${workspace.id}/members`)
-      .set(authHeaders(user));
+      .set(await authWithCsrfHeaders(user));
 
     expect(res.status).toBe(200);
     const memberUserIds = (res.body.data as { user: { id: string } }[]).map(
@@ -586,7 +699,7 @@ describe("GET /api/v1/workspaces/:id/members", () => {
 
     const res = await request(app)
       .get(`/api/v1/workspaces/${workspace.id}/members`)
-      .set(authHeaders(member));
+      .set(await authWithCsrfHeaders(member));
 
     expect(res.status).toBe(200);
     expect(res.body.data.length).toBeGreaterThanOrEqual(2);
@@ -598,7 +711,7 @@ describe("GET /api/v1/workspaces/:id/members", () => {
 
     const res = await request(app)
       .get(`/api/v1/workspaces/${workspace.id}/members`)
-      .set(authHeaders(outsider));
+      .set(await authWithCsrfHeaders(outsider));
 
     expect(res.status).toBe(403);
   });
@@ -623,7 +736,7 @@ describe("POST /api/v1/workspaces/:id/invite", () => {
 
     const res = await request(app)
       .post(`/api/v1/workspaces/${workspace.id}/invite`)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ email: invitee.email, role: "MEMBER" });
 
     expect(res.status).toBe(201);
@@ -647,7 +760,7 @@ describe("POST /api/v1/workspaces/:id/invite", () => {
 
     const res = await request(app)
       .post(`/api/v1/workspaces/${workspace.id}/invite`)
-      .set(authHeaders(admin))
+      .set(await authWithCsrfHeaders(admin))
       .send({ email: invitee.email, role: "GUEST" });
 
     expect(res.status).toBe(201);
@@ -658,7 +771,7 @@ describe("POST /api/v1/workspaces/:id/invite", () => {
 
     const res = await request(app)
       .post(`/api/v1/workspaces/${workspace.id}/invite`)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ email: user.email, role: "MEMBER" }); // user is already OWNER
 
     expect(res.status).toBe(409);
@@ -671,12 +784,12 @@ describe("POST /api/v1/workspaces/:id/invite", () => {
 
     await request(app)
       .post(`/api/v1/workspaces/${workspace.id}/invite`)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ email: invitee.email, role: "MEMBER" });
 
     const res = await request(app)
       .post(`/api/v1/workspaces/${workspace.id}/invite`)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ email: invitee.email, role: "MEMBER" });
 
     expect(res.status).toBe(409);
@@ -691,7 +804,7 @@ describe("POST /api/v1/workspaces/:id/invite", () => {
 
     const res = await request(app)
       .post(`/api/v1/workspaces/${workspace.id}/invite`)
-      .set(authHeaders(member))
+      .set(await authWithCsrfHeaders(member))
       .send({ email: newUser.email, role: "MEMBER" });
 
     expect(res.status).toBe(403);
@@ -702,7 +815,7 @@ describe("POST /api/v1/workspaces/:id/invite", () => {
 
     const res = await request(app)
       .post(`/api/v1/workspaces/${workspace.id}/invite`)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ role: "MEMBER" });
 
     expect(res.status).toBe(400);
@@ -714,7 +827,7 @@ describe("POST /api/v1/workspaces/:id/invite", () => {
 
     const res = await request(app)
       .post(`/api/v1/workspaces/${workspace.id}/invite`)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ email: invitee.email, role: "OWNER" });
 
     expect(res.status).toBe(400);
@@ -731,7 +844,7 @@ describe("GET /api/v1/workspaces/invitations/:token", () => {
 
     const inviteRes = await request(app)
       .post(`/api/v1/workspaces/${workspace.id}/invite`)
-      .set(authHeaders(owner))
+      .set(await authWithCsrfHeaders(owner))
       .send({ email: invitee.email, role: "MEMBER" });
 
     const token: string = inviteRes.body.data.token;
@@ -766,14 +879,14 @@ describe("POST /api/v1/workspaces/invitations/:token/accept", () => {
 
     const inviteRes = await request(app)
       .post(`/api/v1/workspaces/${workspace.id}/invite`)
-      .set(authHeaders(owner))
+      .set(await authWithCsrfHeaders(owner))
       .send({ email: invitee.email, role: "MEMBER" });
 
     const token: string = inviteRes.body.data.token;
 
     const res = await request(app)
       .post(`/api/v1/workspaces/invitations/${token}/accept`)
-      .set(authHeaders(invitee));
+      .set(await authWithCsrfHeaders(invitee));
 
     expect(res.status).toBe(200);
 
@@ -788,6 +901,56 @@ describe("POST /api/v1/workspaces/invitations/:token/accept", () => {
     expect(invitation?.status).toBe("ACCEPTED");
   });
 
+  it("403 — accepting is blocked when the workspace is at its member cap", async () => {
+    const { user: owner, workspace } = await createWorkspaceWithOwner();
+
+    // The test factory defaults workspaces to PRO (25 members) — pin this
+    // workspace to FREE so the cap is small enough to reach (5 members).
+    await prisma.workspace.update({
+      where: { id: workspace.id },
+      data: { plan: "FREE" },
+    });
+
+    // Fill the FREE-plan cap (5 members): owner + 4 more.
+    const invitees = await Promise.all(
+      Array.from({ length: 4 }, () => createUser()),
+    );
+    for (const invitee of invitees) {
+      await addMemberToWorkspace(invitee.id, workspace.id, WorkspaceRole.MEMBER);
+    }
+
+    // A leftover pending invitation (issued while there was room) must not be
+    // able to push the workspace over the cap — accept is guarded too.
+    const leftover = await createUser();
+    const invitation = await prisma.workspaceInvitation.create({
+      data: {
+        email: leftover.email,
+        role: "MEMBER",
+        token: `cap-token-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        workspaceId: workspace.id,
+        invitedById: owner.id,
+        expiresAt: new Date(Date.now() + 60_000),
+      },
+    });
+
+    const res = await request(app)
+      .post(`/api/v1/workspaces/invitations/${invitation.token}/accept`)
+      .set(await authWithCsrfHeaders(leftover));
+
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe("PLAN_LIMIT_EXCEEDED");
+
+    // The invitation stays PENDING (not consumed) and the user never joins.
+    const after = await prisma.workspaceInvitation.findUnique({
+      where: { id: invitation.id },
+    });
+    expect(after?.status).toBe("PENDING");
+    const membership = await prisma.workspaceMember.findFirst({
+      where: { userId: leftover.id, workspaceId: workspace.id },
+    });
+    expect(membership).toBeNull();
+  });
+
   it("400 — wrong user account (email mismatch) cannot accept", async () => {
     const { user: owner, workspace } = await createWorkspaceWithOwner();
     const invitee = await createUser();
@@ -795,14 +958,14 @@ describe("POST /api/v1/workspaces/invitations/:token/accept", () => {
 
     const inviteRes = await request(app)
       .post(`/api/v1/workspaces/${workspace.id}/invite`)
-      .set(authHeaders(owner))
+      .set(await authWithCsrfHeaders(owner))
       .send({ email: invitee.email, role: "MEMBER" });
 
     const token: string = inviteRes.body.data.token;
 
     const res = await request(app)
       .post(`/api/v1/workspaces/invitations/${token}/accept`)
-      .set(authHeaders(wrongUser));
+      .set(await authWithCsrfHeaders(wrongUser));
 
     expect(res.status).toBe(400);
   });
@@ -813,18 +976,18 @@ describe("POST /api/v1/workspaces/invitations/:token/accept", () => {
 
     const inviteRes = await request(app)
       .post(`/api/v1/workspaces/${workspace.id}/invite`)
-      .set(authHeaders(owner))
+      .set(await authWithCsrfHeaders(owner))
       .send({ email: invitee.email, role: "MEMBER" });
 
     const token: string = inviteRes.body.data.token;
 
     await request(app)
       .post(`/api/v1/workspaces/invitations/${token}/accept`)
-      .set(authHeaders(invitee));
+      .set(await authWithCsrfHeaders(invitee));
 
     const res = await request(app)
       .post(`/api/v1/workspaces/invitations/${token}/accept`)
-      .set(authHeaders(invitee));
+      .set(await authWithCsrfHeaders(invitee));
 
     expect(res.status).toBe(400);
   });
@@ -834,7 +997,7 @@ describe("POST /api/v1/workspaces/invitations/:token/accept", () => {
 
     const res = await request(app)
       .post("/api/v1/workspaces/invitations/invalid-token/accept")
-      .set(authHeaders(user));
+      .set(await authWithCsrfHeaders(user));
 
     expect(res.status).toBe(400);
   });
@@ -856,7 +1019,7 @@ describe("POST /api/v1/workspaces/invitations/:token/accept", () => {
 
     const res = await request(app)
       .post(`/api/v1/workspaces/invitations/${invitation.token}/accept`)
-      .set(authHeaders(invitee));
+      .set(await authWithCsrfHeaders(invitee));
 
     expect(res.status).toBe(400);
   });
@@ -891,7 +1054,7 @@ describe("DELETE /api/v1/workspaces/:id/members/:memberId", () => {
 
     const res = await request(app)
       .delete(`/api/v1/workspaces/${workspace.id}/members/${membershipId}`)
-      .set(authHeaders(user));
+      .set(await authWithCsrfHeaders(user));
 
     expect(res.status).toBe(200);
 
@@ -911,7 +1074,7 @@ describe("DELETE /api/v1/workspaces/:id/members/:memberId", () => {
 
     const res = await request(app)
       .delete(`/api/v1/workspaces/${workspace.id}/members/${membershipId}`)
-      .set(authHeaders(admin));
+      .set(await authWithCsrfHeaders(admin));
 
     expect(res.status).toBe(200);
   });
@@ -926,7 +1089,7 @@ describe("DELETE /api/v1/workspaces/:id/members/:memberId", () => {
 
     const res = await request(app)
       .delete(`/api/v1/workspaces/${workspace.id}/members/${m2MembershipId}`)
-      .set(authHeaders(m1));
+      .set(await authWithCsrfHeaders(m1));
 
     expect(res.status).toBe(403);
   });
@@ -963,7 +1126,7 @@ describe("PUT /api/v1/workspaces/:id/members/:memberId/role", () => {
 
     const res = await request(app)
       .put(`/api/v1/workspaces/${workspace.id}/members/${membershipId}/role`)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ role: "ADMIN" });
 
     expect(res.status).toBe(200);
@@ -983,7 +1146,7 @@ describe("PUT /api/v1/workspaces/:id/members/:memberId/role", () => {
 
     const res = await request(app)
       .put(`/api/v1/workspaces/${workspace.id}/members/${membershipId}/role`)
-      .set(authHeaders(user))
+      .set(await authWithCsrfHeaders(user))
       .send({ role: "MEMBER" });
 
     expect(res.status).toBe(200);
@@ -1002,7 +1165,7 @@ describe("PUT /api/v1/workspaces/:id/members/:memberId/role", () => {
       .put(
         `/api/v1/workspaces/${workspace.id}/members/${memberMembershipId}/role`,
       )
-      .set(authHeaders(admin))
+      .set(await authWithCsrfHeaders(admin))
       .send({ role: "ADMIN" });
 
     expect(res.status).toBe(403);
@@ -1018,7 +1181,7 @@ describe("PUT /api/v1/workspaces/:id/members/:memberId/role", () => {
 
     const res = await request(app)
       .put(`/api/v1/workspaces/${workspace.id}/members/${m2Id}/role`)
-      .set(authHeaders(m1))
+      .set(await authWithCsrfHeaders(m1))
       .send({ role: "ADMIN" });
 
     expect(res.status).toBe(403);
@@ -1034,7 +1197,7 @@ describe("GET /api/v1/workspaces/:id/stats", () => {
 
     const res = await request(app)
       .get(`/api/v1/workspaces/${workspace.id}/stats`)
-      .set(authHeaders(user));
+      .set(await authWithCsrfHeaders(user));
 
     expect(res.status).toBe(200);
     const { data } = res.body;
@@ -1054,7 +1217,7 @@ describe("GET /api/v1/workspaces/:id/stats", () => {
 
     const res = await request(app)
       .get(`/api/v1/workspaces/${workspace.id}/stats`)
-      .set(authHeaders(outsider));
+      .set(await authWithCsrfHeaders(outsider));
 
     expect(res.status).toBe(404);
   });
@@ -1079,7 +1242,7 @@ describe("POST /api/v1/workspaces/:id/leave", () => {
 
     const res = await request(app)
       .post(`/api/v1/workspaces/${workspace.id}/leave`)
-      .set(authHeaders(member));
+      .set(await authWithCsrfHeaders(member));
 
     expect(res.status).toBe(200);
 
@@ -1094,7 +1257,7 @@ describe("POST /api/v1/workspaces/:id/leave", () => {
 
     const res = await request(app)
       .post(`/api/v1/workspaces/${workspace.id}/leave`)
-      .set(authHeaders(user));
+      .set(await authWithCsrfHeaders(user));
 
     expect(res.status).toBe(400);
   });
@@ -1105,7 +1268,7 @@ describe("POST /api/v1/workspaces/:id/leave", () => {
 
     const res = await request(app)
       .post(`/api/v1/workspaces/${workspace.id}/leave`)
-      .set(authHeaders(outsider));
+      .set(await authWithCsrfHeaders(outsider));
 
     expect(res.status).toBe(400);
   });
@@ -1134,7 +1297,7 @@ describe("owner/admin removal & role-change hardening", () => {
 
     const res = await request(app)
       .delete(`/api/v1/workspaces/${workspace.id}/members/${ownerMember!.id}`)
-      .set(authHeaders(admin));
+      .set(await authWithCsrfHeaders(admin));
 
     expect(res.status).toBe(403);
     expect(res.body.code).toBe("CANNOT_REMOVE_OWNER");
@@ -1149,7 +1312,7 @@ describe("owner/admin removal & role-change hardening", () => {
 
     const res = await request(app)
       .delete(`/api/v1/workspaces/${workspace.id}/members/${adminBMember.id}`)
-      .set(authHeaders(adminA));
+      .set(await authWithCsrfHeaders(adminA));
 
     expect(res.status).toBe(403);
     expect(res.body.code).toBe("CANNOT_REMOVE_ADMIN");
@@ -1162,7 +1325,7 @@ describe("owner/admin removal & role-change hardening", () => {
 
     const res = await request(app)
       .delete(`/api/v1/workspaces/${workspace.id}/members/${adminMember.id}`)
-      .set(authHeaders(owner));
+      .set(await authWithCsrfHeaders(owner));
 
     expect(res.status).toBe(200);
   });
@@ -1175,7 +1338,7 @@ describe("owner/admin removal & role-change hardening", () => {
 
     const res = await request(app)
       .put(`/api/v1/workspaces/${workspace.id}/members/${ownerMember!.id}/role`)
-      .set(authHeaders(owner))
+      .set(await authWithCsrfHeaders(owner))
       .send({ role: "MEMBER" });
 
     expect(res.status).toBe(403);
@@ -1189,7 +1352,7 @@ describe("owner/admin removal & role-change hardening", () => {
 
     const res = await request(app)
       .put(`/api/v1/workspaces/${workspace.id}/members/${coOwnerMember.id}/role`)
-      .set(authHeaders(owner))
+      .set(await authWithCsrfHeaders(owner))
       .send({ role: "MEMBER" });
 
     expect(res.status).toBe(403);
@@ -1203,7 +1366,7 @@ describe("owner/admin removal & role-change hardening", () => {
 
     const res = await request(app)
       .put(`/api/v1/workspaces/${workspace.id}/members/${memberRec.id}/role`)
-      .set(authHeaders(owner))
+      .set(await authWithCsrfHeaders(owner))
       .send({ role: "OWNER" });
 
     expect(res.status).toBe(200);
@@ -1233,7 +1396,7 @@ describe("owner/admin removal & role-change hardening", () => {
 
     const res = await request(app)
       .put(`/api/v1/workspaces/${workspace.id}/members/${memberRec.id}/role`)
-      .set(authHeaders(admin))
+      .set(await authWithCsrfHeaders(admin))
       .send({ role: "OWNER" });
 
     expect(res.status).toBe(403);
@@ -1256,7 +1419,7 @@ describe("suspended workspace enforcement (G3/G5)", () => {
 
     const res = await request(app)
       .get(`/api/v1/workspaces/${workspace.slug}`)
-      .set(authHeaders(owner));
+      .set(await authWithCsrfHeaders(owner));
 
     expect(res.status).toBe(404);
   });
@@ -1267,7 +1430,7 @@ describe("suspended workspace enforcement (G3/G5)", () => {
 
     const res = await request(app)
       .put(`/api/v1/workspaces/${workspace.id}`)
-      .set(authHeaders(owner))
+      .set(await authWithCsrfHeaders(owner))
       .send({ name: "Renamed" });
 
     expect(res.status).toBe(403);
@@ -1280,7 +1443,7 @@ describe("suspended workspace enforcement (G3/G5)", () => {
 
     const res = await request(app)
       .delete(`/api/v1/workspaces/${workspace.id}`)
-      .set(authHeaders(owner));
+      .set(await authWithCsrfHeaders(owner));
 
     expect(res.status).toBe(403);
     expect(res.body.code).toBe("WORKSPACE_SUSPENDED");
@@ -1318,7 +1481,7 @@ describe("suspended workspace enforcement (G3/G5)", () => {
 
     const listRes = await request(app)
       .get("/api/v1/workspaces")
-      .set(authHeaders(owner));
+      .set(await authWithCsrfHeaders(owner));
 
     expect(listRes.status).toBe(200);
     const ids = listRes.body.data.map((w: any) => w.id);
@@ -1346,7 +1509,7 @@ describe("invitation duplicate acceptance (G6)", () => {
 
     const res = await request(app)
       .post(`/api/v1/workspaces/invitations/${invitation.token}/accept`)
-      .set(authHeaders(member));
+      .set(await authWithCsrfHeaders(member));
 
     expect(res.status).toBe(409);
     expect(res.body.code).toBe("ALREADY_MEMBER");
@@ -1367,7 +1530,7 @@ describe("GET /api/v1/workspaces/:workspaceSlug/tasks", () => {
 
     const res = await request(app)
       .get(`/api/v1/workspaces/${workspace.slug}/tasks?limit=20`)
-      .set(authHeaders(user));
+      .set(await authWithCsrfHeaders(user));
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
@@ -1385,7 +1548,7 @@ describe("GET /api/v1/workspaces/:workspaceSlug/tasks", () => {
 
     const res = await request(app)
       .get(`/api/v1/workspaces/${workspace.slug}/tasks?limit=2`)
-      .set(authHeaders(user));
+      .set(await authWithCsrfHeaders(user));
 
     expect(res.status).toBe(200);
     expect(res.body.data.length).toBeLessThanOrEqual(2);
@@ -1397,7 +1560,7 @@ describe("GET /api/v1/workspaces/:workspaceSlug/tasks", () => {
 
     const res = await request(app)
       .get(`/api/v1/workspaces/${workspace.slug}/tasks?limit=20`)
-      .set(authHeaders(outsider));
+      .set(await authWithCsrfHeaders(outsider));
 
     expect(res.status).toBe(404);
   });

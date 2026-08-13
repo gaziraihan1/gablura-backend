@@ -87,6 +87,34 @@ describe("CSRF Protection", () => {
     expect(response.body.code).toBe("CSRF_VALIDATION_FAILED");
   });
 
+  it("should reject POST /api/v1/workspaces without CSRF token → 403 CSRF_VALIDATION_FAILED", async () => {
+    const response = await request(app)
+      .post("/api/v1/workspaces")
+      .set("Authorization", `Bearer ${authToken}`)
+      .send({ name: "CSRF Test WS" });
+
+    expect(response.status).toBe(403);
+    expect(response.body.code).toBe("CSRF_VALIDATION_FAILED");
+  });
+
+  it("should allow GET /api/v1/workspaces without CSRF token → not 403", async () => {
+    const response = await request(app)
+      .get("/api/v1/workspaces")
+      .set("Authorization", `Bearer ${authToken}`);
+
+    expect(response.status).not.toBe(403);
+  });
+
+  it("should accept POST /api/v1/workspaces with valid CSRF token → not 403", async () => {
+    const response = await request(app)
+      .post("/api/v1/workspaces")
+      .set("Authorization", `Bearer ${authToken}`)
+      .set("x-csrf-token", csrfToken)
+      .send({ name: "CSRF Test WS Valid" });
+
+    expect(response.status).not.toBe(403);
+  });
+
   it("should reject POST with CSRF token belonging to a different session → 403", async () => {
     // Generate a valid token but for a different sessionId
     const wrongSessionToken = await generateTestCsrfToken(

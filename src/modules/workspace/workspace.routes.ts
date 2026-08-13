@@ -2,9 +2,11 @@ import { Router } from 'express';
 import * as WorkspaceController from './workspace.controller.js';
 import { authenticate } from '../../middleware/auth.js';
 import { sessionTimeout } from '../../middleware/sessionTimeout.js';
+import { requireCsrfToken } from '../../middleware/csrf.js';
 import {
   requireWorkspaceCreationSlot,
   requireMemberSlot,
+  requireMemberSlotForInvitation,
 } from '../billing/index.js';
 import { getAttachmentStats } from '../attachment/index.js';
 import { getWorkspaceStorage } from '../attachment/attachment.controller.js';
@@ -15,7 +17,17 @@ const router = Router();
 router.get('/invitations/:token', WorkspaceController.getInvitation);
 router.use(authenticate);
 router.use(sessionTimeout);
-router.post('/invitations/:token/accept', WorkspaceController.acceptInvitation);
+// Every mutating route below requires a valid CSRF token (see
+// requireCsrfToken: GET/HEAD/OPTIONS and webhook/callback paths are skipped,
+// so read routes are unaffected). The invitation GET above stays public.
+router.use(requireCsrfToken());
+// The member cap must hold on accept too, not just on invite — otherwise an
+// over-limit workspace keeps growing via previously-issued invitations.
+router.post(
+  '/invitations/:token/accept',
+  requireMemberSlotForInvitation,
+  WorkspaceController.acceptInvitation,
+);
 
 router.get('/', WorkspaceController.getAllWorkspaces);
 router.post('/', requireWorkspaceCreationSlot, WorkspaceController.createWorkspace);

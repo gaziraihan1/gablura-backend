@@ -3,6 +3,7 @@ import type { Request, Response, NextFunction } from 'express';
 import {
   requireProjectSlot,
   requireMemberSlot,
+  requireMemberSlotForInvitation,
   requireFileSizeLimit,
   requireMeetingSlot,
   requireAnalyticsAccess,
@@ -126,6 +127,86 @@ describe('requireMemberSlot', () => {
     const error = getError(next);
     expect(error).toBeInstanceOf(Error);
     expect(error.code).toBe('PLAN_LIMIT_EXCEEDED');
+  });
+
+  it('allows when under member limit', async () => {
+    vi.spyOn(BillingService, 'getWorkspacePlanLimits').mockResolvedValue({
+      maxMembersPerWs: 5,
+    } as any);
+
+    vi.spyOn(prisma.workspaceMember, 'count').mockResolvedValue(3 as any);
+
+    const req = mockReq({ params: { id: 'ws-1' } });
+    const res = mockRes();
+    const next = mockNext();
+
+    await requireMemberSlot(req, res, next);
+
+    expect(next).toHaveBeenCalledWith();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// requireMemberSlotForInvitation
+// ─────────────────────────────────────────────────────────────────────────────
+describe('requireMemberSlotForInvitation', () => {
+  it('blocks when the invited workspace is at its member cap', async () => {
+    vi.spyOn(prisma.workspaceInvitation, 'findUnique').mockResolvedValue({
+      workspaceId: 'ws-1',
+      status: 'PENDING',
+    } as any);
+    vi.spyOn(BillingService, 'getWorkspacePlanLimits').mockResolvedValue({
+      maxMembersPerWs: 2,
+    } as any);
+    vi.spyOn(prisma.workspaceMember, 'count').mockResolvedValue(2 as any);
+
+    const req = mockReq({ params: { token: 'tok-1' } });
+    const res = mockRes();
+    const next = mockNext();
+
+    await requireMemberSlotForInvitation(req, res, next);
+
+    expect(next).toHaveBeenCalled();
+    const error = getError(next);
+    expect(error).toBeInstanceOf(Error);
+    expect(error.code).toBe('PLAN_LIMIT_EXCEEDED');
+  });
+
+  it('allows when the invited workspace is under its member cap', async () => {
+    vi.spyOn(prisma.workspaceInvitation, 'findUnique').mockResolvedValue({
+      workspaceId: 'ws-1',
+      status: 'PENDING',
+    } as any);
+    vi.spyOn(BillingService, 'getWorkspacePlanLimits').mockResolvedValue({
+      maxMembersPerWs: 5,
+    } as any);
+    vi.spyOn(prisma.workspaceMember, 'count').mockResolvedValue(3 as any);
+
+    const req = mockReq({ params: { token: 'tok-1' } });
+    const res = mockRes();
+    const next = mockNext();
+
+    await requireMemberSlotForInvitation(req, res, next);
+
+    expect(next).toHaveBeenCalledWith();
+  });
+
+  it('passes through unknown or non-PENDING invitations (controller reports the canonical error)', async () => {
+    vi.spyOn(prisma.workspaceInvitation, 'findUnique').mockResolvedValue({
+      workspaceId: 'ws-1',
+      status: 'ACCEPTED',
+    } as any);
+    vi.spyOn(BillingService, 'getWorkspacePlanLimits');
+
+    const req = mockReq({ params: { token: 'tok-used' } });
+    const res = mockRes();
+    const next = mockNext();
+
+    await requireMemberSlotForInvitation(req, res, next);
+
+    expect(next).toHaveBeenCalledWith();
+    // No plan-limit lookup happens for non-PENDING invites.
+    expect(BillingService.getWorkspacePlanLimits).not.toHaveBeenCalled();
   });
 });
 

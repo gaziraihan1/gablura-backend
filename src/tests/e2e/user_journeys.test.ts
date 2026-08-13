@@ -28,7 +28,7 @@ describe('🚀 E2E User Journeys', () => {
       // 2. Create Workspace
       const wsRes = await request(app)
         .post('/api/v1/workspaces')
-        .set(authHeaders(user))
+        .set(await authWithCsrfHeaders(user))
         .send({ name: 'My First Workspace' });
       
       expect(wsRes.status).toBe(201);
@@ -79,7 +79,7 @@ describe('🚀 E2E User Journeys', () => {
       const member = await createUser();
       const inviteRes = await request(app)
         .post(`/api/v1/workspaces/${workspace.id}/invite`)
-        .set(authHeaders(owner))
+        .set(await authWithCsrfHeaders(owner))
         .send({ email: member.email, role: 'MEMBER' });
       
       expect(inviteRes.status).toBe(201);
@@ -88,7 +88,7 @@ describe('🚀 E2E User Journeys', () => {
       // 4. Member accepts invitation
       const acceptRes = await request(app)
         .post(`/api/v1/workspaces/invitations/${inviteToken}/accept`)
-        .set(authHeaders(member));
+        .set(await authWithCsrfHeaders(member));
       
       expect(acceptRes.status).toBe(200);
       

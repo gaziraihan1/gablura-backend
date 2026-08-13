@@ -252,11 +252,9 @@ vi.mock('../../modules/workspace/workspace.validators.js', async () => {
       color: z.string().regex(/^#[0-9A-F]{6}$/i).optional(),
       logo: z.string().url().optional(),
       isPublic: z.boolean().optional(),
-      plan: z.enum(['FREE', 'PRO', 'BUSINESS', 'ENTERPRISE']).optional(),
     }),
     updateWorkspaceSchema: z.object({
       name: z.string().min(1).max(100).optional(),
-      slug: z.string().min(3).max(50).optional(),
       description: z.string().optional(),
       color: z.string().regex(/^#[0-9A-F]{6}$/i).optional(),
       logo: z.string().url().optional(),

@@ -429,23 +429,27 @@ All mutating authenticated routes additionally require `X-CSRF-Token`.
 |--------|-------|-------------|
 | `GET` | `/api/v1/csrf-token` | Get CSRF token for session |
 
-### Workspaces (16 endpoints)
+### Workspaces (18 endpoints)
 
 | Method | Route | CSRF | Description |
 |--------|-------|------|-------------|
-| `GET` | `/api/v1/workspaces` | — | List user workspaces (cached) |
-| `POST` | `/api/v1/workspaces` | ✓ | Create workspace |
-| `GET` | `/api/v1/workspaces/invitations/:token` | — | Get invitation details |
-| `POST` | `/api/v1/workspaces/invitations/:token/accept` | — | Accept invitation |
+| `GET` | `/api/v1/workspaces` | — | List user workspaces |
+| `POST` | `/api/v1/workspaces` | ✓ | Create workspace (always starts on FREE) |
+| `GET` | `/api/v1/workspaces/public` | — | Browse public workspaces |
+| `GET` | `/api/v1/workspaces/invitations/:token` | — | Get invitation details (public) |
+| `POST` | `/api/v1/workspaces/invitations/:token/accept` | ✓ | Accept invitation (member-cap enforced) |
 | `GET` | `/api/v1/workspaces/:slug` | — | Get workspace by slug |
 | `GET` | `/api/v1/workspaces/:slug/overview` | — | Get workspace overview (cached) |
-| `PUT` | `/api/v1/workspaces/:id` | ✓ | Update workspace |
-| `DELETE` | `/api/v1/workspaces/:id` | ✓ | Delete workspace |
+| `GET` | `/api/v1/workspaces/:workspaceSlug/tasks` | — | List workspace tasks |
+| `PUT` | `/api/v1/workspaces/:id` | ✓ | Update workspace (slug is immutable) |
+| `DELETE` | `/api/v1/workspaces/:id` | ✓ | Soft-delete workspace (admin-restorable) |
 | `GET` | `/api/v1/workspaces/:id/members` | — | Get workspace members |
 | `POST` | `/api/v1/workspaces/:id/invite` | ✓ | Invite member |
 | `DELETE` | `/api/v1/workspaces/:id/members/:memberId` | ✓ | Remove member |
-| `PUT` | `/api/v1/workspaces/:id/members/:memberId/role` | ✓ | Update member role |
+| `PUT` | `/api/v1/workspaces/:id/members/:memberId/role` | ✓ | Update member role (owner-only) |
 | `GET` | `/api/v1/workspaces/:id/stats` | — | Get workspace statistics |
+| `GET` | `/api/v1/workspaces/:workspaceId/attachments/stats` | — | Attachment usage stats |
+| `GET` | `/api/v1/workspaces/:workspaceId/storage` | — | Workspace storage usage |
 | `POST` | `/api/v1/workspaces/:id/leave` | ✓ | Leave workspace |
 
 ### Projects & Sections (15 endpoints)

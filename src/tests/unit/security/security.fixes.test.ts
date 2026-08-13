@@ -29,7 +29,11 @@ vi.mock('../../../lib/redis/cache.client.js', () => ({
   CacheClient: { get: vi.fn(), set: vi.fn(), getOrSet: vi.fn((_k: any, fn: any) => fn()), invalidate: vi.fn() },
   CACHE_KEYS: { workspaceMember: vi.fn(), workspaceAdmin: vi.fn(), workspaceOwner: vi.fn() },
   CACHE_TTL: { ACCESS_CONTROL_WORKSPACE_MEMBER: 60, ACCESS_CONTROL_WORKSPACE_ADMIN: 60, ACCESS_CONTROL_WORKSPACE_OWNER: 60 },
-  WorkspaceCache: { invalidateMembers: vi.fn(), invalidateUserWorkspaces: vi.fn(), invalidateWorkspace: vi.fn() },
+  WorkspaceCache: {
+    invalidateMembers: vi.fn().mockResolvedValue(undefined),
+    invalidateUserWorkspaces: vi.fn().mockResolvedValue(undefined),
+    invalidateWorkspace: vi.fn().mockResolvedValue(undefined),
+  },
   AccessControlCache: { invalidateWorkspaceAccess: vi.fn(), invalidateWorkspaceUsers: vi.fn() },
 }));
 

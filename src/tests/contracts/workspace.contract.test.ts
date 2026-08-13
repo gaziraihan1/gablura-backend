@@ -16,6 +16,14 @@ vi.mock('../../middleware/auth.js', () => ({
   },
 }));
 
+// The workspace router now enforces CSRF on mutating routes (like every other
+// module). Contract tests focus on the response shape, not security posture,
+// so they bypass the middleware exactly like the other contract suites.
+vi.mock('../../middleware/csrf.js', () => ({
+  requireCsrfToken: () => (req: any, res: any, next: any) => next(),
+  getCsrfTokenHandler: (req: any, res: any) => res.json({ success: true, data: { csrfToken: 'mock-token' } }),
+}));
+
 vi.mock('../../../modules/billing/plan.middleware.js', () => ({
   planGuard: () => (req: any, res: any, next: any) => next(),
   requireWorkspaceCreationSlot: (req: any, res: any, next: any) => next(),
@@ -25,6 +33,7 @@ vi.mock('../../../modules/billing/plan.middleware.js', () => ({
 vi.mock('../../../modules/billing/index.js', () => ({
   requireWorkspaceCreationSlot: (req: any, res: any, next: any) => next(),
   requireMemberSlot: (req: any, res: any, next: any) => next(),
+  requireMemberSlotForInvitation: (req: any, res: any, next: any) => next(),
 }));
 
 

@@ -2,6 +2,7 @@
 // These values can be overridden via environment variables
 
 import { getRedisClient } from "../../redis/redis.client.js";
+import { prisma } from "../prisma.js";
 
 export const CACHE_TTL = {
   WORKSPACE_METADATA: parseInt(
@@ -100,10 +101,12 @@ export const CACHE_TTL = {
 // ─── Cache Key Generators ─────────────────────────────────────────────────────
 
 export const CACHE_KEYS = {
-  // Workspace metadata caching
-  workspaceById: (workspaceId: string) => `workspace:id:${workspaceId}`,
-  workspaceBySlug: (slug: string) => `workspace:slug:${slug}`,
-  workspaceOverview: (slug: string) => `workspace:overview:${slug}`,
+  // Workspace metadata caching — user-scoped so a cached detail payload
+  // (which includes the member roster) is only ever served back to the
+  // user whose authorized query produced it.
+  workspaceById: (workspaceId: string, userId: string) => `workspace:id:${workspaceId}:${userId}`,
+  workspaceBySlug: (slug: string, userId: string) => `workspace:slug:${slug}:${userId}`,
+  workspaceOverview: (slug: string, userId: string) => `workspace:overview:${slug}:${userId}`,
   workspaceStats: (workspaceId: string) => `workspace:stats:${workspaceId}`,
   workspaceMembers: (workspaceId: string) => `workspace:members:${workspaceId}`,
   userWorkspaces: (userId: string) => `user:workspaces:${userId}`,
@@ -327,18 +330,34 @@ export const CacheClient = {
 
 export const WorkspaceCache = {
   async invalidateWorkspace(workspaceId: string, slug?: string): Promise<void> {
-    const keys = [
-      CACHE_KEYS.workspaceById(workspaceId),
-      CACHE_KEYS.workspaceStats(workspaceId),
-      CACHE_KEYS.workspaceMembers(workspaceId),
-      CACHE_KEYS.workspaceOverview(workspaceId),
-    ];
-    if (slug) {
-      keys.push(CACHE_KEYS.workspaceBySlug(slug));
-      keys.push(CACHE_KEYS.workspaceOverview(slug));
+    // Resolve the slug from the DB when the caller can't supply it, so
+    // slug-keyed (user-scoped) entries are always wiped too.
+    let effectiveSlug = slug;
+    if (!effectiveSlug) {
+      try {
+        const ws = await prisma.workspace.findUnique({
+          where: { id: workspaceId },
+          select: { slug: true },
+        });
+        effectiveSlug = ws?.slug;
+      } catch (err) {
+        console.error(`[Cache] Failed to resolve slug for workspace ${workspaceId}:`, err);
+      }
     }
-    await CacheClient.delete(...keys);
-    await AnalyticsCache.invalidateWorkspace(workspaceId);
+
+    const jobs: Promise<void>[] = [
+      // User-scoped detail/overview entries for this workspace (any user)
+      CacheClient.deletePattern(`workspace:id:${workspaceId}:*`),
+      CacheClient.deletePattern(`workspace:overview:${workspaceId}:*`),
+      CacheClient.delete(CACHE_KEYS.workspaceStats(workspaceId)),
+      CacheClient.delete(CACHE_KEYS.workspaceMembers(workspaceId)),
+      AnalyticsCache.invalidateWorkspace(workspaceId),
+    ];
+    if (effectiveSlug) {
+      jobs.push(CacheClient.deletePattern(`workspace:slug:${effectiveSlug}:*`));
+      jobs.push(CacheClient.deletePattern(`workspace:overview:${effectiveSlug}:*`));
+    }
+    await Promise.all(jobs);
   },
 
   async invalidateUserWorkspaces(userId: string): Promise<void> {

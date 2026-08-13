@@ -24,6 +24,7 @@ vi.mock('../../middleware/csrf.js', () => ({
 vi.mock('../../../modules/billing/index.js', () => ({
   requireWorkspaceCreationSlot: (req: any, res: any, next: any) => next(),
   requireMemberSlot: (req: any, res: any, next: any) => next(),
+  requireMemberSlotForInvitation: (req: any, res: any, next: any) => next(),
   requireProjectSlot: (req: any, res: any) => next(),
 }));
 

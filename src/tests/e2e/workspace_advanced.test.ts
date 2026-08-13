@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import request from "supertest";
 import app from "../../app.js";
+import { prisma } from "../../lib/prisma.js";
 import {
   createWorkspaceWithOwner,
   createUser,
@@ -21,36 +22,37 @@ describe("🚀 Advanced Workspace & Task Journeys", () => {
   it('should handle "Workspace Slug & Identity" journey', async () => {
     /**
      * JOURNEY:
-     * 1. User updates workspace slug
-     * 2. User verifies workspace is accessible via new slug
-     * 3. User verifies old slug no longer works
+     * 1. Owner attempts to change the workspace slug
+     * 2. Slug is immutable — the request succeeds but the slug is unchanged
+     * 3. Workspace remains accessible via its original slug; the attempted
+     *    slug was stripped and never applied (404)
      */
     const headers = await authWithCsrfHeaders(testUser);
-    const newSlug = `advanced-slug-${Date.now()}`;
+    const attemptedSlug = `advanced-slug-${Date.now()}`;
 
-    // 1. Update Slug
+    // 1. Attempt to change slug
     const updateRes = await request(app)
       .put(`/api/v1/workspaces/${testWorkspace.id}`)
       .set(headers)
-      .send({ slug: newSlug });
+      .send({ slug: attemptedSlug });
 
     expect(updateRes.status).toBe(200);
-    expect(updateRes.body.data.slug).toBe(newSlug);
+    expect(updateRes.body.data.slug).toBe(testWorkspace.slug);
 
-    // 2. Verify new slug
+    // 2. Still accessible via the original slug
     const verifyRes = await request(app)
-      .get(`/api/v1/workspaces/${newSlug}`)
+      .get(`/api/v1/workspaces/${testWorkspace.slug}`)
       .set(headers);
 
     expect(verifyRes.status).toBe(200);
     expect(verifyRes.body.data.id).toBe(testWorkspace.id);
 
-    // 3. Verify old slug fails
-    const oldSlugRes = await request(app)
-      .get(`/api/v1/workspaces/${testWorkspace.slug}`)
+    // 3. The attempted slug was never applied
+    const attemptedSlugRes = await request(app)
+      .get(`/api/v1/workspaces/${attemptedSlug}`)
       .set(headers);
 
-    expect(oldSlugRes.status).toBe(404);
+    expect(attemptedSlugRes.status).toBe(404);
   });
 
   it('should handle "Workspace Ownership Transfer" journey', async () => {
@@ -116,12 +118,13 @@ describe("🚀 Advanced Workspace & Task Journeys", () => {
     /**
      * JOURNEY:
      * 1. Owner deletes the workspace
-     * 2. Owner verifies workspace is gone
-     * 3. Verify associated projects/tasks are also cleaned up (cascade)
+     * 2. Owner verifies workspace is gone (soft-deleted → 404)
+     * 3. Verify the data is retained for recovery (no cascade wipe) — the
+     *    admin restore flow can bring the workspace back.
      */
     const headers = await authWithCsrfHeaders(testUser);
 
-    // Setup: Create a project and task to verify cascade
+    // Setup: Create a project and task to verify data retention
     const projRes = await request(app).post("/api/v1/projects").set(headers).send({
       name: "Cleanup Project",
       workspaceId: testWorkspace.id,
@@ -141,19 +144,24 @@ describe("🚀 Advanced Workspace & Task Journeys", () => {
 
     expect(deleteRes.status).toBe(200);
 
-    // 2. Verify gone
+    // 2. Verify gone for users
     const verifyRes = await request(app)
       .get(`/api/v1/workspaces/${testWorkspace.id}`)
       .set(headers);
 
     expect(verifyRes.status).toBe(404);
 
-    // 3. Verify cascade
-    const projVerify = await request(app).get(`/api/v1/projects/${project.id}`).set(headers);
-    expect(projVerify.status).toBe(404);
+    // 3. Soft delete retains the data (recoverable via admin restore)
+    const wsRow = await prisma.workspace.findUnique({
+      where: { id: testWorkspace.id },
+    });
+    expect(wsRow?.deletedAt).not.toBeNull();
 
-    const taskVerify = await request(app).get(`/api/v1/tasks/${task.id}`).set(headers);
-    expect(taskVerify.status).toBe(404);
+    const projRow = await prisma.project.findUnique({ where: { id: project.id } });
+    expect(projRow).not.toBeNull();
+
+    const taskRow = await prisma.task.findUnique({ where: { id: task.id } });
+    expect(taskRow).not.toBeNull();
   });
 
   it('should handle "Sub-task Deep Lifecycle" journey', async () => {

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { WorkspaceQuery } from "../../../modules/workspace/workspace.query.js";
 import { prisma } from "../../../lib/prisma.js";
-import { CacheClient } from "../../../lib/redis/cache.client.js";
+import { CacheClient, CACHE_KEYS } from "../../../lib/redis/cache.client.js";
 import { NotFoundError, ForbiddenError } from "../../../errors/AppError.js";
 
 vi.mock("../../../lib/prisma.js", () => ({
@@ -88,7 +88,16 @@ describe("WorkspaceQuery", () => {
       const result = await WorkspaceQuery.getBySlug("test-ws", mockUser.id);
 
       expect(result).toEqual(mockWorkspace);
-      expect(CacheClient.set).toHaveBeenCalled();
+      // The cache key must be scoped to the requesting user so a cached
+      // detail payload (member roster included) is never served to another
+      // user — see the authz regression: non-members must not inherit a
+      // member's cache entry.
+      expect(CacheClient.get).toHaveBeenCalledWith(CACHE_KEYS.workspaceBySlug("test-ws", mockUser.id));
+      expect(CacheClient.set).toHaveBeenCalledWith(
+        CACHE_KEYS.workspaceBySlug("test-ws", mockUser.id),
+        mockWorkspace,
+        expect.any(Number),
+      );
     });
 
     it("throws NotFoundError if workspace not found", async () => {
@@ -97,6 +106,28 @@ describe("WorkspaceQuery", () => {
 
       await expect(WorkspaceQuery.getBySlug("invalid", mockUser.id))
         .rejects.toThrow(NotFoundError);
+    });
+
+    it("never writes a cache entry when the workspace is not visible (404 path)", async () => {
+      // Non-member / non-public lookup → DB returns nothing → NotFound,
+      // and crucially nothing is cached (so an unprivileged user can never
+      // seed or later read a workspace detail entry).
+      vi.mocked(CacheClient.get).mockResolvedValueOnce(null);
+      vi.mocked(prisma.workspace.findFirst).mockResolvedValue(null);
+
+      await expect(WorkspaceQuery.getBySlug("private-ws", mockUser.id))
+        .rejects.toThrow(NotFoundError);
+      expect(CacheClient.set).not.toHaveBeenCalled();
+    });
+
+    it("uses a distinct cache entry per user", async () => {
+      // User A's cache entry must never be readable by user B.
+      vi.mocked(CacheClient.get).mockResolvedValueOnce(mockWorkspace);
+
+      await WorkspaceQuery.getBySlug("test-ws", "user-b");
+
+      expect(CacheClient.get).toHaveBeenCalledWith(CACHE_KEYS.workspaceBySlug("test-ws", "user-b"));
+      expect(CacheClient.get).not.toHaveBeenCalledWith(CACHE_KEYS.workspaceBySlug("test-ws", mockUser.id));
     });
   });
 
@@ -117,7 +148,12 @@ describe("WorkspaceQuery", () => {
       const result = await WorkspaceQuery.getById("ws-1", mockUser.id);
 
       expect(result).toEqual(mockWorkspace);
-      expect(CacheClient.set).toHaveBeenCalled();
+      expect(CacheClient.get).toHaveBeenCalledWith(CACHE_KEYS.workspaceById("ws-1", mockUser.id));
+      expect(CacheClient.set).toHaveBeenCalledWith(
+        CACHE_KEYS.workspaceById("ws-1", mockUser.id),
+        mockWorkspace,
+        expect.any(Number),
+      );
     });
 
     it("throws NotFoundError if workspace not found", async () => {
@@ -186,6 +222,9 @@ describe("WorkspaceQuery", () => {
 
       expect(result).toEqual(overview);
       expect(prisma.workspace.findFirst).not.toHaveBeenCalled();
+      // Overview payload embeds the workspace detail (member roster) — its
+      // cache key must be user-scoped too.
+      expect(CacheClient.get).toHaveBeenCalledWith(CACHE_KEYS.workspaceOverview("test-ws", mockUser.id));
     });
 
     it("throws ForbiddenError if workspace is suspended", async () => {

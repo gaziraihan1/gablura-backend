@@ -9,12 +9,19 @@ export const createWorkspaceSchema = z.object({
     .optional(),
   logo: z.string().url().optional(),
   isPublic: z.boolean().optional(),
-  plan: z.enum(["FREE", "PRO", "BUSINESS", "ENTERPRISE"]).optional(),
+  // NOTE: `plan` is deliberately NOT part of the create schema. Workspaces
+  // always start on FREE; a paid tier can only be granted by the billing
+  // flow (upgrade/checkout/webhook) or a Focura admin (limits endpoint).
+  // Any client-sent `plan` is stripped by Zod (non-strict) and ignored.
 });
 
 export const updateWorkspaceSchema = z.object({
   name: z.string().min(1).max(100).optional(),
-  slug: z.string().min(3).max(50).optional(),
+  // NOTE: `slug` is deliberately NOT part of the update schema. Workspace
+  // slugs are generated server-side at creation and immutable afterwards —
+  // Announcement and Project rows reference the workspace by slug, and the
+  // slug-keyed caches assume it never changes. Any client-sent `slug` is
+  // stripped by Zod (non-strict) and ignored.
   description: z.string().optional(),
   color: z
     .string()

@@ -52,9 +52,9 @@ vi.mock("../../../lib/redis/cache.client.js", async (importOriginal) => {
     },
     WorkspaceCache: {
       ...actual.WorkspaceCache,
-      invalidateUserWorkspaces: vi.fn(),
-      invalidateWorkspace: vi.fn(),
-      invalidateMembers: vi.fn(),
+      invalidateUserWorkspaces: vi.fn().mockResolvedValue(undefined),
+      invalidateWorkspace: vi.fn().mockResolvedValue(undefined),
+      invalidateMembers: vi.fn().mockResolvedValue(undefined),
     },
   };
 });
@@ -95,6 +95,32 @@ describe("WorkspaceMutation", () => {
       expect(WorkspaceCache.invalidateUserWorkspaces).toHaveBeenCalledWith(mockUser.id);
       expect(result).toEqual(mockWorkspace);
     });
+
+    it("retries once with a fresh slug when a concurrent create hits P2002", async () => {
+      // Pass 1 of generateUniqueSlug: slug is free -> "new-ws".
+      // Pass 2 (retry): the conflicting row now exists -> "new-ws" taken,
+      // then the "-1" variant is free -> "new-ws-1".
+      vi.mocked(prisma.workspace.findUnique)
+        .mockResolvedValueOnce(null)                       // pass 1: free
+        .mockResolvedValueOnce({ slug: "new-ws" } as any) // pass 2: taken
+        .mockResolvedValueOnce(null);                      // pass 2: -1 free
+
+      const p2002 = Object.assign(new Error("unique violation"), {
+        code: "P2002",
+        meta: { target: ["slug"] },
+      });
+      vi.mocked(prisma.workspace.create)
+        .mockRejectedValueOnce(p2002)
+        .mockResolvedValueOnce({ ...mockWorkspace, slug: "new-ws-1" } as any);
+
+      const result = await WorkspaceMutation.create(mockUser.id, { name: "New WS" });
+
+      expect(prisma.workspace.create).toHaveBeenCalledTimes(2);
+      const secondCall = vi.mocked(prisma.workspace.create).mock.calls[1][0];
+      expect(secondCall.data.slug).toBe("new-ws-1");
+      expect(WorkspaceCache.invalidateUserWorkspaces).toHaveBeenCalledWith(mockUser.id);
+      expect(result.slug).toBe("new-ws-1");
+    });
   });
 
   describe("update", () => {
@@ -119,18 +145,44 @@ describe("WorkspaceMutation", () => {
       await expect(WorkspaceMutation.update("ws-1", mockUser.id, { name: "Updated" }))
         .rejects.toThrow(ForbiddenError);
     });
+
+    it("throws ConflictError when the update hits a slug conflict (P2002)", async () => {
+      vi.mocked(prisma.workspaceMember.findFirst).mockResolvedValue({ role: "ADMIN" } as any);
+      const p2002 = Object.assign(new Error("unique violation"), {
+        code: "P2002",
+        meta: { target: ["slug"] },
+      });
+      vi.mocked(prisma.workspace.update).mockRejectedValue(p2002);
+
+      await expect(
+        WorkspaceMutation.update("ws-1", mockUser.id, { name: "Updated" }),
+      ).rejects.toThrow(ConflictError);
+    });
   });
 
   describe("delete", () => {
-    it("deletes workspace if user is owner", async () => {
+    it("soft-deletes workspace if user is owner (recoverable, no cascade wipe)", async () => {
       vi.mocked(prisma.workspaceMember.findFirst).mockResolvedValue({ role: "OWNER" } as any);
       vi.mocked(prisma.workspace.findFirst).mockResolvedValue(mockWorkspace as any);
       vi.mocked(prisma.workspace.findUnique).mockResolvedValue(mockWorkspace as any);
+      // Explicit mock: an earlier test leaves a P2002 rejection on update via
+      // mockRejectedValue (clearAllMocks only clears call history, not impls).
+      vi.mocked(prisma.workspace.update).mockResolvedValue(mockWorkspace as any);
 
       await WorkspaceMutation.delete("ws-1", mockUser.id);
 
-      expect(prisma.workspace.delete).toHaveBeenCalled();
-      expect(WorkspaceCache.invalidateWorkspace).toHaveBeenCalled();
+      // No hard delete — the row is marked deletedAt so admins can restore it.
+      expect(prisma.workspace.delete).not.toHaveBeenCalled();
+      expect(prisma.workspace.update).toHaveBeenCalledWith({
+        where: { id: "ws-1" },
+        data: {
+          deletedAt:    expect.any(Date),
+          deletedById:  mockUser.id,
+          deleteReason: "Deleted by owner",
+        },
+      });
+      expect(WorkspaceCache.invalidateWorkspace).toHaveBeenCalledWith("ws-1", mockWorkspace.slug);
+      expect(WorkspaceCache.invalidateUserWorkspaces).toHaveBeenCalledWith(mockWorkspace.ownerId);
     });
 
     it("throws ForbiddenError if user is not owner", async () => {

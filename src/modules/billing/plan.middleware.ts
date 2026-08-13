@@ -75,13 +75,8 @@ export const requireWorkspaceCreationSlot = planGuard(async (req) => {
   return { allowed: true };
 });
 
-/** Block adding members beyond the workspace's plan member limit. */
-export const requireMemberSlot = planGuard(async (req) => {
-  const workspaceId = req.params.workspaceId ?? req.params.id;
-  if (!workspaceId) {
-    return { allowed: false, reason: 'Workspace ID could not be resolved from request params.' };
-  }
-
+/** True when the workspace has room for another member under its plan cap. */
+async function hasMemberSlot(workspaceId: string): Promise<{ allowed: boolean; reason?: string }> {
   const limits = await BillingService.getWorkspacePlanLimits(workspaceId);
   if (limits.maxMembersPerWs === -1) return { allowed: true };
 
@@ -93,6 +88,40 @@ export const requireMemberSlot = planGuard(async (req) => {
     };
   }
   return { allowed: true };
+}
+
+/** Block adding members beyond the workspace's plan member limit. */
+export const requireMemberSlot = planGuard(async (req) => {
+  const workspaceId = req.params.workspaceId ?? req.params.id;
+  if (!workspaceId) {
+    return { allowed: false, reason: 'Workspace ID could not be resolved from request params.' };
+  }
+  return hasMemberSlot(workspaceId);
+});
+
+/**
+ * Member-slot guard for invitation ACCEPT (POST /invitations/:token/accept).
+ * The route only carries the invitation :token, so the workspace is resolved
+ * from the invitation before the same cap check as requireMemberSlot. Without
+ * this, an over-limit workspace could keep growing through accepted invites.
+ *
+ * Unknown or non-PENDING invitations pass through — the accept controller
+ * reports those with their canonical errors (INVALID_TOKEN / INVITATION_USED /
+ * INVITATION_EXPIRED), which would be misleading to replace with a plan error.
+ */
+export const requireMemberSlotForInvitation = planGuard(async (req) => {
+  const token = req.params.token;
+  if (!token) {
+    return { allowed: false, reason: 'Invitation token could not be resolved from request params.' };
+  }
+
+  const invitation = await prisma.workspaceInvitation.findUnique({
+    where: { token },
+    select: { workspaceId: true, status: true },
+  });
+  if (!invitation?.workspaceId || invitation.status !== 'PENDING') return { allowed: true };
+
+  return hasMemberSlot(invitation.workspaceId);
 });
 
 /** Block file uploads that exceed the workspace plan's per-file size limit. */
