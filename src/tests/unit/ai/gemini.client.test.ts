@@ -1,13 +1,33 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from "vitest";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Env must be set before the module under test evaluates its module-level consts.
+// These writes persist in the shared test process (singleFork), so the originals
+// are captured here and restored in afterAll to avoid leaking into later files.
 // ═══════════════════════════════════════════════════════════════════════════════
 
 vi.hoisted(() => {
+  const prev: Record<string, string | undefined> = {
+    GEMINI_API_KEY: process.env.GEMINI_API_KEY,
+    GEMINI_REQUEST_TIMEOUT_MS: process.env.GEMINI_REQUEST_TIMEOUT_MS,
+    GEMINI_MAX_OUTPUT_TOKENS: process.env.GEMINI_MAX_OUTPUT_TOKENS,
+  };
+  (globalThis as any).__geminiEnvPrev = prev;
   process.env.GEMINI_API_KEY = "test-key";
   process.env.GEMINI_REQUEST_TIMEOUT_MS = "50";
   process.env.GEMINI_MAX_OUTPUT_TOKENS = "128";
+});
+
+afterAll(() => {
+  const prev = (globalThis as any).__geminiEnvPrev as
+    | Record<string, string | undefined>
+    | undefined;
+  delete (globalThis as any).__geminiEnvPrev;
+  if (!prev) return;
+  for (const [key, value] of Object.entries(prev)) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
 });
 
 const mockGoogleGenAI = vi.hoisted(() => vi.fn());

@@ -285,6 +285,9 @@ async function checkDbAvailable(): Promise<boolean> {
 // DELETE all test data between tests.
 // Each DELETE is an individual statement. If one deadlocks (40P01), it is
 // retried once — deadlocks are transient and a retry almost always succeeds.
+// NOTE: A single `TRUNCATE TABLE ... CASCADE` was tried as a faster
+// replacement but measured ~500ms slower per test (lock/catalog overhead on
+// ~70 tables) — the per-table DELETE loop is faster on empty tables.
 async function deleteAllTables(): Promise<void> {
   const tables = await getDeleteTables();
   for (const table of tables) {

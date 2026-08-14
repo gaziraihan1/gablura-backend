@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterAll } from "vitest";
 import { readFileSync } from "fs";
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
@@ -10,9 +10,22 @@ const { privateKey: testPrivateKey, publicKey: testPublicKey } = crypto.generate
   privateKeyEncoding: { type: "pkcs8", format: "pem" },
 });
 
+// This file runs in the single shared test process (singleFork), so the
+// module-level env overwrites below would otherwise leak into every later
+// test file. Save the originals and restore them in afterAll.
+const originalJwtPrivateKey = process.env.JWT_PRIVATE_KEY;
+const originalJwtPublicKey = process.env.JWT_PUBLIC_KEY;
+
 // Set environment variables before importing the module
 process.env.JWT_PRIVATE_KEY = Buffer.from(testPrivateKey).toString("base64");
 process.env.JWT_PUBLIC_KEY = Buffer.from(testPublicKey).toString("base64");
+
+afterAll(() => {
+  if (originalJwtPrivateKey === undefined) delete process.env.JWT_PRIVATE_KEY;
+  else process.env.JWT_PRIVATE_KEY = originalJwtPrivateKey;
+  if (originalJwtPublicKey === undefined) delete process.env.JWT_PUBLIC_KEY;
+  else process.env.JWT_PUBLIC_KEY = originalJwtPublicKey;
+});
 
 vi.mock("fs", () => ({
   readFileSync: vi.fn(),
