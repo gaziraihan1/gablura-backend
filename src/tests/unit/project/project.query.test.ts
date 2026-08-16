@@ -144,8 +144,8 @@ describe("ProjectQuery", () => {
       const cached = { id: "p1", workspaceId: "ws1" };
       vi.mocked(CacheClient.get).mockResolvedValue(cached);
       vi.mocked(prisma.workspace.findFirst).mockResolvedValue({ id: "ws1" } as any);
-      const result = await ProjectQuery.getProjectBySlug("u1", "test-slug");
-      expect(result).toEqual(cached);
+      const result = await ProjectQuery.getProjectBySlug("u1", "test-slug") as any;
+      expect(result).toEqual({ ...cached, isAdmin: true });
       expect(prisma.workspace.findFirst).toHaveBeenCalled();
     });
 
