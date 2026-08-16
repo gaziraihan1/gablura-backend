@@ -133,6 +133,105 @@ describe("WellnessService.generateRecommendations", () => {
     expect(breakRecs.length).toBeGreaterThanOrEqual(1);
   });
 
+  it("burnout prevention names the strain factors that drove high risk", async () => {
+    const user = await createUser();
+    await prisma.burnoutSignal.create({
+      data: {
+        userId: user.id,
+        weekStart: new Date(Date.now() - 24 * 60 * 60 * 1000),
+        consecutiveHeavyDays: 2,
+        avgDailyLoad: 1.3,
+        riskLevel: "HIGH",
+        lowEnergyDays: 3,
+        focusOverloadDays: 2,
+        avgEnergy: 3.5,
+      },
+    });
+
+    const result = await WellnessService.generateRecommendations(user.id);
+
+    const prevention = result.find((r: any) => r.type === "BURNOUT_PREVENTION");
+    expect(prevention).toBeDefined();
+    expect(prevention?.message).toContain("3 low-energy days");
+    expect(prevention?.message).toContain("2 focus-overload days");
+  });
+
+  it("explains which strain factors worsened when risk increased", async () => {
+    const user = await createUser();
+    await prisma.burnoutSignal.create({
+      data: {
+        userId: user.id,
+        weekStart: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000),
+        consecutiveHeavyDays: 0,
+        avgDailyLoad: 0.5,
+        riskLevel: "LOW",
+        lowEnergyDays: 0,
+        focusOverloadDays: 0,
+      },
+    });
+    await prisma.burnoutSignal.create({
+      data: {
+        userId: user.id,
+        weekStart: new Date(Date.now() - 24 * 60 * 60 * 1000),
+        consecutiveHeavyDays: 3,
+        avgDailyLoad: 1.4,
+        riskLevel: "HIGH",
+        lowEnergyDays: 2,
+        focusOverloadDays: 0,
+        avgEnergy: 4,
+      },
+    });
+
+    const result = await WellnessService.generateRecommendations(user.id);
+
+    const alert = result.find((r: any) => r.type === "WORKLOAD_ALERT" && r.message.includes("increased"));
+    expect(alert).toBeDefined();
+    expect(alert?.message).toContain("low-energy days rose from 0 to 2");
+  });
+
+  it("surfaces low energy even when the task load is manageable", async () => {
+    const user = await createUser();
+    await prisma.burnoutSignal.create({
+      data: {
+        userId: user.id,
+        weekStart: new Date(Date.now() - 24 * 60 * 60 * 1000),
+        consecutiveHeavyDays: 0,
+        avgDailyLoad: 0.3,
+        riskLevel: "LOW",
+        lowEnergyDays: 3,
+        focusOverloadDays: 0,
+        avgEnergy: 3.8,
+      },
+    });
+
+    const result = await WellnessService.generateRecommendations(user.id);
+
+    const insight = result.find((r: any) => r.type === "ENERGY_INSIGHT" && r.message.includes("logged low energy on 3 days"));
+    expect(insight).toBeDefined();
+  });
+
+  it("recommends recovery after focus-overload weeks", async () => {
+    const user = await createUser();
+    await prisma.burnoutSignal.create({
+      data: {
+        userId: user.id,
+        weekStart: new Date(Date.now() - 24 * 60 * 60 * 1000),
+        consecutiveHeavyDays: 2,
+        avgDailyLoad: 1.2,
+        riskLevel: "HIGH",
+        lowEnergyDays: 0,
+        focusOverloadDays: 2,
+        avgEnergy: 7,
+        focusMinutes: 1320,
+      },
+    });
+
+    const result = await WellnessService.generateRecommendations(user.id);
+
+    const rec = result.find((r: any) => r.type === "BREAK_REMINDER" && r.message.includes("focus-overload"));
+    expect(rec).toBeDefined();
+    expect(rec?.message).toContain("2 focus-overload days");
+  });
   it("does not regenerate within 24 hours", async () => {
     const user = await createUser();
 

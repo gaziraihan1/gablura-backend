@@ -178,6 +178,13 @@ await prisma.project.delete({ where: { id: projectId } });
     AccessControlCache.invalidateProjectAccess(projectId, data.userId).catch(() => {});
     AccessControlCache.invalidateProjectUsers(projectId).catch(() => {});
 
+    // The workspace list and per-user lists embed the members array — refresh
+    // them so the new collaborator shows up immediately on the projects page
+    // (and their own list unlocks the card instead of showing the modal).
+    ProjectCache.invalidateWorkspaceProjects(project.workspaceId!).catch(() => {});
+    ProjectCache.invalidateUserProjects(data.userId).catch(() => {});
+    ProjectCache.invalidateUserProjects(userId).catch(() => {});
+
     return member;
   },
 
@@ -187,7 +194,7 @@ await prisma.project.delete({ where: { id: projectId } });
     memberId:  string,
     data:      UpdateProjectMemberRoleDto,
   ) {
-    await ProjectAccess.assertProjectAdminAccess(userId, projectId);
+    const project = await ProjectAccess.assertProjectAdminAccess(userId, projectId);
 
     const member = await prisma.projectMember.update({
       where:   { projectId_userId: { projectId, userId: memberId } },
@@ -200,11 +207,17 @@ await prisma.project.delete({ where: { id: projectId } });
     AccessControlCache.invalidateProjectAccess(projectId, memberId).catch(() => {});
     AccessControlCache.invalidateProjectUsers(projectId).catch(() => {});
 
+    if (project.workspace?.id) {
+      ProjectCache.invalidateWorkspaceProjects(project.workspace.id).catch(() => {});
+    }
+    ProjectCache.invalidateUserProjects(memberId).catch(() => {});
+    ProjectCache.invalidateUserProjects(userId).catch(() => {});
+
     return member;
   },
 
   async removeProjectMember(userId: string, projectId: string, memberId: string): Promise<void> {
-    await ProjectAccess.assertProjectAdminAccess(userId, projectId);
+    const project = await ProjectAccess.assertProjectAdminAccess(userId, projectId);
 
     await prisma.projectMember.delete({
       where: { projectId_userId: { projectId, userId: memberId } },
@@ -214,5 +227,11 @@ await prisma.project.delete({ where: { id: projectId } });
     ProjectCache.invalidateProject(projectId).catch(() => {});
     AccessControlCache.invalidateProjectAccess(projectId, memberId).catch(() => {});
     AccessControlCache.invalidateProjectUsers(projectId).catch(() => {});
+
+    if (project.workspace?.id) {
+      ProjectCache.invalidateWorkspaceProjects(project.workspace.id).catch(() => {});
+    }
+    ProjectCache.invalidateUserProjects(memberId).catch(() => {});
+    ProjectCache.invalidateUserProjects(userId).catch(() => {});
   },
 };

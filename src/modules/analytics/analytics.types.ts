@@ -69,6 +69,47 @@ export interface TimeTrackingSummary {
   }>;
 }
 
+export interface TimeTrackingReportEntry {
+  id: string;
+  taskId: string;
+  taskTitle: string | null;
+  projectId: string | null;
+  projectName: string | null;
+  userId: string;
+  userName: string | null;
+  userEmail: string;
+  duration: number; // minutes
+  category: string;
+  billable: boolean;
+  description: string | null;
+  startedAt: Date;
+  endedAt: Date | null;
+}
+
+export interface TimeTrackingReportRow {
+  id: string;
+  name: string;
+  minutes: number;
+  hours: number;
+}
+
+export interface TimeTrackingReportCategoryRow {
+  category: string;
+  minutes: number;
+  hours: number;
+}
+
+export interface TimeTrackingReport {
+  totalMinutes: number;
+  totalHours: number;
+  entryCount: number;
+  entries: TimeTrackingReportEntry[];
+  byProject: TimeTrackingReportRow[];
+  byTask: TimeTrackingReportRow[];
+  byMember: TimeTrackingReportRow[];
+  byCategory: TimeTrackingReportCategoryRow[];
+}
+
 export interface ActivityVolumePoint {
   date: Date;
   created: number;
@@ -154,6 +195,44 @@ export interface ProjectTimeTrackingSummary {
     userEmail: string;
     hours: number;
   }>;
+}
+
+export interface ProjectTimeReportEntry {
+  id: string;
+  taskId: string;
+  taskTitle: string | null;
+  userId: string;
+  userName: string | null;
+  userEmail: string;
+  duration: number; // minutes
+  category: string;
+  billable: boolean;
+  description: string | null;
+  startedAt: Date;
+  endedAt: Date | null;
+}
+
+export interface ProjectTimeReportRow {
+  id: string;
+  name: string;
+  minutes: number;
+  hours: number;
+}
+
+export interface ProjectTimeReportCategoryRow {
+  category: string;
+  minutes: number;
+  hours: number;
+}
+
+export interface ProjectTimeReport {
+  totalMinutes: number;
+  totalHours: number;
+  entryCount: number;
+  entries: ProjectTimeReportEntry[];
+  byTask: ProjectTimeReportRow[];
+  byMember: ProjectTimeReportRow[];
+  byCategory: ProjectTimeReportCategoryRow[];
 }
 
 export interface ProjectCompletionTrend {

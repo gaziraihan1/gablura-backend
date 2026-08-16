@@ -22,9 +22,13 @@ router.get('/:workspaceId/projects/:projectId/members/contribution', requireAnal
 
 router.get('/:workspaceId/projects/:projectId/time/summary', requireAnalyticsAccess, AnalyticsController.getProjectTimeSummary);
 
+router.get('/:workspaceId/projects/:projectId/time/report', requireAnalyticsAccess, AnalyticsController.getProjectTimeReport);
+
 router.get('/:workspaceId/members/contribution', requireAnalyticsAccess, AnalyticsController.getMemberContribution);
 
 router.get('/:workspaceId/time/summary', requireAnalyticsAccess, AnalyticsController.getTimeSummary);
+
+router.get('/:workspaceId/time/report', requireAnalyticsAccess, AnalyticsController.getTimeReport);
 
 router.get('/:workspaceId/activity/trends', requireAnalyticsAccess, AnalyticsController.getActivityTrends);
 

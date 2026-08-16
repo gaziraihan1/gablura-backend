@@ -3,6 +3,53 @@ import { prisma } from "../../lib/prisma.js";
 import type { WellnessRecommendation } from "./calendar.types.js";
 import { ForbiddenError } from "../../errors/AppError.js";
 
+// ─── Burnout-factor explanation helpers ──────────────────────────────────────
+// The burnout signal now records WHY a week was risky (energy logs + focus
+// sessions). These helpers turn those factors into plain-language drivers so
+// recommendations explain the cause, not just the verdict.
+
+interface StrainFactors {
+  lowEnergyDays?: number | null;
+  focusOverloadDays?: number | null;
+  avgEnergy?: number | null;
+}
+
+/** "2 low-energy days and 1 focus-overload day" — or "" when none. */
+function listStrainFactors(signal: StrainFactors): string {
+  const parts: string[] = [];
+  if ((signal.lowEnergyDays ?? 0) > 0) {
+    parts.push(`${signal.lowEnergyDays} low-energy day${signal.lowEnergyDays === 1 ? "" : "s"}`);
+  }
+  if ((signal.focusOverloadDays ?? 0) > 0) {
+    parts.push(`${signal.focusOverloadDays} focus-overload day${signal.focusOverloadDays === 1 ? "" : "s"}`);
+  }
+  return parts.join(" and ");
+}
+
+/** Sentence explaining which strain factors drove a high-risk week. */
+function strainExplanation(signal: StrainFactors): string {
+  const factors = listStrainFactors(signal);
+  if (factors) {
+    return ` This was driven by ${factors} this week.`;
+  }
+  if (signal.avgEnergy !== null && signal.avgEnergy !== undefined && signal.avgEnergy <= 4) {
+    return ` Your energy averaged ${signal.avgEnergy}/10 this week.`;
+  }
+  return "";
+}
+
+/** "low-energy days rose from 1 to 3" — the factors that worsened week-over-week. */
+function changedStrainDrivers(current: StrainFactors, prev: StrainFactors): string {
+  const parts: string[] = [];
+  if ((current.lowEnergyDays ?? 0) > (prev.lowEnergyDays ?? 0)) {
+    parts.push(`low-energy days rose from ${prev.lowEnergyDays ?? 0} to ${current.lowEnergyDays}`);
+  }
+  if ((current.focusOverloadDays ?? 0) > (prev.focusOverloadDays ?? 0)) {
+    parts.push(`focus-overload days rose from ${prev.focusOverloadDays ?? 0} to ${current.focusOverloadDays}`);
+  }
+  return parts.length > 0 ? ` Drivers: ${parts.join(" and ")}.` : "";
+}
+
 export const WellnessService = {
   async generateRecommendations(userId: string): Promise<WellnessRecommendation[]> {
     try {
@@ -94,10 +141,32 @@ export const WellnessService = {
         newRecs.push({
           type: "BURNOUT_PREVENTION",
           message: latest.riskLevel === "CRITICAL"
-            ? "Your burnout risk is critical. Consider taking a day off or reducing your workload significantly."
-            : "Your burnout risk is high. Try to lighten your schedule and prioritize rest.",
+            ? `Your burnout risk is critical. Consider taking a day off or reducing your workload significantly.${strainExplanation(latest)}`
+            : `Your burnout risk is high. Try to lighten your schedule and prioritize rest.${strainExplanation(latest)}`,
           priority: 100,
           expiresAt: new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000),
+        });
+      }
+
+      // Low energy despite a manageable load — fatigue that workload alone
+      // can't explain is an early burnout sign worth surfacing explicitly.
+      if ((latest.lowEnergyDays ?? 0) >= 2) {
+        newRecs.push({
+          type: "ENERGY_INSIGHT",
+          message: `You logged low energy on ${latest.lowEnergyDays} days this week. Even if your task load feels manageable, chronic low energy is an early burnout sign — pace yourself and protect your rest.`,
+          priority: 65,
+          expiresAt: new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000),
+        });
+      }
+
+      // Sustained deep-focus overload — 6h+ focus days compound risk even
+      // when the task list looks reasonable.
+      if ((latest.focusOverloadDays ?? 0) >= 2) {
+        newRecs.push({
+          type: "BREAK_REMINDER",
+          message: `You had ${latest.focusOverloadDays} focus-overload days (6h+ of deep work) this week. Sustained deep focus without recovery raises burnout risk — schedule lighter focus days.`,
+          priority: 68,
+          expiresAt: new Date(now.getTime() + 2 * 24 * 60 * 60 * 1000),
         });
       }
 
@@ -111,7 +180,7 @@ export const WellnessService = {
         if (currentIdx > prevIdx) {
           newRecs.push({
             type: "WORKLOAD_ALERT",
-            message: `Your burnout risk has increased from ${prev.riskLevel} to ${latest.riskLevel} over the past week. Review your task load and consider delegating or rescheduling.`,
+            message: `Your burnout risk has increased from ${prev.riskLevel} to ${latest.riskLevel} over the past week. Review your task load and consider delegating or rescheduling.${changedStrainDrivers(latest, prev)}`,
             priority: 90,
             expiresAt: new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000),
           });

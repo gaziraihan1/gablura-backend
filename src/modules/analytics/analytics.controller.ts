@@ -148,6 +148,21 @@ export class AnalyticsController {
     },
   );
 
+  static getTimeReport = asyncHandler(
+    async (req: AuthRequest, res: Response) => {
+      const { workspaceId } = req.params;
+      await AnalyticsAccess.assertAnalyticsAccess(req.user!.id, workspaceId);
+
+      const days = parseDays(req.query.days, 7);
+      const report = await AnalyticsQuery.getTimeTrackingReport(
+        workspaceId,
+        req.user!.id,
+        days,
+      );
+      res.json({ success: true, data: report });
+    },
+  );
+
   static getActivityTrends = asyncHandler(
     async (req: AuthRequest, res: Response) => {
       const { workspaceId } = req.params;
@@ -261,6 +276,20 @@ export class AnalyticsController {
       days,
     );
     res.json({ success: true, data: summary });
+  });
+
+  static getProjectTimeReport = asyncHandler(async (req: AuthRequest, res: Response) => {
+    const { workspaceId, projectId } = req.params;
+    await AnalyticsAccess.assertProjectAnalyticsAccess(req.user!.id, workspaceId, projectId);
+
+    const days = parseDays(req.query.days, 7);
+    const report = await AnalyticsQuery.getProjectTimeReport(
+      workspaceId,
+      projectId,
+      req.user!.id,
+      days,
+    );
+    res.json({ success: true, data: report });
   });
 
   static getProjectDeadlineRisk = asyncHandler(async (req: AuthRequest, res: Response) => {

@@ -753,6 +753,111 @@ describe("POST /api/v1/projects/:projectId/members", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Member changes must invalidate the shared slug cache
+// ─────────────────────────────────────────────────────────────────────────────
+describe("member add invalidates the shared slug cache", () => {
+  it("slug detail reflects a newly added collaborator", async () => {
+    const { user: owner, workspace } = await createWorkspaceWithOwner();
+    const project = await createProject(workspace.id, owner.id);
+    const collaborator = await createUser();
+    await addMemberToWorkspace(collaborator.id, workspace.id, WorkspaceRole.MEMBER);
+
+    // Warm the shared slug cache (as the owner)
+    const warm = await request(app)
+      .get(`/api/v1/projects/slug/${project.slug}`)
+      .set(authHeaders(owner));
+    expect(warm.status).toBe(200);
+    const warmData = warm.body.data ?? warm.body;
+    expect(warmData.members ?? []).toHaveLength(0);
+
+    // Owner adds the collaborator
+    const add = await request(app)
+      .post(`/api/v1/projects/${project.id}/members`)
+      .set(await authWithCsrfHeaders(owner))
+      .send({ userId: collaborator.id, role: ProjectRole.COLLABORATOR });
+    expect(add.status).toBe(201);
+
+    // The slug endpoint must now return the new member — the slug cache was
+    // invalidated even though addProjectMember only knows the project id.
+    const fresh = await request(app)
+      .get(`/api/v1/projects/slug/${project.slug}`)
+      .set(authHeaders(collaborator));
+    expect(fresh.status).toBe(200);
+    const data = fresh.body.data ?? fresh.body;
+    const memberIds = (data.members ?? []).map((m: any) => m.userId);
+    expect(memberIds).toContain(collaborator.id);
+  });
+
+  it("isAdmin is per-user on the shared slug cache", async () => {
+    const { user: owner, workspace } = await createWorkspaceWithOwner();
+    const project = await createProject(workspace.id, owner.id);
+    const collaborator = await createUser();
+    await addMemberToWorkspace(collaborator.id, workspace.id, WorkspaceRole.MEMBER);
+    await prisma.projectMember.create({
+      data: {
+        projectId: project.id,
+        userId: collaborator.id,
+        role: ProjectRole.COLLABORATOR,
+      },
+    });
+
+    // Owner warms the cache first (isAdmin: true for the owner)
+    const ownerRes = await request(app)
+      .get(`/api/v1/projects/slug/${project.slug}`)
+      .set(authHeaders(owner));
+    expect(ownerRes.status).toBe(200);
+    expect(ownerRes.body.data.isAdmin).toBe(true);
+
+    // A collaborator reading the same cached entry must NOT inherit isAdmin
+    const collabRes = await request(app)
+      .get(`/api/v1/projects/slug/${project.slug}`)
+      .set(authHeaders(collaborator));
+    expect(collabRes.status).toBe(200);
+    expect(collabRes.body.data.isAdmin).toBe(false);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Workspace project lists embed members and must refresh on member changes
+// ─────────────────────────────────────────────────────────────────────────────
+describe("workspace project list reflects members", () => {
+  it("includes members and reflects a newly added collaborator", async () => {
+    const { user: owner, workspace } = await createWorkspaceWithOwner();
+    const project = await createProject(workspace.id, owner.id);
+    const collaborator = await createUser();
+    await addMemberToWorkspace(collaborator.id, workspace.id, WorkspaceRole.MEMBER);
+
+    // Warm the workspace list cache (as the owner)
+    const warm = await request(app)
+      .get(`/api/v1/projects/workspace/${workspace.id}`)
+      .set(authHeaders(owner));
+    expect(warm.status).toBe(200);
+    const warmList = warm.body.data ?? warm.body;
+    const warmProject = warmList.find((p: any) => p.id === project.id);
+    expect(warmProject.members ?? []).toHaveLength(0);
+
+    // Owner adds the collaborator
+    const add = await request(app)
+      .post(`/api/v1/projects/${project.id}/members`)
+      .set(await authWithCsrfHeaders(owner))
+      .send({ userId: collaborator.id, role: ProjectRole.COLLABORATOR });
+    expect(add.status).toBe(201);
+
+    // The workspace list must now include the member — proves both that the
+    // list embeds members and that the workspace list cache was invalidated.
+    const fresh = await request(app)
+      .get(`/api/v1/projects/workspace/${workspace.id}`)
+      .set(authHeaders(collaborator));
+    expect(fresh.status).toBe(200);
+    const freshList = fresh.body.data ?? fresh.body;
+    const freshProject = freshList.find((p: any) => p.id === project.id);
+    expect((freshProject.members ?? []).map((m: any) => m.userId)).toContain(
+      collaborator.id,
+    );
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Cache Behavior Tests
 // ─────────────────────────────────────────────────────────────────────────────
 describe("Project Caching", () => {

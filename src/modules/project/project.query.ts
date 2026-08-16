@@ -134,7 +134,12 @@ export const ProjectQuery = {
 
       if (!hasAccess) throw new NotFoundError('Project');
     }
-    return cached;
+
+    // The slug cache is shared across users, but isAdmin is per-user —
+    // recompute it so one user's admin status never leaks to another
+    // (e.g. a collaborator inheriting the owner's cached `isAdmin: true`).
+    const isAdmin = await ProjectAccess.isProjectAdmin(userId, cachedProject);
+    return { ...cachedProject, isAdmin };
   }
 
   // First find the project by slug alone

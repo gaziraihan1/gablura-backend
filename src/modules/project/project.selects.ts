@@ -61,6 +61,10 @@ export const projectWorkspaceListSelect = {
   status:      true,
   priority:    true,
   dueDate:     true,
+  // Members are included so the frontend can tell whether the requesting
+  // user is a project member (the workspace projects page gates project
+  // cards on membership instead of showing an access-denied modal).
+  members:     membersInclude,
   _count:      { select: { tasks: true, members: true } },
 } as const;
 

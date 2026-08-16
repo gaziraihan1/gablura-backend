@@ -13,6 +13,7 @@ import type {
   ProjectHealth,
   MemberContribution,
   TimeTrackingSummary,
+  TimeTrackingReport,
   ActivityVolumePoint,
   MostActiveDay,
   MemberWorkload,
@@ -22,6 +23,7 @@ import type {
   ProjectTaskPriorityDistribution,
   ProjectMemberContribution,
   ProjectTimeTrackingSummary,
+  ProjectTimeReport,
   ProjectCompletionTrend,
   ProjectDeadlineRisk,
 } from "./analytics.types.js";
@@ -476,6 +478,162 @@ export const AnalyticsQuery = {
       .sort((a, b) => b.hours - a.hours);
 
     const result = { totalHours, avgHoursPerMember, projectBreakdown, memberBreakdown };
+
+    await CacheClient.set(cacheKey, result, CACHE_TTL.ANALYTICS_MEMBER_METRICS);
+
+    return result;
+  },
+
+  /**
+   * Detailed workspace-wide time report: the raw entries plus project/task/
+   * member/category rollups for the requested window. Powers the workspace
+   * analytics "Time Report" card.
+   */
+  async getTimeTrackingReport(
+    workspaceId: string,
+    userId: string,
+    days: number = 7,
+  ): Promise<TimeTrackingReport> {
+    await AnalyticsAccess.assertWorkspaceAdminOrOwner(userId, workspaceId);
+
+    const cacheKey = CACHE_KEYS.analyticsTimeReport(workspaceId, days);
+    const cached = await CacheClient.get<TimeTrackingReport>(cacheKey);
+    if (cached) return cached;
+
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - days);
+
+    const timeWhere = { task: { workspaceId }, startedAt: { gte: startDate } };
+
+    const [totalResult, entryCount, entries, taskGroups, memberGroups, categoryGroups] =
+      await Promise.all([
+        prisma.timeEntry.aggregate({ where: timeWhere, _sum: { duration: true } }),
+        prisma.timeEntry.count({ where: timeWhere }),
+        prisma.timeEntry.findMany({
+          where: timeWhere,
+          orderBy: { startedAt: 'desc' },
+          take: 200, // latest 200 entries — the rollups below cover the full window
+          include: {
+            user: { select: { id: true, name: true, email: true } },
+            task: {
+              select: {
+                id: true,
+                title: true,
+                project: { select: { id: true, name: true } },
+              },
+            },
+          },
+        }),
+        prisma.timeEntry.groupBy({
+          by: ['taskId'],
+          where: timeWhere,
+          _sum: { duration: true },
+          orderBy: { _sum: { duration: 'desc' } },
+        }),
+        prisma.timeEntry.groupBy({
+          by: ['userId'],
+          where: timeWhere,
+          _sum: { duration: true },
+          orderBy: { _sum: { duration: 'desc' } },
+        }),
+        prisma.timeEntry.groupBy({
+          by: ['category'],
+          where: timeWhere,
+          _sum: { duration: true },
+          orderBy: { _sum: { duration: 'desc' } },
+        }),
+      ]);
+
+    // Resolve task titles + projects for the task rollup and the project rollup
+    const taskIds = taskGroups.map((g) => g.taskId).filter(Boolean) as string[];
+    const tasks = taskIds.length > 0
+      ? await prisma.task.findMany({
+          where: { id: { in: taskIds } },
+          select: {
+            id: true,
+            title: true,
+            project: { select: { id: true, name: true } },
+          },
+        })
+      : [];
+    const taskMap = new Map(tasks.map((t) => [t.id, t]));
+
+    // Aggregate per-project hours from the per-task groups (O(1) map lookups)
+    const projectHours = new Map<string, { name: string; minutes: number }>();
+    for (const group of taskGroups) {
+      const task = taskMap.get(group.taskId!);
+      if (!task?.project) continue;
+      const existing = projectHours.get(task.project.id);
+      if (existing) {
+        existing.minutes += group._sum.duration ?? 0;
+      } else {
+        projectHours.set(task.project.id, {
+          name: task.project.name,
+          minutes: group._sum.duration ?? 0,
+        });
+      }
+    }
+    const byProject = Array.from(projectHours.entries())
+      .map(([projectId, { name, minutes }]) => ({
+        id: projectId,
+        name,
+        minutes,
+        hours: minutesToHours(minutes),
+      }))
+      .sort((a, b) => b.minutes - a.minutes);
+
+    // Resolve member names for the per-member rollup in a single round-trip
+    const memberIds = memberGroups.map((g) => g.userId).filter(Boolean) as string[];
+    const members = memberIds.length > 0
+      ? await prisma.user.findMany({
+          where: { id: { in: memberIds } },
+          select: { id: true, name: true, email: true },
+        })
+      : [];
+    const memberMap = new Map(members.map((m) => [m.id, m]));
+
+    const result: TimeTrackingReport = {
+      totalMinutes: totalResult._sum.duration ?? 0,
+      totalHours: minutesToHours(totalResult._sum.duration),
+      entryCount,
+      entries: entries.map((e) => ({
+        id: e.id,
+        taskId: e.taskId,
+        taskTitle: e.task?.title ?? null,
+        projectId: e.task?.project?.id ?? null,
+        projectName: e.task?.project?.name ?? null,
+        userId: e.userId,
+        userName: e.user?.name ?? null,
+        userEmail: e.user?.email ?? '',
+        duration: e.duration,
+        category: e.category,
+        billable: e.billable,
+        description: e.description,
+        startedAt: e.startedAt,
+        endedAt: e.endedAt,
+      })),
+      byProject,
+      byTask: taskGroups.map((g) => ({
+        id: g.taskId!,
+        name: taskMap.get(g.taskId!)?.title ?? 'Unknown task',
+        minutes: g._sum.duration ?? 0,
+        hours: minutesToHours(g._sum.duration),
+      })),
+      byMember: memberGroups.map((g) => {
+        const member = memberMap.get(g.userId!);
+        return {
+          id: g.userId!,
+          name: member?.name ?? member?.email ?? 'Unknown member',
+          minutes: g._sum.duration ?? 0,
+          hours: minutesToHours(g._sum.duration),
+        };
+      }),
+      byCategory: categoryGroups.map((g) => ({
+        category: g.category,
+        minutes: g._sum.duration ?? 0,
+        hours: minutesToHours(g._sum.duration),
+      })),
+    };
 
     await CacheClient.set(cacheKey, result, CACHE_TTL.ANALYTICS_MEMBER_METRICS);
 
@@ -985,6 +1143,125 @@ export const AnalyticsQuery = {
       : 0;
 
     const result = { totalHours, avgHoursPerMember, topContributors };
+
+    await CacheClient.set(cacheKey, result, CACHE_TTL.ANALYTICS_MEMBER_METRICS);
+
+    return result;
+  },
+
+  /**
+   * Detailed per-project time report: the raw entries plus task/member/category
+   * rollups for the requested window. Powers the project "Time Reports" page.
+   */
+  async getProjectTimeReport(
+    workspaceId: string,
+    projectId: string,
+    userId: string,
+    days: number = 7,
+  ): Promise<ProjectTimeReport> {
+    await AnalyticsAccess.assertProjectAnalyticsAccess(userId, workspaceId, projectId);
+
+    const cacheKey = CACHE_KEYS.analyticsProjectTimeReport(workspaceId, projectId, days);
+    const cached = await CacheClient.get<ProjectTimeReport>(cacheKey);
+    if (cached) return cached;
+
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - days);
+
+    const timeWhere = { task: { workspaceId, projectId }, startedAt: { gte: startDate } };
+
+    const [totalResult, entryCount, entries, taskGroups, memberGroups, categoryGroups] =
+      await Promise.all([
+        prisma.timeEntry.aggregate({ where: timeWhere, _sum: { duration: true } }),
+        prisma.timeEntry.count({ where: timeWhere }),
+        prisma.timeEntry.findMany({
+          where: timeWhere,
+          orderBy: { startedAt: 'desc' },
+          take: 200, // latest 200 entries — the rollups below cover the full window
+          include: {
+            user: { select: { id: true, name: true, email: true } },
+            task: { select: { id: true, title: true } },
+          },
+        }),
+        prisma.timeEntry.groupBy({
+          by: ['taskId'],
+          where: timeWhere,
+          _sum: { duration: true },
+          orderBy: { _sum: { duration: 'desc' } },
+        }),
+        prisma.timeEntry.groupBy({
+          by: ['userId'],
+          where: timeWhere,
+          _sum: { duration: true },
+          orderBy: { _sum: { duration: 'desc' } },
+        }),
+        prisma.timeEntry.groupBy({
+          by: ['category'],
+          where: timeWhere,
+          _sum: { duration: true },
+          orderBy: { _sum: { duration: 'desc' } },
+        }),
+      ]);
+
+    // Resolve task titles for the per-task rollup in a single round-trip
+    const taskIds = taskGroups.map((g) => g.taskId).filter(Boolean) as string[];
+    const tasks = taskIds.length > 0
+      ? await prisma.task.findMany({
+          where: { id: { in: taskIds } },
+          select: { id: true, title: true },
+        })
+      : [];
+    const taskMap = new Map(tasks.map((t) => [t.id, t]));
+
+    // Resolve member names for the per-member rollup in a single round-trip
+    const memberIds = memberGroups.map((g) => g.userId).filter(Boolean) as string[];
+    const members = memberIds.length > 0
+      ? await prisma.user.findMany({
+          where: { id: { in: memberIds } },
+          select: { id: true, name: true, email: true },
+        })
+      : [];
+    const memberMap = new Map(members.map((m) => [m.id, m]));
+
+    const result: ProjectTimeReport = {
+      totalMinutes: totalResult._sum.duration ?? 0,
+      totalHours: minutesToHours(totalResult._sum.duration),
+      entryCount,
+      entries: entries.map((e) => ({
+        id: e.id,
+        taskId: e.taskId,
+        taskTitle: e.task?.title ?? null,
+        userId: e.userId,
+        userName: e.user?.name ?? null,
+        userEmail: e.user?.email ?? '',
+        duration: e.duration,
+        category: e.category,
+        billable: e.billable,
+        description: e.description,
+        startedAt: e.startedAt,
+        endedAt: e.endedAt,
+      })),
+      byTask: taskGroups.map((g) => ({
+        id: g.taskId!,
+        name: taskMap.get(g.taskId!)?.title ?? 'Unknown task',
+        minutes: g._sum.duration ?? 0,
+        hours: minutesToHours(g._sum.duration),
+      })),
+      byMember: memberGroups.map((g) => {
+        const member = memberMap.get(g.userId!);
+        return {
+          id: g.userId!,
+          name: member?.name ?? member?.email ?? 'Unknown member',
+          minutes: g._sum.duration ?? 0,
+          hours: minutesToHours(g._sum.duration),
+        };
+      }),
+      byCategory: categoryGroups.map((g) => ({
+        category: g.category,
+        minutes: g._sum.duration ?? 0,
+        hours: minutesToHours(g._sum.duration),
+      })),
+    };
 
     await CacheClient.set(cacheKey, result, CACHE_TTL.ANALYTICS_MEMBER_METRICS);
 

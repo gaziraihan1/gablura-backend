@@ -55,6 +55,7 @@ import { captureException } from "./lib/sentry.js";
 import apiKeyRouter from "./modules/apikey/apikey.routes.js";
 import { automationRouter } from "./modules/automation/index.js";
 import { aiRouter } from "./modules/ai/index.js";
+import { timeEntryRouter } from "./modules/timeEntry/index.js";
 import { integrationRouter, workspaceIntegrationRouter, integrationWebhookRouter } from "./modules/integration/index.js";
 import { initQueueWorkers, closeQueueWorkers } from "./queue/index.js";
 import { applySecurity } from "./middleware/securityHeaders.js";
@@ -289,6 +290,7 @@ app.use("/api/v1/api-keys", apiKeyRouter);
 app.use("/api/v1/upload", authenticate, sessionTimeout, requireCsrfToken(), uploadRoutes);
 app.use("/api/v1/labels", authenticate, sessionTimeout, requireCsrfToken(), labelRouter);
 app.use("/api/v1/calendar", authenticate, sessionTimeout, requireCsrfToken(), calendarRouter);
+app.use("/api/v1/time-entries", authenticate, sessionTimeout, requireCsrfToken(), timeEntryRouter);
 app.use(
   "/api/v1/focus-sessions",
   authenticate,

@@ -132,6 +132,8 @@ export const CACHE_KEYS = {
     `analytics:project-status-dist:${workspaceId}`,
   analyticsMemberContribution: (workspaceId: string) =>
     `analytics:member-contribution:${workspaceId}`,
+  analyticsTimeReport: (workspaceId: string, days: number) =>
+    `analytics:time-report:${workspaceId}:${days}`,
   analyticsTimeSummary: (workspaceId: string, days: number) =>
     `analytics:time-summary:${workspaceId}:${days}`,
   analyticsActivityTrends: (workspaceId: string, days: number) =>
@@ -157,6 +159,8 @@ export const CACHE_KEYS = {
     `analytics:project:member-contribution:${workspaceId}:${projectId}`,
   analyticsProjectTimeSummary: (workspaceId: string, projectId: string, days: number) =>
     `analytics:project:time-summary:${workspaceId}:${projectId}:${days}`,
+  analyticsProjectTimeReport: (workspaceId: string, projectId: string, days: number) =>
+    `analytics:project:time-report:${workspaceId}:${projectId}:${days}`,
   analyticsProjectCompletionTrend: (workspaceId: string, projectId: string, days: number) =>
     `analytics:project:completion-trend:${workspaceId}:${projectId}:${days}`,
   analyticsProjectDeadlineRisk: (workspaceId: string, projectId: string) =>
@@ -508,15 +512,36 @@ export const StorageCache = {
 
 export const ProjectCache = {
   /**
-   * Invalidate a specific project's metadata
+   * Invalidate a specific project's metadata.
+   *
+   * Resolves the slug from the DB when the caller can't supply it, so the
+   * slug-keyed (shared, page-facing) entry is always wiped too. Callers like
+   * member add/remove only have the project id; leaving `project:slug:*`
+   * stale would keep serving a member list that doesn't include a newly
+   * added collaborator, locking them out of the project page until the TTL
+   * (30 min) expires.
    */
   async invalidateProject(projectId: string, slug?: string): Promise<void> {
+    let effectiveSlug = slug;
+    if (!effectiveSlug) {
+      try {
+        const project = await prisma.project.findUnique({
+          where: { id: projectId },
+          select: { slug: true },
+        });
+        effectiveSlug = project?.slug ?? undefined;
+      } catch {
+        // Cache invalidation must never break the caller — fall back to the
+        // id-scoped keys only.
+      }
+    }
+
     const keys = [
       CACHE_KEYS.projectById(projectId),
       CACHE_KEYS.projectStats(projectId),
     ];
-    if (slug) {
-      keys.push(CACHE_KEYS.projectBySlug(slug));
+    if (effectiveSlug) {
+      keys.push(CACHE_KEYS.projectBySlug(effectiveSlug));
     }
     await CacheClient.delete(...keys);
   },
