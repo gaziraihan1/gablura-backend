@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
+import { rateLimitUserApi } from '../../middleware/apiRateLimiter.js';
 import { upload } from '../../middleware/upload.js';
 import { uploadFile } from './upload.controller.js';
 import { requireFileSizeLimit } from '../billing/index.js';
@@ -17,6 +18,11 @@ function validateWorkspaceIdFormat(req: Request, res: Response, next: NextFuncti
 }
 
 const router = Router();
+
+// Per-user API rate limiting (tier-based by billing plan, fail-closed).
+// Runs before multer so over-limit uploads are rejected before the file is
+// processed; the plan's per-file size limit still applies downstream.
+router.use(rateLimitUserApi);
 
 // Runs after multer so req.body.workspaceId is available; content-length
 // still reflects the full request so the plan's per-file limit is enforced.

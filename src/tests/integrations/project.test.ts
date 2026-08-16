@@ -896,7 +896,7 @@ describe("Project Caching", () => {
 // M1 sub-resource reads are membership-gated (sections/sprints/milestones/views)
 // ─────────────────────────────────────────────────────────────────────────────
 describe("M1 sub-resource reads are membership-gated", () => {
-  it("404 — non-member cannot read sections/sprints/milestones/views", async () => {
+  it("403 — non-member cannot read sections/sprints/milestones/views (access restricted)", async () => {
     const { user, workspace } = await createWorkspaceWithOwner();
     const project = await createProject(workspace.id, user.id, { name: "Gated Project" });
     const outsider = await createUser();
@@ -925,7 +925,9 @@ describe("M1 sub-resource reads are membership-gated", () => {
 
     for (const path of paths) {
       const res = await request(app).get(path).set(authHeaders(outsider));
-      expect(res.status).toBe(404);
+      // 403 FORBIDDEN so the client renders the "access restricted" screen.
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe("FORBIDDEN");
     }
   });
 
@@ -978,5 +980,40 @@ describe("M1 sub-resource reads are membership-gated", () => {
       .get(`/api/v1/projects/${projectB.id}/milestones/${milestoneA.id}`)
       .set(authHeaders(owner));
     expect(milestoneRes.status).toBe(404);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Project analytics page is access-gated (403 access restricted, not partial
+// data / error toast)
+// ─────────────────────────────────────────────────────────────────────────────
+describe("Project analytics page access gate", () => {
+  it("403 — non-member gets access restricted on the project analytics page", async () => {
+    const { user, workspace } = await createWorkspaceWithOwner();
+    const project = await createProject(workspace.id, user.id, {
+      name: "Analytics Project",
+    });
+    const outsider = await createUser();
+
+    const res = await request(app)
+      .get(`/api/v1/analytics/${workspace.id}/projects/${project.id}/overview`)
+      .set(authHeaders(outsider));
+
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe("FORBIDDEN");
+  });
+
+  it("200 — workspace member can view the project analytics page", async () => {
+    const { user, workspace } = await createWorkspaceWithOwner();
+    const project = await createProject(workspace.id, user.id, {
+      name: "Analytics Project",
+    });
+
+    const res = await request(app)
+      .get(`/api/v1/analytics/${workspace.id}/projects/${project.id}/overview`)
+      .set(authHeaders(user));
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
   });
 });

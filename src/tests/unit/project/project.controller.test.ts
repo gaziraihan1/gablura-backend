@@ -2409,6 +2409,7 @@ describe('checkFavorite', () => {
 
     await checkFavorite(req, res, next);
 
+    expect(ProjectAccess.assertProjectAccess).toHaveBeenCalledWith('user1', 'p1');
     expect(FavoriteQuery.isFavorited).toHaveBeenCalledWith('p1', 'user1');
     expect(res.json).toHaveBeenCalledWith({
       success: true,
@@ -2425,10 +2426,25 @@ describe('checkFavorite', () => {
 
     await checkFavorite(req, res, next);
 
+    expect(ProjectAccess.assertProjectAccess).toHaveBeenCalledWith('user1', 'p1');
     expect(res.json).toHaveBeenCalledWith({
       success: true,
       data: { favorited: false },
     });
+  });
+
+  it('forwards access errors to next (no access → 403 upstream)', async () => {
+    const error = new Error('You do not have access to this project');
+    (ProjectAccess.assertProjectAccess as any).mockRejectedValueOnce(error);
+
+    const req = mockRequest({ projectId: 'p1' });
+    const res = mockResponse();
+    const next = mockNext();
+
+    await checkFavorite(req, res, next);
+
+    expect(next).toHaveBeenCalledWith(error);
+    expect(FavoriteQuery.isFavorited).not.toHaveBeenCalled();
   });
 
   it('forwards error to next', async () => {

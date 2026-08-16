@@ -424,6 +424,7 @@ export const getUserFavorites = asyncHandler(
 
 export const checkFavorite = asyncHandler(
   async (req: AuthRequest, res: Response) => {
+    await ProjectAccess.assertProjectAccess(req.user!.id, req.params.projectId);
     const favorited = await FavoriteQuery.isFavorited(
       req.params.projectId,
       req.user!.id,

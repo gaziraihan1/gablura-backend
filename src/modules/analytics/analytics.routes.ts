@@ -1,8 +1,12 @@
 import { Router } from 'express';
+import { rateLimitUserApi } from '../../middleware/apiRateLimiter.js';
 import { AnalyticsController } from './analytics.controller.js';
 import { requireAnalyticsAccess } from '../billing/index.js';
 
 const router = Router();
+
+// Per-user API rate limiting (tier-based by billing plan, fail-closed).
+router.use(rateLimitUserApi);
 
 router.get('/:workspaceId/overview', requireAnalyticsAccess, AnalyticsController.getOverview);
 

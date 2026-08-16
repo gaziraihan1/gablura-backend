@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import * as WorkspaceController from './workspace.controller.js';
 import { authenticate } from '../../middleware/auth.js';
+import { rateLimitUserApi } from '../../middleware/apiRateLimiter.js';
 import { sessionTimeout } from '../../middleware/sessionTimeout.js';
 import { requireCsrfToken } from '../../middleware/csrf.js';
 import {
@@ -21,6 +22,10 @@ router.use(sessionTimeout);
 // requireCsrfToken: GET/HEAD/OPTIONS and webhook/callback paths are skipped,
 // so read routes are unaffected). The invitation GET above stays public.
 router.use(requireCsrfToken());
+// Per-user API rate limiting for all authenticated workspace routes (the
+// public invitation GET above stays open). Fail-closed sliding window,
+// tier-based by the user's billing plan.
+router.use(rateLimitUserApi);
 // The member cap must hold on accept too, not just on invite — otherwise an
 // over-limit workspace keeps growing via previously-issued invitations.
 router.post(

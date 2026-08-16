@@ -355,35 +355,6 @@ export const authorize = (...roles: string[]) =>
       return next(new ForbiddenError("Insufficient permissions"));
     }
     next();
-  };
- 
-// ─── rateLimitByUser ──────────────────────────────────────────────────────────
- 
-
-
-export const rateLimitByUser = (tier?: "free" | "pro" | "enterprise") => {
-  return async (req: AuthRequest, res: Response, next: NextFunction) => {
-    if (!req.user?.id) return next();
-
-    try {
-      const { limitApiRequest } = await import("../lib/limiter.js");
-      const result = await limitApiRequest(req.user.id, tier || "free");
-
-      res.setHeader("X-RateLimit-Limit", result.limit ?? 60);
-      res.setHeader("X-RateLimit-Remaining", result.remaining ?? 0);
-      if (result.reset) res.setHeader("X-RateLimit-Reset", result.reset.toString());
-
-      if (!result.success) {
-        const retryAfter = result.reset ? Math.ceil((result.reset - Date.now()) / 1000) : 60;
-        return res.status(429).json({ success: false, message: "Rate limit exceeded. Please try again later.", code: "RATE_LIMIT_EXCEEDED", retryAfter });
-      }
-
-      next();
-    } catch (err) {
-      console.error("Rate limit error:", err);
-      // Fail closed: reject when rate limiting can't be verified
-      const retryAfter = 60;
-      return res.status(429).json({ success: false, message: "Rate limit service unavailable. Please try again later.", code: "RATE_LIMIT_SERVICE_UNAVAILABLE", retryAfter });
-    }
-  };
-};
+  };// ─── rateLimitByUser ──────────────────────────────────────────────────────────
+// Per-user API rate limiting moved to src/middleware/apiRateLimiter.ts
+// (rateLimitByUser + rateLimitUserApi for the core CRUD routes).

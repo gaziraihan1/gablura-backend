@@ -72,7 +72,18 @@ export const ProjectAccess = {
       CACHE_TTL.ACCESS_CONTROL_PROJECT_MEMBER,
     );
 
-    if (!project) throw new NotFoundError('Project', 'PROJECT_NOT_FOUND');
+    if (!project) {
+      // Distinguish a missing project (404) from a real project the user
+      // cannot access (403). Returning 403 FORBIDDEN lets the client render
+      // the "access restricted" screen (matching the tasks module) instead of
+      // a not-found page or an error toast.
+      const exists = await prisma.project.findUnique({
+        where: { id: projectId },
+        select: { id: true },
+      });
+      if (!exists) throw new NotFoundError('Project', 'PROJECT_NOT_FOUND');
+      throw new ForbiddenError('You do not have access to this project');
+    }
     return project;
   },
 

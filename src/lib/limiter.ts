@@ -9,6 +9,53 @@ export interface RateLimitResult {
 
 const USER_TIER_LIMITS = { free: 60, pro: 300, enterprise: 1000 } as const;
 
+export type ApiTier = keyof typeof USER_TIER_LIMITS;
+
+// Billing plan → API rate-limit tier. BUSINESS and ENTERPRISE share the top
+// tier — mirrors the AI limiter (src/modules/ai/ai.types.ts), which treats
+// them identically.
+const PLAN_TO_API_TIER: Record<string, ApiTier> = {
+  FREE: "free",
+  PRO: "pro",
+  BUSINESS: "enterprise",
+  ENTERPRISE: "enterprise",
+};
+
+const tierCache = new Map<string, { tier: ApiTier; expiresAt: number }>();
+const TIER_CACHE_TTL_MS = 60_000;
+
+/**
+ * Resolve the API rate-limit tier for a user from their highest billing plan
+ * (60s in-memory cache, so plan changes take effect within a minute). Unknown
+ * plans fall back to the free tier.
+ *
+ * Deliberately USER-LEVEL: the tier follows the user's highest OWNED workspace
+ * plan, not the workspace a given request operates in. A user who owns a PRO
+ * workspace gets the pro bucket everywhere — including FREE workspaces where
+ * they are only a member — and membership alone never raises the tier. This is
+ * intentionally different from the AI limiter (src/modules/ai/ai.ratelimit.ts),
+ * which resolves per-request workspace context; do not align them without a
+ * product decision.
+ *
+ * Tier resolution is best-effort: when the plan cannot be determined (billing
+ * service unavailable), the most conservative tier is applied rather than
+ * failing the request. The actual rate-limit check below is still fail-closed.
+ */
+export async function resolveUserApiTier(userId: string): Promise<ApiTier> {
+  const cached = tierCache.get(userId);
+  if (cached && cached.expiresAt > Date.now()) return cached.tier;
+
+  try {
+    const { BillingService } = await import("../modules/billing/billing.service.js");
+    const plan = await BillingService.getUserHighestPlan(userId);
+    const tier = PLAN_TO_API_TIER[plan] ?? "free";
+    tierCache.set(userId, { tier, expiresAt: Date.now() + TIER_CACHE_TTL_MS });
+    return tier;
+  } catch {
+    return "free";
+  }
+}
+
 // Sliding-window limiter backed by the shared ioredis client — the backend's
 // single Redis client (the former Upstash REST client was consolidated away).
 class RedisRateLimiter {
@@ -63,7 +110,7 @@ const limiterInstance =
 
 export async function limitApiRequest(
   userId: string,
-  userTier: keyof typeof USER_TIER_LIMITS = "free",
+  userTier: ApiTier = "free",
 ): Promise<RateLimitResult> {
   return limiterInstance.limit(`user:${userId}`, USER_TIER_LIMITS[userTier]);
 }

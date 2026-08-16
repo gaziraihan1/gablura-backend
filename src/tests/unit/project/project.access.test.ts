@@ -80,9 +80,16 @@ describe("ProjectAccess", () => {
       expect(prisma.project.findFirst).toHaveBeenCalledTimes(1);
     });
 
-    it("should throw NotFoundError if project not accessible", async () => {
+    it("should throw NotFoundError if project does not exist", async () => {
       (prisma.project.findFirst as any).mockResolvedValue(null);
+      (prisma.project.findUnique as any).mockResolvedValue(null);
       await expect(ProjectAccess.assertProjectAccess("u1", "p1")).rejects.toThrow(NotFoundError);
+    });
+
+    it("should throw ForbiddenError if project exists but user has no access", async () => {
+      (prisma.project.findFirst as any).mockResolvedValue(null);
+      (prisma.project.findUnique as any).mockResolvedValue({ id: "p1" });
+      await expect(ProjectAccess.assertProjectAccess("u1", "p1")).rejects.toThrow(ForbiddenError);
     });
   });
 

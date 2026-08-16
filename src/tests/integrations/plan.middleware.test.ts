@@ -333,9 +333,11 @@ describe('requireAnalyticsAccess', () => {
 
     expect(next).toHaveBeenCalled();
 
+    // Access denial → 403 FORBIDDEN (access-restricted screen), not a plan
+    // limit error (upgrade prompt).
     const error = getError(next);
     expect(error).toBeInstanceOf(Error);
-    expect(error.code).toBe('PLAN_LIMIT_EXCEEDED');
+    expect(error.code).toBe('FORBIDDEN');
     // The plan tier must not be queried for non-members (no tier probing)
     expect(planSpy).not.toHaveBeenCalled();
   });

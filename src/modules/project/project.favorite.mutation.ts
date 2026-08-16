@@ -63,6 +63,8 @@ export const FavoriteMutation = {
   },
 
   async update(projectId: string, userId: string, data: UpdateFavoriteDto) {
+    await ProjectAccess.assertProjectAccess(userId, projectId);
+
     const fav = await prisma.projectFavorite.findUnique({
       where: { projectId_userId: { projectId, userId } },
     });

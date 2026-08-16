@@ -1,8 +1,12 @@
 import { Router } from "express";
+import { rateLimitUserApi } from "../../middleware/apiRateLimiter.js";
 import { MeetingController } from "./meeting.controller.js";
 import { requireMeetingSlot } from "../billing/index.js";
 
 const router = Router();
+
+// Per-user API rate limiting (tier-based by billing plan, fail-closed).
+router.use(rateLimitUserApi);
 
 router.get("/:workspaceId/meetings", MeetingController.list);
 router.get("/:workspaceId/meetings/:meetingId", MeetingController.getById);

@@ -4,7 +4,7 @@ import app from '../../app.js';
 import { prisma } from '../../lib/prisma.js';
 import { getRedisClient } from '../../redis/redis.client.js';
 import { createWorkspaceWithOwner, createProject, createTask } from '../factories/index.js';
-import { authWithCsrfHeaders } from '../helpers/auth.js';
+import { authHeaders, authWithCsrfHeaders } from '../helpers/auth.js';
 
 /**
  * Security Tests
@@ -188,6 +188,102 @@ describe('🔐 Security Tests', () => {
         
         expect(res.status).toBe(429);
         expect(res.body.message).toBe('Too many requests');
+
+        spy.mockRestore();
+      });
+
+      it('PUT /api/v1/user/profile — 429 when the per-user limit is exceeded', async () => {
+        const { user } = await createWorkspaceWithOwner();
+        const headers = await authWithCsrfHeaders(user);
+
+        // Mock Redis pipeline.exec to return a count (21) that exceeds the
+        // PUT /profile limit (20/60s). The middleware expects results[2] to be
+        // the zcard result.
+        const redis = getRedisClient();
+        const spy = vi.spyOn(redis, 'pipeline').mockReturnValue({
+          zremrangebyscore: vi.fn().mockReturnThis(),
+          zadd: vi.fn().mockReturnThis(),
+          zcard: vi.fn().mockReturnThis(),
+          expire: vi.fn().mockReturnThis(),
+          exec: vi.fn().mockResolvedValue([
+            [null, 'OK'],
+            [null, 'OK'],
+            [null, 21],          // zcard (count = 21, limit = 20)
+            [null, 'OK'],
+          ]),
+        } as any);
+
+        const res = await request(app)
+          .put('/api/v1/user/profile')
+          .set(headers)
+          .send({ name: 'Rate Limited' });
+
+        expect(res.status).toBe(429);
+        expect(res.body.success).toBe(false);
+        expect(res.body.code).toBe('RATE_LIMIT_EXCEEDED');
+        expect(res.body.retryAfter).toBe(60);
+
+        spy.mockRestore();
+      });
+
+      it('PUT /api/v1/user/profile — bucket is keyed off the user id (per-user, not per-IP)', async () => {
+        const { user } = await createWorkspaceWithOwner();
+        const headers = await authWithCsrfHeaders(user);
+
+        const redis = getRedisClient();
+        const spy = vi.spyOn(redis, 'pipeline').mockReturnValue({
+          zremrangebyscore: vi.fn().mockReturnThis(),
+          zadd: vi.fn().mockReturnThis(),
+          zcard: vi.fn().mockReturnThis(),
+          expire: vi.fn().mockReturnThis(),
+          exec: vi.fn().mockResolvedValue([
+            [null, 'OK'],
+            [null, 'OK'],
+            [null, 1],
+            [null, 'OK'],
+          ]),
+        } as any);
+
+        const res = await request(app)
+          .put('/api/v1/user/profile')
+          .set(headers)
+          .send({ name: 'Keyed By User' });
+
+        // Under the limit → request passes through; the bucket key must be the
+        // authenticated user id, never the (spoofable) client IP.
+        expect(res.status).toBe(200);
+        const zaddKey = (spy.mock.results[0].value.zadd as any).mock.calls[0][0];
+        expect(zaddKey).toBe(`rl:user:${user.id}`);
+
+        spy.mockRestore();
+      });
+
+      it('GET /api/v1/user/profile — 429 when the per-user limit is exceeded', async () => {
+        const { user } = await createWorkspaceWithOwner();
+        const headers = authHeaders(user);
+
+        // Count (61) exceeds the GET /profile read limit (60/60s).
+        const redis = getRedisClient();
+        const spy = vi.spyOn(redis, 'pipeline').mockReturnValue({
+          zremrangebyscore: vi.fn().mockReturnThis(),
+          zadd: vi.fn().mockReturnThis(),
+          zcard: vi.fn().mockReturnThis(),
+          expire: vi.fn().mockReturnThis(),
+          exec: vi.fn().mockResolvedValue([
+            [null, 'OK'],
+            [null, 'OK'],
+            [null, 61],
+            [null, 'OK'],
+          ]),
+        } as any);
+
+        const res = await request(app)
+          .get('/api/v1/user/profile')
+          .set(headers);
+
+        expect(res.status).toBe(429);
+        expect(res.body.success).toBe(false);
+        expect(res.body.code).toBe('RATE_LIMIT_EXCEEDED');
 
         spy.mockRestore();
       });

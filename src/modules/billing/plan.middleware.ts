@@ -7,23 +7,32 @@ import { prisma } from "../../lib/prisma.js";
 import { AuthRequest } from "../../middleware/auth.js";
 import { BillingService } from "./billing.service.js";
 import { PLAN_LIMITS, PlanName } from "./plans.config.js";
-import { PlanLimitError } from "../../errors/AppError.js";
+import { AppError, ForbiddenError, PlanLimitError } from "../../errors/AppError.js";
 
 // ---------------------------------------------------------------------------
 // Generic guard factory
 // ---------------------------------------------------------------------------
 
-type LimitChecker = (
-  req: AuthRequest,
-) => Promise<{ allowed: boolean; reason?: string }>;
+type LimitCheckerResult = {
+  allowed: boolean;
+  reason?: string;
+  /** Error class to throw when denied — defaults to PlanLimitError. Guards
+   *  that deny on ACCESS (not plan tier) should use ForbiddenError so the
+   *  client renders the "access restricted" screen instead of an upgrade
+   *  prompt / error toast. */
+  errorClass?: new (message?: string) => AppError;
+};
+
+type LimitChecker = (req: AuthRequest) => Promise<LimitCheckerResult>;
 
 function planGuard(checker: LimitChecker) {
   return async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
-      const { allowed, reason } = await checker(req);
+      const { allowed, reason, errorClass = PlanLimitError } =
+        await checker(req);
 
       if (!allowed) {
-        return next(new PlanLimitError(reason || 'Plan limit exceeded'));
+        return next(new errorClass(reason || 'Plan limit exceeded'));
       }
 
       next();
@@ -196,9 +205,12 @@ export const requireAnalyticsAccess = planGuard(async (req) => {
     select: { role: true },
   });
   if (!member || (member.role !== "ADMIN" && member.role !== "OWNER")) {
+    // Access denial — 403 FORBIDDEN so the client renders the "access
+    // restricted" screen (no upgrade prompt / error toast).
     return {
       allowed: false,
       reason: "Analytics access is restricted to workspace admins and owners",
+      errorClass: ForbiddenError,
     };
   }
 

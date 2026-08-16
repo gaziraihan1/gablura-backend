@@ -235,7 +235,8 @@ import {
   recordSessionCreation,
   invalidateSession,
 } from '../../../middleware/sessionTimeout.js';
-import { authorize, rateLimitByUser } from '../../../middleware/auth.js';
+import { authorize } from '../../../middleware/auth.js';
+import { rateLimitByUser } from '../../../middleware/apiRateLimiter.js';
 import { getRedisClient } from '../../../redis/redis.client.js';
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1182,6 +1183,25 @@ describe('Auth Middleware — rateLimitByUser', () => {
     await middleware(req, res, next);
 
     expect(mockLimitApiRequest).toHaveBeenCalledWith('user-1', 'free');
+  });
+
+  it('resolves the tier from a provided tier function (per-user billing plan)', async () => {
+    mockLimitApiRequest.mockResolvedValueOnce({
+      success: true,
+      limit: 300,
+      remaining: 299,
+      reset: Date.now() + 60000,
+    });
+
+    const req = createReq() as any;
+    const res = createRes() as any;
+
+    const middleware = rateLimitByUser(async () => 'pro' as any);
+    await middleware(req, res, next);
+
+    expect(mockLimitApiRequest).toHaveBeenCalledWith('user-1', 'pro');
+    expect(res._headers['X-RateLimit-Limit']).toBe(300);
+    expect(next).toHaveBeenCalled();
   });
 
   it('returns 429 when rate limit service throws an error', async () => {

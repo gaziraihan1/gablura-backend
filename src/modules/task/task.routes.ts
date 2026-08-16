@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { rateLimitUserApi } from '../../middleware/apiRateLimiter.js';
 import { upload } from '../../middleware/upload.js';
 import {
   getTasks,
@@ -27,6 +28,11 @@ import {
 import { subtaskRouter } from './subtask/index.js';
 
 const router = Router();
+
+// Per-user API rate limiting (tier-based by billing plan, fail-closed).
+// Mounted once here so it also guards the nested comment, subtask and
+// attachment routers — each user shares one sliding-window bucket.
+router.use(rateLimitUserApi);
 
 router.get('/quota/personal',                  getPersonalQuota);
 router.get('/quota/workspace/:workspaceId',    getWorkspaceQuota);

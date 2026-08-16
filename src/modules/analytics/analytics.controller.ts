@@ -2,6 +2,7 @@ import type { Response } from "express";
 import type { AuthRequest } from "../../middleware/auth.js";
 import { AnalyticsQuery } from "./analytics.query.js";
 import { AnalyticsAccess } from "./analytics.access.js";
+import { ProjectAccess } from "../project/project.access.js";
 import { asyncHandler } from "../../errors/index.js";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
@@ -195,6 +196,11 @@ export class AnalyticsController {
   static getProjectOverview = asyncHandler(async (req: AuthRequest, res: Response) => {
     const { workspaceId, projectId } = req.params;
     const days = parseDays(req.query.days, 30);
+
+    // Access gate — a user without project access gets 403 FORBIDDEN so the
+    // client renders the "access restricted" screen instead of partial data
+    // with an error toast. Mirrors the project sub-page gates.
+    await ProjectAccess.assertProjectAccess(req.user!.id, projectId);
 
     const [kpis, taskStatus, priority, trend, deadlineRisk] = await Promise.allSettled([
       AnalyticsQuery.getProjectAnalyticsKPIs(workspaceId, projectId, req.user!.id),

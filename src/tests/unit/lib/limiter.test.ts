@@ -1,5 +1,18 @@
-import { describe, it, expect } from "vitest";
-import { limitApiRequest } from "../../../lib/limiter.js";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+
+vi.mock("../../../modules/billing/billing.service.js", () => ({
+  BillingService: {
+    getUserHighestPlan: vi.fn(),
+  },
+}));
+
+import {
+  limitApiRequest,
+  resolveUserApiTier,
+} from "../../../lib/limiter.js";
+import { BillingService } from "../../../modules/billing/billing.service.js";
+
+const mockGetUserHighestPlan = vi.mocked(BillingService.getUserHighestPlan);
 
 describe("limitApiRequest", () => {
   const userId = "test-user";
@@ -33,5 +46,50 @@ describe("limitApiRequest", () => {
     const result = await limitApiRequest(limitUser, "free");
     expect(result.success).toBe(false);
     expect(result.remaining).toBe(0);
+  });
+});
+
+describe("resolveUserApiTier", () => {
+  beforeEach(() => {
+    mockGetUserHighestPlan.mockReset();
+  });
+
+  it("maps FREE to the free tier", async () => {
+    mockGetUserHighestPlan.mockResolvedValue("FREE" as any);
+    await expect(resolveUserApiTier("u-free")).resolves.toBe("free");
+    expect(mockGetUserHighestPlan).toHaveBeenCalledWith("u-free");
+  });
+
+  it("maps PRO to the pro tier", async () => {
+    mockGetUserHighestPlan.mockResolvedValue("PRO" as any);
+    await expect(resolveUserApiTier("u-pro")).resolves.toBe("pro");
+  });
+
+  it("maps BUSINESS and ENTERPRISE to the enterprise tier", async () => {
+    mockGetUserHighestPlan.mockResolvedValue("BUSINESS" as any);
+    await expect(resolveUserApiTier("u-business")).resolves.toBe("enterprise");
+
+    mockGetUserHighestPlan.mockResolvedValue("ENTERPRISE" as any);
+    await expect(resolveUserApiTier("u-enterprise")).resolves.toBe("enterprise");
+  });
+
+  it("falls back to the free tier for unknown plans", async () => {
+    mockGetUserHighestPlan.mockResolvedValue("MYSTERY_PLAN" as any);
+    await expect(resolveUserApiTier("u-mystery")).resolves.toBe("free");
+  });
+
+  it("falls back to the free tier when the billing lookup fails", async () => {
+    mockGetUserHighestPlan.mockRejectedValue(new Error("billing down"));
+    await expect(resolveUserApiTier("u-down")).resolves.toBe("free");
+  });
+
+  it("caches the resolved tier for 60s (no repeated billing lookups)", async () => {
+    mockGetUserHighestPlan.mockResolvedValue("PRO" as any);
+
+    await resolveUserApiTier("u-cached");
+    await resolveUserApiTier("u-cached");
+    await resolveUserApiTier("u-cached");
+
+    expect(mockGetUserHighestPlan).toHaveBeenCalledTimes(1);
   });
 });

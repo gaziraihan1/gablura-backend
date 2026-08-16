@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { rateLimitUserApi } from '../../middleware/apiRateLimiter.js';
 import {
   startSession,
   completeSession,
@@ -10,6 +11,9 @@ import {
 } from './focusSession.controller.js';
 
 const router = Router();
+
+// Per-user API rate limiting (tier-based by billing plan, fail-closed).
+router.use(rateLimitUserApi);
 
 router.post('/start',   startSession);
 router.get('/active',   getActiveSession);

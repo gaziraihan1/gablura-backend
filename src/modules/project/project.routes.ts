@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { rateLimitUserApi } from '../../middleware/apiRateLimiter.js';
 import {
   getUserProjects,
   getProjectsByWorkspace,
@@ -45,6 +46,9 @@ import {
 import { requireProjectSlot } from '../billing/index.js';
 
 const router = Router();
+
+// Per-user API rate limiting (tier-based by billing plan, fail-closed).
+router.use(rateLimitUserApi);
 
 // ── Project CRUD ─────────────────────────────────────────────────────────────
 
