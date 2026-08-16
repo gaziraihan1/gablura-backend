@@ -107,14 +107,43 @@ export const CalendarInsightsService = {
     const weekEnd = new Date(normalizedWeekStart);
     weekEnd.setDate(weekEnd.getDate() + 7);
 
-    const [aggregates, schedule] = await Promise.all([
+    const [aggregates, schedule, energyLevels, focusSessions] = await Promise.all([
       CalendarAggregation.getOrComputeAggregates({
         userId,
         startDate: normalizedWeekStart,
         endDate: weekEnd,
       }),
       prisma.userWorkSchedule.findUnique({ where: { userId } }),
+      prisma.energyLevel.findMany({
+        where: { userId, date: { gte: normalizedWeekStart, lte: weekEnd } },
+        select: { date: true, energyLevel: true },
+      }),
+      prisma.focusSession.findMany({
+        where: {
+          userId,
+          startedAt: { gte: normalizedWeekStart, lte: weekEnd },
+          completed: true,
+        },
+        select: { startedAt: true, duration: true },
+      }),
     ]);
+
+    // Local-day key so aggregates, energy logs, and focus sessions align even
+    // when they were stored at different UTC times of the same day.
+    const dayKey = (d: Date) =>
+      `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+
+    const energyByDay = new Map<string, number>();
+    for (const e of energyLevels) {
+      const key = dayKey(e.date);
+      if (!energyByDay.has(key)) energyByDay.set(key, e.energyLevel);
+    }
+
+    const focusByDay = new Map<string, number>();
+    for (const s of focusSessions) {
+      const key = dayKey(s.startedAt);
+      focusByDay.set(key, (focusByDay.get(key) ?? 0) + s.duration);
+    }
 
     const workDays = (schedule?.workDays as string[]) ?? [
       "MON",
@@ -129,36 +158,95 @@ export const CalendarInsightsService = {
       workDayNumbers.includes(new Date(agg.date).getDay()),
     );
 
-    const heavyDays = workdayAggs.filter((agg) => agg.workloadScore > 1.2);
-    const consecutiveHeavyDays = countConsecutiveDays(
-      workdayAggs,
-      (agg) => agg.workloadScore > 1.2,
-    );
+    // A workday counts as heavy when the workload is over 1.2 OR the user
+    // logged low energy (≤ 4 on the 1-10 scale) OR they pushed 6+ hours of
+    // completed deep-focus sessions — any single strain signals risk.
+    const isHeavyDay = (agg: (typeof workdayAggs)[number]): boolean => {
+      const key = dayKey(new Date(agg.date));
+      const dayEnergy = energyByDay.get(key);
+      const dayFocus = focusByDay.get(key) ?? 0;
+      return (
+        agg.workloadScore > 1.2 ||
+        (dayEnergy !== undefined && dayEnergy <= 4) ||
+        dayFocus >= 360
+      );
+    };
+
+    const heavyDays = workdayAggs.filter(isHeavyDay);
+    const consecutiveHeavyDays = countConsecutiveDays(workdayAggs, isHeavyDay);
+
     const avgDailyLoad =
       workdayAggs.length > 0
         ? workdayAggs.reduce((sum, agg) => sum + agg.workloadScore, 0) /
           workdayAggs.length
         : 0;
 
+    // ── Energy strain ───────────────────────────────────────────────────────
+    // Chronic low energy (multiple low-log days, or an average ≤ 4) is a
+    // leading burnout indicator and escalates the effective load.
+    const lowEnergyDays = workdayAggs.filter((agg) => {
+      const dayEnergy = energyByDay.get(dayKey(new Date(agg.date)));
+      return dayEnergy !== undefined && dayEnergy <= 4;
+    }).length;
+
+    const energyLogs = workdayAggs
+      .map((agg) => energyByDay.get(dayKey(new Date(agg.date))))
+      .filter((v): v is number => v !== undefined);
+    const avgEnergy =
+      energyLogs.length > 0
+        ? Math.round((energyLogs.reduce((s, v) => s + v, 0) / energyLogs.length) * 10) / 10
+        : null;
+
+    const energyRisk = lowEnergyDays * 0.2 + (avgEnergy !== null && avgEnergy <= 4 ? 0.5 : 0);
+
+    // ── Focus strain ────────────────────────────────────────────────────────
+    // Sustained deep-focus overload (6h+ days, or ~4h+ average per workday)
+    // compounds the risk even when the task load looks reasonable.
+    const focusMinutes = workdayAggs.reduce(
+      (sum, agg) => sum + (focusByDay.get(dayKey(new Date(agg.date))) ?? 0),
+      0,
+    );
+    const focusOverloadDays = workdayAggs.filter(
+      (agg) => (focusByDay.get(dayKey(new Date(agg.date))) ?? 0) >= 360,
+    ).length;
+    const avgDailyFocus = workdayAggs.length > 0 ? focusMinutes / workdayAggs.length : 0;
+
+    const focusRisk = focusOverloadDays * 0.3 + (avgDailyFocus >= 240 ? 0.4 : 0);
+
+    // ── Blended risk level ──────────────────────────────────────────────────
+    const effectiveAvgLoad = Math.round((avgDailyLoad + energyRisk + focusRisk) * 100) / 100;
+
     let riskLevel: RiskLevel = "LOW";
 
-    if (consecutiveHeavyDays >= 5 || avgDailyLoad > 1.5) {
+    if (consecutiveHeavyDays >= 5 || effectiveAvgLoad > 1.5) {
       riskLevel = "CRITICAL";
-    } else if (consecutiveHeavyDays >= 3 || avgDailyLoad > 1.2) {
+    } else if (consecutiveHeavyDays >= 3 || effectiveAvgLoad > 1.2) {
       riskLevel = "HIGH";
-    } else if (heavyDays.length >= 2 || avgDailyLoad > 1.0) {
+    } else if (heavyDays.length >= 2 || effectiveAvgLoad > 1.0) {
       riskLevel = "MODERATE";
     }
 
     return prisma.burnoutSignal.upsert({
       where: { userId_weekStart: { userId, weekStart: normalizedWeekStart } },
-      update: { consecutiveHeavyDays, avgDailyLoad, riskLevel },
+      update: {
+        consecutiveHeavyDays,
+        avgDailyLoad: effectiveAvgLoad,
+        riskLevel,
+        avgEnergy,
+        lowEnergyDays,
+        focusMinutes,
+        focusOverloadDays,
+      },
       create: {
         userId,
         weekStart: normalizedWeekStart,
         consecutiveHeavyDays,
-        avgDailyLoad,
+        avgDailyLoad: effectiveAvgLoad,
         riskLevel,
+        avgEnergy,
+        lowEnergyDays,
+        focusMinutes,
+        focusOverloadDays,
       },
     });
   },

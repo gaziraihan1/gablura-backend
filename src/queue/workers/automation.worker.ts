@@ -50,6 +50,44 @@ export function createAutomationWorker() {
 
 // ─── Core processing (exported for unit testing) ──────────────────────────────
 
+/**
+ * Manual "run now" execution of a single rule against a chosen task. Used by
+ * POST /api/v1/automations/:id/test. Bypasses trigger matching on purpose —
+ * the user explicitly asked to run this rule — but goes through the exact
+ * same action pipeline (applyActions) as a real event, and increments the
+ * run counter + activity log like a real run.
+ */
+export async function runRuleOnTask(
+  rule: AutomationRuleRecord,
+  taskId: string,
+  actorId: string,
+): Promise<boolean> {
+  const task = await prisma.task.findUnique({
+    where: { id: taskId },
+    select: { id: true, title: true, projectId: true },
+  });
+  if (!task) return false;
+
+  await applyActions(
+    rule,
+    {
+      trigger: rule.triggerType,
+      taskId: task.id,
+      actorId,
+      workspaceId: rule.workspaceId,
+      projectId: task.projectId ?? null,
+    },
+    task,
+  );
+
+  await prisma.automationRule.update({
+    where: { id: rule.id },
+    data: { runCount: { increment: 1 }, lastRunAt: new Date() },
+  });
+  await AutomationActivity.logRun({ rule, userId: actorId, taskId: task.id });
+  return true;
+}
+
 export async function processAutomationEvent(event: AutomationEvent): Promise<void> {
   const rules = await prisma.automationRule.findMany({
     where: {

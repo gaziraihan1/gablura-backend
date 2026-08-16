@@ -205,6 +205,10 @@ export const CalendarQuery = {
       riskLevel:           s.riskLevel,
       consecutiveHeavyDays: s.consecutiveHeavyDays,
       avgDailyLoad:        s.avgDailyLoad,
+      avgEnergy:           s.avgEnergy,
+      lowEnergyDays:       s.lowEnergyDays,
+      focusMinutes:        s.focusMinutes,
+      focusOverloadDays:   s.focusOverloadDays,
     }));
 
     await CacheClient.set(cacheKey, result, CACHE_TTL.CALENDAR_BURNOUT_TRENDS);

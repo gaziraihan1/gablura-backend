@@ -9,11 +9,13 @@ import { getCsrfTokenHandler, requireCsrfToken } from "./middleware/csrf.js";
 // routers (same as before)
 import { projectRouter } from "./modules/project/index.js";
 import { taskRouter } from "./modules/task/index.js";
+import { automationRouter } from "./modules/automation/index.js";
 import { dailyTaskRouter } from "./modules/dailyTask/index.js";
 import { activityRouter } from "./modules/activity/index.js";
 import userRoutes from "./routes/user.routes.js";
 import uploadRoutes from "./modules/upload/upload.routes.js";
 import { labelRouter } from "./modules/label/index.js";
+import { timeEntryRouter } from "./modules/timeEntry/index.js";
 import { notificationRouter } from "./modules/notification/index.js";
 import { workspaceRouter } from "./modules/workspace/index.js";
 import { calendarRouter } from "./modules/calendar/index.js";
@@ -204,12 +206,14 @@ app.use("/api/v1/projects", authenticate, sessionTimeout, requireCsrfToken(), pr
 app.use("/api/v1/user/integrations", authenticate, sessionTimeout, requireCsrfToken(), integrationRouter);
 app.use("/api/v1/workspace-integrations", authenticate, sessionTimeout, requireCsrfToken(), workspaceIntegrationRouter);
 app.use("/api/v1/tasks", authenticate, sessionTimeout, requireCsrfToken(), taskRouter);
+app.use("/api/v1/automations", authenticate, sessionTimeout, requireCsrfToken(), automationRouter);
 app.use("/api/v1/daily-tasks", authenticate, sessionTimeout, requireCsrfToken(), dailyTaskRouter);
 app.use("/api/v1/activities", authenticate, sessionTimeout, requireCsrfToken(), activityRouter);
 app.use("/api/v1/user", authenticate, sessionTimeout, requireCsrfToken(), userRoutes);
 app.use("/api/v1/api-keys", apiKeyRouter);
 app.use("/api/v1/upload", authenticate, sessionTimeout, requireCsrfToken(), uploadRoutes);
 app.use("/api/v1/labels", authenticate, sessionTimeout, requireCsrfToken(), labelRouter);
+app.use("/api/v1/time-entries", authenticate, sessionTimeout, requireCsrfToken(), timeEntryRouter);
 app.use("/api/v1/calendar", authenticate, sessionTimeout, requireCsrfToken(), calendarRouter);
 app.use(
   "/api/v1/focus-sessions",

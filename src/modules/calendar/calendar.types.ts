@@ -40,6 +40,10 @@ export interface BurnoutTrend {
   riskLevel: string;
   consecutiveHeavyDays: number;
   avgDailyLoad: number;
+  avgEnergy: number | null;
+  lowEnergyDays: number;
+  focusMinutes: number;
+  focusOverloadDays: number;
 }
 
 export interface CreateGoalCheckpointInput {

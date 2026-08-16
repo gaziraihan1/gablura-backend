@@ -488,7 +488,7 @@ All mutating authenticated routes additionally require `X-CSRF-Token`.
 | `PATCH` | `/api/v1/templates/:slug` | ✓ | Update a template (author/admin) |
 | `DELETE` | `/api/v1/templates/:slug` | ✓ | Delete a template (author/admin) |
 
-### Automations (6 endpoints)
+### Automations (7 endpoints)
 
 | Method | Route | CSRF | Description |
 |--------|-------|------|-------------|
@@ -497,6 +497,7 @@ All mutating authenticated routes additionally require `X-CSRF-Token`.
 | `GET` | `/api/v1/automations/:id` | — | Get rule detail |
 | `GET` | `/api/v1/automations/:id/runs` | — | Rule run history |
 | `PATCH` | `/api/v1/automations/:id` | ✓ | Update rule / toggle enabled |
+| `POST` | `/api/v1/automations/:id/test` | ✓ | Run a rule manually against a task (workspace admin) |
 | `DELETE` | `/api/v1/automations/:id` | ✓ | Delete rule |
 
 ### Tasks (16 endpoints)

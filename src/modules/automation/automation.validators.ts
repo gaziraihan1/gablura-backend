@@ -94,6 +94,10 @@ export const createAutomationSchema = z.object({
   actions: actionsSchema,
 });
 
+export const testAutomationSchema = z.object({
+  taskId: z.string().min(1, 'A task is required to run the rule against'),
+});
+
 export const updateAutomationSchema = z
   .object({
     projectId: z.string().nullable().optional(),

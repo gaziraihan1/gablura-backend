@@ -453,7 +453,29 @@ export const AnalyticsQuery = {
       .map(([projectId, { name, hours }]) => ({ projectId, projectName: name, hours }))
       .sort((a, b) => b.hours - a.hours);
 
-    const result = { totalHours, avgHoursPerMember, projectBreakdown };
+    // ── Step 3: resolve member names for the per-member groups ───────────────
+    const memberIds = memberGroups.map((g) => g.userId).filter(Boolean) as string[];
+    const members = memberIds.length > 0
+      ? await prisma.user.findMany({
+          where:  { id: { in: memberIds } },
+          select: { id: true, name: true, email: true },
+        })
+      : [];
+    const memberMap = new Map(members.map((m) => [m.id, m]));
+
+    const memberBreakdown = memberGroups
+      .map((g) => {
+        const member = memberMap.get(g.userId);
+        return {
+          userId:    g.userId,
+          userName:  member?.name ?? null,
+          userEmail: member?.email ?? '',
+          hours:     minutesToHours(g._sum.duration),
+        };
+      })
+      .sort((a, b) => b.hours - a.hours);
+
+    const result = { totalHours, avgHoursPerMember, projectBreakdown, memberBreakdown };
 
     await CacheClient.set(cacheKey, result, CACHE_TTL.ANALYTICS_MEMBER_METRICS);
 

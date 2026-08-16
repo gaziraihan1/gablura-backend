@@ -6,10 +6,15 @@ import type { AuthRequest } from "../../middleware/auth.js";
 import { asyncHandler, ValidationError } from "../../errors/index.js";
 import { AutomationQuery } from "./automation.query.js";
 import { AutomationMutation } from "./automation.mutation.js";
+import { AutomationAccess } from "./automation.access.js";
+import { runRuleOnTask } from "../../queue/workers/automation.worker.js";
+import { prisma } from "../../lib/prisma.js";
+import { NotFoundError } from "../../errors/index.js";
 import {
   listAutomationsQuerySchema,
   createAutomationSchema,
   updateAutomationSchema,
+  testAutomationSchema,
 } from "./automation.validators.js";
 
 export const listAutomations = asyncHandler(
@@ -69,6 +74,31 @@ export const updateAutomation = asyncHandler(
       parsed.data,
     );
     res.json({ success: true, message: "Automation rule updated", data: rule });
+  },
+);
+
+export const testAutomation = asyncHandler(
+  async (req: AuthRequest, res: Response) => {
+    const parsed = testAutomationSchema.safeParse(req.body);
+    if (!parsed.success)
+      throw new ValidationError("Validation error", parsed.error.issues);
+
+    // Only workspace OWNER/ADMIN can trigger a manual run.
+    const rule = await AutomationAccess.getRuleForManager(req.user!.id, req.params.id);
+
+    // The task must live in the rule's workspace.
+    const task = await prisma.task.findFirst({
+      where: { id: parsed.data.taskId, workspaceId: rule.workspaceId },
+      select: { id: true },
+    });
+    if (!task) throw new NotFoundError("Task not found in this workspace");
+
+    await runRuleOnTask(rule, task.id, req.user!.id);
+
+    res.json({
+      success: true,
+      message: "Rule executed — changes applied to the task",
+    });
   },
 );
 

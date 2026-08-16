@@ -47,6 +47,8 @@ describe("rateLimitUserApi on core CRUD routes", () => {
       { method: "get", path: "/api/v1/analytics/ws-1/overview" },
       { method: "get", path: "/api/v1/meetings/ws-1/meetings" },
       { method: "get", path: "/api/v1/labels" },
+      { method: "get", path: "/api/v1/automations?workspaceId=ws-1" },
+      { method: "get", path: "/api/v1/time-entries/my" },
       { method: "post", path: "/api/v1/upload", csrf: true },
     ];
 
@@ -54,8 +56,7 @@ describe("rateLimitUserApi on core CRUD routes", () => {
       const headers = route.csrf
         ? await authWithCsrfHeaders(user)
         : authHeaders(user);
-      const res = await request(app)
-        [route.method as "get" | "post"](route.path)
+      const res = await request(app)[route.method as "get" | "post"](route.path)
         .set(headers);
 
       expect(res.status, `${route.method.toUpperCase()} ${route.path}`).toBe(429);

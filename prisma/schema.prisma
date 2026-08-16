@@ -945,9 +945,15 @@ model BurnoutSignal {
   consecutiveHeavyDays Int
   avgDailyLoad         Float
   riskLevel            BurnoutRisk
-  createdAt            DateTime    @default(now())
-  updatedAt            DateTime    @updatedAt
-  user                 User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // Energy & focus strain factors (1-10 energy scale, focus minutes).
+  // avgEnergy is null when the user logged no energy that week.
+  avgEnergy          Float?
+  lowEnergyDays      Int      @default(0)
+  focusMinutes       Int      @default(0)
+  focusOverloadDays  Int      @default(0)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, weekStart])
 }
