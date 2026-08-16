@@ -91,4 +91,42 @@ describe('TimeEntryQuery.getMyEntries', () => {
     expect(entries).toHaveLength(1);
     expect(entries[0].duration).toBe(30);
   });
+
+  it('filters with only a from bound', async () => {
+    const { user, workspace } = await createWorkspaceWithOwner();
+    const task = await createTask(workspace.id, user.id);
+
+    await prisma.timeEntry.create({
+      data: { taskId: task.id, userId: user.id, duration: 30, startedAt: new Date('2026-08-01T09:00:00.000Z') },
+    });
+    await prisma.timeEntry.create({
+      data: { taskId: task.id, userId: user.id, duration: 45, startedAt: new Date('2026-08-10T09:00:00.000Z') },
+    });
+
+    const entries = await TimeEntryQuery.getMyEntries(user.id, {
+      from: new Date('2026-08-05T00:00:00.000Z'),
+    });
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0].duration).toBe(45);
+  });
+
+  it('filters with only a to bound', async () => {
+    const { user, workspace } = await createWorkspaceWithOwner();
+    const task = await createTask(workspace.id, user.id);
+
+    await prisma.timeEntry.create({
+      data: { taskId: task.id, userId: user.id, duration: 30, startedAt: new Date('2026-08-01T09:00:00.000Z') },
+    });
+    await prisma.timeEntry.create({
+      data: { taskId: task.id, userId: user.id, duration: 45, startedAt: new Date('2026-08-10T09:00:00.000Z') },
+    });
+
+    const entries = await TimeEntryQuery.getMyEntries(user.id, {
+      to: new Date('2026-08-05T00:00:00.000Z'),
+    });
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0].duration).toBe(30);
+  });
 });

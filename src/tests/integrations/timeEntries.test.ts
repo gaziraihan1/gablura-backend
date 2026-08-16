@@ -3,7 +3,7 @@
  *   create → list per task → update → delete, plus permission and
  *   validation guards.
  */
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect } from "vitest";
 import request from "supertest";
 import { WorkspaceRole } from "@prisma/client";
 
@@ -308,12 +308,28 @@ describe("project time reports", () => {
     expect(res.body.data.byCategory[0].hours).toBe(2);
   });
 
-  it("403 — plain workspace member without project manager access is denied", async () => {
+  it("200 — a plain workspace member can view the project report", async () => {
     const { user, workspace } = await createWorkspaceWithOwner();
     const project = await createProject(workspace.id, user.id);
     const member = await createUser();
     await addMemberToWorkspace(member.id, workspace.id, WorkspaceRole.MEMBER);
     const headers = authHeaders(member);
+
+    const res = await request(app)
+      .get(`/api/v1/analytics/${workspace.id}/projects/${project.id}/time/report?days=7`)
+      .set(headers);
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.entryCount).toBe(0);
+  });
+
+  it("403 — a user outside the workspace cannot view the project report", async () => {
+    const { workspace } = await createWorkspaceWithOwner();
+    const owner = await createUser();
+    const outsider = await createUser();
+    const project = await createProject(workspace.id, owner.id);
+    const headers = authHeaders(outsider);
 
     const res = await request(app)
       .get(`/api/v1/analytics/${workspace.id}/projects/${project.id}/time/report?days=7`)

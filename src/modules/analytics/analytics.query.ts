@@ -1092,7 +1092,7 @@ export const AnalyticsQuery = {
     userId: string,
     days: number = 7,
   ): Promise<ProjectTimeTrackingSummary> {
-    await AnalyticsAccess.assertProjectAnalyticsAccess(userId, workspaceId, projectId);
+    await AnalyticsAccess.assertProjectMemberAnalyticsAccess(userId, workspaceId, projectId);
 
     const cacheKey = CACHE_KEYS.analyticsProjectTimeSummary(workspaceId, projectId, days);
     const cached = await CacheClient.get<ProjectTimeTrackingSummary>(cacheKey);
@@ -1159,7 +1159,7 @@ export const AnalyticsQuery = {
     userId: string,
     days: number = 7,
   ): Promise<ProjectTimeReport> {
-    await AnalyticsAccess.assertProjectAnalyticsAccess(userId, workspaceId, projectId);
+    await AnalyticsAccess.assertProjectMemberAnalyticsAccess(userId, workspaceId, projectId);
 
     const cacheKey = CACHE_KEYS.analyticsProjectTimeReport(workspaceId, projectId, days);
     const cached = await CacheClient.get<ProjectTimeReport>(cacheKey);

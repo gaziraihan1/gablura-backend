@@ -35,7 +35,10 @@ export const TimeEntryQuery = {
     return prisma.timeEntry.findMany({
       where: {
         userId,
-        ...(from && to ? { startedAt: { gte: from, lte: to } } : {}),
+        startedAt: {
+          ...(from ? { gte: from } : {}),
+          ...(to ? { lte: to } : {}),
+        },
       },
       orderBy: { startedAt: 'desc' },
       include: timeEntryTaskInclude,

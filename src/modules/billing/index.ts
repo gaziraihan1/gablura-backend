@@ -7,5 +7,6 @@ export {
   requireProjectSlot,
   requireFileSizeLimit,
   requireAnalyticsAccess,
+  requireProjectAnalyticsAccess,
   requireApiAccessForUser,
 } from "./plan.middleware.js";

@@ -1,7 +1,10 @@
 import { Router } from 'express';
 import { rateLimitUserApi } from '../../middleware/apiRateLimiter.js';
 import { AnalyticsController } from './analytics.controller.js';
-import { requireAnalyticsAccess } from '../billing/index.js';
+import {
+  requireAnalyticsAccess,
+  requireProjectAnalyticsAccess,
+} from '../billing/index.js';
 
 const router = Router();
 
@@ -20,9 +23,9 @@ router.get('/:workspaceId/projects/health', requireAnalyticsAccess, AnalyticsCon
 
 router.get('/:workspaceId/projects/:projectId/members/contribution', requireAnalyticsAccess, AnalyticsController.getProjectMemberContribution);
 
-router.get('/:workspaceId/projects/:projectId/time/summary', requireAnalyticsAccess, AnalyticsController.getProjectTimeSummary);
+router.get('/:workspaceId/projects/:projectId/time/summary', requireProjectAnalyticsAccess, AnalyticsController.getProjectTimeSummary);
 
-router.get('/:workspaceId/projects/:projectId/time/report', requireAnalyticsAccess, AnalyticsController.getProjectTimeReport);
+router.get('/:workspaceId/projects/:projectId/time/report', requireProjectAnalyticsAccess, AnalyticsController.getProjectTimeReport);
 
 router.get('/:workspaceId/members/contribution', requireAnalyticsAccess, AnalyticsController.getMemberContribution);
 

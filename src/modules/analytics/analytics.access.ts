@@ -1,5 +1,6 @@
 import { prisma } from '../../lib/prisma.js';
 import { ForbiddenError, NotFoundError, PlanLimitError } from '../../errors/index.js';
+import { ProjectAccess } from '../project/project.access.js';
 
 export const AnalyticsAccess = {
   async assertWorkspaceAdminOrOwner(userId: string, workspaceId: string) {
@@ -83,6 +84,27 @@ export const AnalyticsAccess = {
     }
 
     // Plan check last so non-members can't probe the workspace's plan tier.
+    if (workspace.plan === 'FREE') {
+      throw new PlanLimitError('Upgrade your workspace plan to access analytics');
+    }
+  },
+
+  /**
+   * Project time reports are open to any project member (not just admins,
+   * owners, or managers). Membership mirrors ProjectAccess.assertProjectAccess;
+   * the plan gate stays (FREE workspaces cannot view analytics).
+   */
+  async assertProjectMemberAnalyticsAccess(userId: string, workspaceId: string, projectId: string) {
+    const workspace = await prisma.workspace.findUnique({
+      where:  { id: workspaceId },
+      select: { plan: true },
+    });
+
+    if (!workspace) throw new NotFoundError('Workspace');
+
+    // Membership first so non-members can't probe the workspace's plan tier.
+    await ProjectAccess.assertProjectAccess(userId, projectId);
+
     if (workspace.plan === 'FREE') {
       throw new PlanLimitError('Upgrade your workspace plan to access analytics');
     }

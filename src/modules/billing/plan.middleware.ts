@@ -224,6 +224,52 @@ export const requireAnalyticsAccess = planGuard(async (req) => {
   return { allowed: true };
 });
 
+/**
+ * Project-scoped analytics guard — any workspace member who can access the
+ * project may view its analytics (time reports/summary), as long as the
+ * workspace plan includes analytics (Pro+). Workspace-level analytics stay
+ * admin/owner-only via requireAnalyticsAccess.
+ *
+ * Membership mirrors ProjectAccess.assertProjectAccess: workspace owner or
+ * any workspace member. Non-members get 403 FORBIDDEN (access-restricted
+ * screen) instead of an upgrade prompt.
+ */
+export const requireProjectAnalyticsAccess = planGuard(async (req) => {
+  const { workspaceId, projectId } = req.params;
+  const userId = req.user?.id;
+  if (!userId || !workspaceId || !projectId) {
+    return { allowed: false, reason: "Authentication required" };
+  }
+
+  // Membership/role first so non-members can't probe the workspace's plan tier.
+  const project = await prisma.project.findFirst({
+    where: {
+      id: projectId,
+      workspaceId,
+      workspace: {
+        OR: [{ ownerId: userId }, { members: { some: { userId } } }],
+      },
+    },
+    select: { id: true },
+  });
+  if (!project) {
+    return {
+      allowed: false,
+      reason: "You do not have access to this project",
+      errorClass: ForbiddenError,
+    };
+  }
+
+  const limits = await BillingService.getWorkspacePlanLimits(workspaceId);
+  if (!limits.analyticsAccess) {
+    return {
+      allowed: false,
+      reason: "Analytics requires a Pro or Business workspace plan.",
+    };
+  }
+  return { allowed: true };
+});
+
 /** Block API access on non-Business workspaces. */
 export const requireApiAccess = planGuard(async (req) => {
   const { workspaceId } = req.params;

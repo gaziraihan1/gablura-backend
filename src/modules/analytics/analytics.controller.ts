@@ -266,7 +266,7 @@ export class AnalyticsController {
 
   static getProjectTimeSummary = asyncHandler(async (req: AuthRequest, res: Response) => {
     const { workspaceId, projectId } = req.params;
-    await AnalyticsAccess.assertProjectAnalyticsAccess(req.user!.id, workspaceId, projectId);
+    await AnalyticsAccess.assertProjectMemberAnalyticsAccess(req.user!.id, workspaceId, projectId);
 
     const days = parseDays(req.query.days, 7);
     const summary = await AnalyticsQuery.getProjectTimeTrackingSummary(
@@ -280,7 +280,7 @@ export class AnalyticsController {
 
   static getProjectTimeReport = asyncHandler(async (req: AuthRequest, res: Response) => {
     const { workspaceId, projectId } = req.params;
-    await AnalyticsAccess.assertProjectAnalyticsAccess(req.user!.id, workspaceId, projectId);
+    await AnalyticsAccess.assertProjectMemberAnalyticsAccess(req.user!.id, workspaceId, projectId);
 
     const days = parseDays(req.query.days, 7);
     const report = await AnalyticsQuery.getProjectTimeReport(
