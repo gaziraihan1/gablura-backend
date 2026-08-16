@@ -65,7 +65,7 @@ export const createTask = asyncHandler(async (req: AuthRequest, res: Response) =
   const data = parsed.data;
   const task = await TaskMutation.createTask(
     { ...data, createdById: req.user!.id },
-    async ({ task, assigneeIds }) => {
+    async ({ task, assigneeIds, labelIds = [] }) => {
       if (task.workspaceId) {
         void TaskActivity.logCreated({
           taskId:        task.id,
@@ -96,6 +96,26 @@ export const createTask = asyncHandler(async (req: AuthRequest, res: Response) =
           workspaceId: task.workspaceId,
           projectId: task.projectId ?? null,
         });
+        if (assigneeIds.length > 0) {
+          void emitAutomationEvent({
+            trigger: 'ASSIGNEE_CHANGED',
+            taskId: task.id,
+            actorId: req.user!.id,
+            workspaceId: task.workspaceId,
+            projectId: task.projectId ?? null,
+            addedAssigneeIds: assigneeIds,
+          });
+        }
+        if (labelIds.length > 0) {
+          void emitAutomationEvent({
+            trigger: 'LABEL_ADDED',
+            taskId: task.id,
+            actorId: req.user!.id,
+            workspaceId: task.workspaceId,
+            projectId: task.projectId ?? null,
+            addedLabelIds: labelIds,
+          });
+        }
       }
     },
   );
@@ -129,7 +149,7 @@ export const updateTask = asyncHandler(async (req: AuthRequest, res: Response) =
 
   const task = await TaskMutation.updateTask(
     req.params.id, req.user!.id, parsed.data,
-    async ({ task, oldStatus, newStatus, addedAssigneeIds = [] }) => {
+    async ({ task, oldStatus, newStatus, addedAssigneeIds = [], addedLabelIds = [] }) => {
       // Notify people who were newly assigned through this edit (re-assign / add assignee)
       if (addedAssigneeIds.length > 0) {
         void TaskNotifications.notifyAddedAssignees({
@@ -176,6 +196,31 @@ export const updateTask = asyncHandler(async (req: AuthRequest, res: Response) =
           fromStatus: oldStatus,
           toStatus: newStatus,
         });
+      }
+
+      // Emit ASSIGNEE_CHANGED / LABEL_ADDED when the edit form added
+      // assignees or labels to an existing task.
+      if (task.workspaceId) {
+        if (addedAssigneeIds.length > 0) {
+          void emitAutomationEvent({
+            trigger: 'ASSIGNEE_CHANGED',
+            taskId: task.id,
+            actorId: req.user!.id,
+            workspaceId: task.workspaceId,
+            projectId: task.projectId ?? null,
+            addedAssigneeIds,
+          });
+        }
+        if (addedLabelIds.length > 0) {
+          void emitAutomationEvent({
+            trigger: 'LABEL_ADDED',
+            taskId: task.id,
+            actorId: req.user!.id,
+            workspaceId: task.workspaceId,
+            projectId: task.projectId ?? null,
+            addedLabelIds,
+          });
+        }
       }
     },
   );

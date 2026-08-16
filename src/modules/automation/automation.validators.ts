@@ -37,9 +37,37 @@ const taskCreatedTriggerSchema = z
   })
   .strict();
 
+const dueDateApproachingTriggerSchema = z
+  .object({
+    daysBefore: z.number().int().min(1).max(90).nullable().optional(),
+  })
+  .strict();
+
+const assigneeChangedTriggerSchema = z
+  .object({
+    assigneeUserId: z.string().nullable().optional(),
+  })
+  .strict();
+
+const labelAddedTriggerSchema = z
+  .object({
+    labelId: z.string().nullable().optional(),
+  })
+  .strict();
+
+const mentionTriggerSchema = z
+  .object({
+    mentionedUserId: z.string().nullable().optional(),
+  })
+  .strict();
+
 const triggerConfigSchema = z.union([
   statusChangedTriggerSchema,
   taskCreatedTriggerSchema,
+  dueDateApproachingTriggerSchema,
+  assigneeChangedTriggerSchema,
+  labelAddedTriggerSchema,
+  mentionTriggerSchema,
 ]);
 
 // ─── Actions ──────────────────────────────────────────────────────────────────
@@ -89,7 +117,14 @@ export const createAutomationSchema = z.object({
   workspaceId: z.string().min(1, 'Workspace is required'),
   projectId: z.string().nullable().optional(),
   name: z.string().trim().min(1, 'Rule name is required').max(100),
-  triggerType: z.enum(['STATUS_CHANGED', 'TASK_CREATED']),
+  triggerType: z.enum([
+    'STATUS_CHANGED',
+    'TASK_CREATED',
+    'DUE_DATE_APPROACHING',
+    'ASSIGNEE_CHANGED',
+    'LABEL_ADDED',
+    'MENTION',
+  ]),
   triggerConfig: triggerConfigSchema.optional().default({}),
   actions: actionsSchema,
 });
@@ -102,7 +137,16 @@ export const updateAutomationSchema = z
   .object({
     projectId: z.string().nullable().optional(),
     name: z.string().trim().min(1).max(100).optional(),
-    triggerType: z.enum(['STATUS_CHANGED', 'TASK_CREATED']).optional(),
+    triggerType: z
+      .enum([
+        'STATUS_CHANGED',
+        'TASK_CREATED',
+        'DUE_DATE_APPROACHING',
+        'ASSIGNEE_CHANGED',
+        'LABEL_ADDED',
+        'MENTION',
+      ])
+      .optional(),
     triggerConfig: triggerConfigSchema.optional(),
     actions: actionsSchema.optional(),
     enabled: z.boolean().optional(),

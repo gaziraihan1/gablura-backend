@@ -10,8 +10,9 @@ import {
   updateCommentSchema,
 } from "./comment.validators.js";
 import { notifyMentions, notifyUser } from "../notification/index.js";
-import { stripMentionSyntax } from "./mention/mention.utils.js";
+import { stripMentionSyntax, extractMentionedUserIds } from "./mention/mention.utils.js";
 import { addInvalidateCacheJob } from "../../queue/index.js";
+import { emitAutomationEvent } from "../automation/automation.events.js";
 import { asyncHandler, ValidationError } from "../../errors/index.js";
 
 export const getComments = asyncHandler(
@@ -133,6 +134,21 @@ export const addComment = asyncHandler(
         }
 
         await Promise.allSettled(jobs);
+
+        // Emit a MENTION automation event so rules can react to mentions
+        // (e.g. auto-assign the mentioned user). Only when someone is actually
+        // mentioned — no event, no worker work.
+        const mentionedUserIds = extractMentionedUserIds(content);
+        if (mentionedUserIds.length > 0) {
+          void emitAutomationEvent({
+            trigger: 'MENTION',
+            taskId,
+            actorId: req.user!.id,
+            workspaceId,
+            projectId: task.project?.id ?? null,
+            mentionedUserIds,
+          });
+        }
 
         // Refresh workspace/user activity feeds and task stats (async, best-effort)
         addInvalidateCacheJob({ type: 'activity', taskId, userId: req.user!.id, workspaceId }).catch(() => {});

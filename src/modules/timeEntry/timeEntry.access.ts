@@ -3,6 +3,27 @@ import { NotFoundError, ForbiddenError } from '../../errors/index.js';
 
 export const TimeEntryAccess = {
   /**
+   * Throws unless the user is a member (or the owner) of the workspace.
+   * Used to gate the workspace-scoped time log — every member can view
+   * the workspace's time entries.
+   */
+  async assertWorkspaceMembership(workspaceId: string, userId: string) {
+    const workspace = await prisma.workspace.findUnique({
+      where: { id: workspaceId },
+      select: {
+        ownerId: true,
+        members: { where: { userId }, select: { id: true }, take: 1 },
+      },
+    });
+
+    if (!workspace) throw new NotFoundError('Workspace', 'WORKSPACE_NOT_FOUND');
+    if (workspace.ownerId === userId) return;
+    if (!workspace.members[0]) {
+      throw new ForbiddenError('You are not a member of this workspace');
+    }
+  },
+
+  /**
    * A user may log time on a task they can see: creator, assignee,
    * project member, or workspace owner/admin. Mirrors the comment module.
    */

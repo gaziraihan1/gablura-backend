@@ -15,6 +15,7 @@ import {
   createProject,
   createTask,
   addMemberToWorkspace,
+  assignUserToTask,
 } from "../factories/index.js";
 import { authWithCsrfHeaders, authHeaders } from "../helpers/auth.js";
 
@@ -203,6 +204,60 @@ describe("GET /api/v1/time-entries/my — own entries", () => {
     expect(res.body.data).toHaveLength(1);
     expect(res.body.data[0].userId).toBe(user.id);
     expect(res.body.data[0].task.title).toBe(task.title);
+  });
+});
+
+describe("GET /api/v1/time-entries/workspace/:workspaceId — workspace time log", () => {
+  it("200 — member sees entries on accessible tasks in the workspace", async () => {
+    const { user, workspace } = await createWorkspaceWithOwner();
+    const member = await createUser();
+    await addMemberToWorkspace(member.id, workspace.id, WorkspaceRole.MEMBER);
+    const project = await createProject(workspace.id, user.id);
+    const task = await createTask(workspace.id, user.id, { projectId: project.id });
+    await assignUserToTask(task.id, member.id);
+
+    await prisma.timeEntry.create({ data: { taskId: task.id, userId: member.id, duration: 30, startedAt: new Date() } });
+    const headers = authHeaders(member);
+
+    const res = await request(app)
+      .get(`/api/v1/time-entries/workspace/${workspace.id}`)
+      .set(headers);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toHaveLength(1);
+    expect(res.body.data[0].userId).toBe(member.id);
+    expect(res.body.data[0].task.title).toBe(task.title);
+    expect(res.body.data[0].user.id).toBe(member.id);
+  });
+
+  it("200 — member does not see entries on tasks they cannot access", async () => {
+    const { workspace } = await createWorkspaceWithOwner();
+    const otherWorkspace = await createWorkspaceWithOwner();
+    const member = await createUser();
+    await addMemberToWorkspace(member.id, workspace.id, WorkspaceRole.MEMBER);
+    const task = await createTask(otherWorkspace.workspace.id, otherWorkspace.user.id);
+
+    await prisma.timeEntry.create({ data: { taskId: task.id, userId: otherWorkspace.user.id, duration: 30, startedAt: new Date() } });
+    const headers = authHeaders(member);
+
+    const res = await request(app)
+      .get(`/api/v1/time-entries/workspace/${workspace.id}`)
+      .set(headers);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toHaveLength(0);
+  });
+
+  it("403 — a user outside the workspace cannot view the workspace time log", async () => {
+    const { workspace } = await createWorkspaceWithOwner();
+    const outsider = await createUser();
+    const headers = authHeaders(outsider);
+
+    const res = await request(app)
+      .get(`/api/v1/time-entries/workspace/${workspace.id}`)
+      .set(headers);
+
+    expect(res.status).toBe(403);
   });
 });
 

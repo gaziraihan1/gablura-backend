@@ -14,6 +14,7 @@ const {
   mockLogUpdated,
   mockLogDeleted,
   mockNotifyNewAssignees,
+  mockNotifyAddedAssignees,
   mockNotifyTaskCompleted,
   mockRecalculateDay,
   mockGetPersonalQuotaInfo,
@@ -33,6 +34,7 @@ const {
   mockLogUpdated: vi.fn(),
   mockLogDeleted: vi.fn(),
   mockNotifyNewAssignees: vi.fn(),
+  mockNotifyAddedAssignees: vi.fn(),
   mockNotifyTaskCompleted: vi.fn(),
   mockRecalculateDay: vi.fn(),
   mockGetPersonalQuotaInfo: vi.fn(),
@@ -117,6 +119,7 @@ vi.mock('../../../modules/task/task.activity.js', () => ({
 vi.mock('../../../modules/task/task.notifications.js', () => ({
   TaskNotifications: {
     notifyNewAssignees: mockNotifyNewAssignees,
+    notifyAddedAssignees: mockNotifyAddedAssignees,
     notifyTaskCompleted: mockNotifyTaskCompleted,
   },
 }));
@@ -2427,6 +2430,130 @@ describe('createTask — automation events', () => {
     await createTask(req as any, res as any, mockNext);
 
     expect(mockEmitAutomationEvent).not.toHaveBeenCalled();
+  });
+
+  it('should emit ASSIGNEE_CHANGED and LABEL_ADDED when assignees and labels are set on create', async () => {
+    const task = { id: 't1', title: 'Task', workspaceId: 'ws1', projectId: 'p1', dueDate: null };
+    mockCreateTask.mockImplementation(async (_data: unknown, callback: (...args: unknown[]) => unknown) => {
+      await callback({ task, assigneeIds: ['user-a'], labelIds: ['label-1'] });
+      return task;
+    });
+
+    const req = mockReq({ body: { title: 'Task' } });
+    const res = mockRes();
+
+    await createTask(req as any, res as any, mockNext);
+
+    expect(mockEmitAutomationEvent).toHaveBeenCalledWith({
+      trigger: 'ASSIGNEE_CHANGED',
+      taskId: 't1',
+      actorId: 'user1',
+      workspaceId: 'ws1',
+      projectId: 'p1',
+      addedAssigneeIds: ['user-a'],
+    });
+    expect(mockEmitAutomationEvent).toHaveBeenCalledWith({
+      trigger: 'LABEL_ADDED',
+      taskId: 't1',
+      actorId: 'user1',
+      workspaceId: 'ws1',
+      projectId: 'p1',
+      addedLabelIds: ['label-1'],
+    });
+  });
+
+  it('should not emit ASSIGNEE_CHANGED or LABEL_ADDED when none are set on create', async () => {
+    const task = { id: 't1', title: 'Task', workspaceId: 'ws1', projectId: 'p1', dueDate: null };
+    mockCreateTask.mockImplementation(async (_data: unknown, callback: (...args: unknown[]) => unknown) => {
+      await callback({ task, assigneeIds: [], labelIds: [] });
+      return task;
+    });
+
+    const req = mockReq({ body: { title: 'Task' } });
+    const res = mockRes();
+
+    await createTask(req as any, res as any, mockNext);
+
+    expect(mockEmitAutomationEvent).toHaveBeenCalledTimes(1); // TASK_CREATED only
+    expect(mockEmitAutomationEvent).not.toHaveBeenCalledWith(
+      expect.objectContaining({ trigger: 'ASSIGNEE_CHANGED' }),
+    );
+    expect(mockEmitAutomationEvent).not.toHaveBeenCalledWith(
+      expect.objectContaining({ trigger: 'LABEL_ADDED' }),
+    );
+  });
+});
+
+describe('updateTask — automation events', () => {
+  beforeEach(() => mockEmitAutomationEvent.mockClear());
+
+  const oldTask = {
+    title: 'Old', description: null, priority: 'MEDIUM', status: 'TODO', projectId: 'p1',
+    dueDate: null, startDate: null, estimatedHours: null,
+    focusRequired: null, focusLevel: null, energyType: null, distractionCost: null, intent: null,
+    assignees: [], labels: [],
+  };
+
+  it('should emit ASSIGNEE_CHANGED and LABEL_ADDED when assignees and labels were added', async () => {
+    mockFindUnique.mockResolvedValue(oldTask);
+    mockUpdateTask.mockImplementation(async (_id: string, _userId: string, _data: unknown, callback: (...args: unknown[]) => unknown) => {
+      await callback({
+        task: { id: 't1', title: 'Task', workspaceId: 'ws1', projectId: 'p1' },
+        oldStatus: 'TODO',
+        newStatus: 'TODO',
+        addedAssigneeIds: ['user-a'],
+        addedLabelIds: ['label-1'],
+      });
+      return {};
+    });
+
+    const req = mockReq({ params: { id: 't1' }, body: { assigneeIds: ['user-a'], labelIds: ['label-1'] } });
+    const res = mockRes();
+
+    await updateTask(req as any, res as any, mockNext);
+
+    expect(mockEmitAutomationEvent).toHaveBeenCalledWith({
+      trigger: 'ASSIGNEE_CHANGED',
+      taskId: 't1',
+      actorId: 'user1',
+      workspaceId: 'ws1',
+      projectId: 'p1',
+      addedAssigneeIds: ['user-a'],
+    });
+    expect(mockEmitAutomationEvent).toHaveBeenCalledWith({
+      trigger: 'LABEL_ADDED',
+      taskId: 't1',
+      actorId: 'user1',
+      workspaceId: 'ws1',
+      projectId: 'p1',
+      addedLabelIds: ['label-1'],
+    });
+  });
+
+  it('should not emit ASSIGNEE_CHANGED or LABEL_ADDED when nothing was added', async () => {
+    mockFindUnique.mockResolvedValue(oldTask);
+    mockUpdateTask.mockImplementation(async (_id: string, _userId: string, _data: unknown, callback: (...args: unknown[]) => unknown) => {
+      await callback({
+        task: { id: 't1', title: 'Task', workspaceId: 'ws1', projectId: 'p1' },
+        oldStatus: 'TODO',
+        newStatus: 'TODO',
+        addedAssigneeIds: [],
+        addedLabelIds: [],
+      });
+      return {};
+    });
+
+    const req = mockReq({ params: { id: 't1' }, body: { title: 'Changed' } });
+    const res = mockRes();
+
+    await updateTask(req as any, res as any, mockNext);
+
+    expect(mockEmitAutomationEvent).not.toHaveBeenCalledWith(
+      expect.objectContaining({ trigger: 'ASSIGNEE_CHANGED' }),
+    );
+    expect(mockEmitAutomationEvent).not.toHaveBeenCalledWith(
+      expect.objectContaining({ trigger: 'LABEL_ADDED' }),
+    );
   });
 });
 

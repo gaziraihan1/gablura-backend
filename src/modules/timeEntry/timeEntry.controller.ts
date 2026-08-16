@@ -22,6 +22,18 @@ export const getMyEntries = asyncHandler(async (req: AuthRequest, res: Response)
   res.json({ success: true, data: entries });
 });
 
+export const getWorkspaceEntries = asyncHandler(async (req: AuthRequest, res: Response) => {
+  const parsed = myTimeEntriesQuerySchema.safeParse(req.query);
+  if (!parsed.success) throw new ValidationError('Validation error', parsed.error.issues);
+
+  const entries = await TimeEntryQuery.getWorkspaceEntries(
+    req.params.workspaceId,
+    req.user!.id,
+    parsed.data,
+  );
+  res.json({ success: true, data: entries });
+});
+
 export const createTimeEntry = asyncHandler(async (req: AuthRequest, res: Response) => {
   const parsed = createTimeEntrySchema.safeParse(req.body);
   if (!parsed.success) throw new ValidationError('Validation error', parsed.error.issues);

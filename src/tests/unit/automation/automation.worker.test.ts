@@ -321,6 +321,248 @@ describe('processAutomationEvent', () => {
     });
   });
 
+  it('runs only the cron-targeted rule for DUE_DATE_APPROACHING events', async () => {
+    const dueInTwoDays = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000);
+    vi.mocked(prisma.task.findUnique).mockResolvedValue({
+      id: 't1',
+      title: 'Task one',
+      projectId: 'p1',
+      workspaceId: 'ws1',
+      dueDate: dueInTwoDays,
+      status: 'TODO',
+    } as any);
+    // Simulate the DB narrowing by id (the where clause below asserts it).
+    vi.mocked(prisma.automationRule.findMany).mockResolvedValue([
+      rule({
+        id: 'r-target',
+        triggerType: 'DUE_DATE_APPROACHING',
+        triggerConfig: { daysBefore: 3 },
+        actions: [{ type: 'SET_PRIORITY', config: { priority: 'HIGH' } }],
+      }),
+    ] as any);
+    vi.mocked(prisma.task.update).mockResolvedValue({} as any);
+
+    await processAutomationEvent(
+      event({
+        trigger: 'DUE_DATE_APPROACHING',
+        ruleId: 'r-target',
+        dueDate: dueInTwoDays.toISOString(),
+      }),
+    );
+
+    // The rules query is narrowed to the targeted rule id...
+    expect(prisma.automationRule.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: 'r-target' }),
+      }),
+    );
+    expect(prisma.automationRule.update).toHaveBeenCalledTimes(1);
+    expect(prisma.automationRule.update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'r-target' } }),
+    );
+  });
+
+  it('skips DUE_DATE_APPROACHING rules when the task due date is outside the window', async () => {
+    vi.mocked(prisma.task.findUnique).mockResolvedValue({
+      id: 't1',
+      title: 'Task one',
+      projectId: 'p1',
+      workspaceId: 'ws1',
+      dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      status: 'TODO',
+    } as any);
+    vi.mocked(prisma.automationRule.findMany).mockResolvedValue([
+      rule({
+        id: 'r1',
+        triggerType: 'DUE_DATE_APPROACHING',
+        triggerConfig: { daysBefore: 3 },
+        actions: [{ type: 'SET_PRIORITY', config: { priority: 'HIGH' } }],
+      }),
+    ] as any);
+
+    await processAutomationEvent(
+      event({
+        trigger: 'DUE_DATE_APPROACHING',
+        ruleId: 'r1',
+        dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      }),
+    );
+
+    expect(prisma.task.update).not.toHaveBeenCalled();
+    expect(prisma.automationRule.update).not.toHaveBeenCalled();
+  });
+
+  it('skips DUE_DATE_APPROACHING rules for tasks with no due date or an overdue one', async () => {
+    vi.mocked(prisma.task.findUnique).mockResolvedValue({
+      id: 't1',
+      title: 'Task one',
+      projectId: 'p1',
+      workspaceId: 'ws1',
+      dueDate: null,
+      status: 'TODO',
+    } as any);
+    vi.mocked(prisma.automationRule.findMany).mockResolvedValue([
+      rule({
+        id: 'r1',
+        triggerType: 'DUE_DATE_APPROACHING',
+        triggerConfig: { daysBefore: 3 },
+        actions: [{ type: 'SET_PRIORITY', config: { priority: 'HIGH' } }],
+      }),
+    ] as any);
+
+    await processAutomationEvent(
+      event({ trigger: 'DUE_DATE_APPROACHING', ruleId: 'r1' }),
+    );
+    expect(prisma.automationRule.update).not.toHaveBeenCalled();
+
+    // Overdue task — same rule must not fire either.
+    vi.mocked(prisma.task.findUnique).mockResolvedValue({
+      id: 't1',
+      title: 'Task one',
+      projectId: 'p1',
+      workspaceId: 'ws1',
+      dueDate: new Date(Date.now() - 24 * 60 * 60 * 1000),
+      status: 'TODO',
+    } as any);
+    await processAutomationEvent(
+      event({
+        trigger: 'DUE_DATE_APPROACHING',
+        ruleId: 'r1',
+        dueDate: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+      }),
+    );
+    expect(prisma.automationRule.update).not.toHaveBeenCalled();
+  });
+
+  it('matches ASSIGNEE_CHANGED rules when assignees were added', async () => {
+    vi.mocked(prisma.automationRule.findMany).mockResolvedValue([
+      rule({
+        id: 'r1',
+        triggerType: 'ASSIGNEE_CHANGED',
+        triggerConfig: {},
+        actions: [{ type: 'NOTIFY_MEMBERS', config: { message: 'assigned' } }],
+      }),
+    ] as any);
+    mockNotifyWorkspaceMembers.mockResolvedValue(undefined);
+
+    await processAutomationEvent(
+      event({ trigger: 'ASSIGNEE_CHANGED', addedAssigneeIds: ['user-a', 'user-b'] }),
+    );
+
+    expect(prisma.automationRule.update).toHaveBeenCalledTimes(1);
+  });
+
+  it('filters ASSIGNEE_CHANGED rules by the specific user added', async () => {
+    vi.mocked(prisma.automationRule.findMany).mockResolvedValue([
+      rule({
+        id: 'r1',
+        triggerType: 'ASSIGNEE_CHANGED',
+        triggerConfig: { assigneeUserId: 'user-b' },
+        actions: [{ type: 'SET_PRIORITY', config: { priority: 'HIGH' } }],
+      }),
+    ] as any);
+    vi.mocked(prisma.task.update).mockResolvedValue({} as any);
+
+    await processAutomationEvent(
+      event({ trigger: 'ASSIGNEE_CHANGED', addedAssigneeIds: ['user-b'] }),
+    );
+    expect(prisma.automationRule.update).toHaveBeenCalledTimes(1);
+
+    vi.mocked(prisma.automationRule.update).mockClear();
+    await processAutomationEvent(
+      event({ trigger: 'ASSIGNEE_CHANGED', addedAssigneeIds: ['user-c'] }),
+    );
+    expect(prisma.automationRule.update).not.toHaveBeenCalled();
+  });
+
+  it('skips ASSIGNEE_CHANGED rules when no assignee was added', async () => {
+    vi.mocked(prisma.automationRule.findMany).mockResolvedValue([
+      rule({
+        id: 'r1',
+        triggerType: 'ASSIGNEE_CHANGED',
+        triggerConfig: {},
+        actions: [{ type: 'SET_PRIORITY', config: { priority: 'HIGH' } }],
+      }),
+    ] as any);
+
+    await processAutomationEvent(event({ trigger: 'ASSIGNEE_CHANGED' }));
+    expect(prisma.automationRule.update).not.toHaveBeenCalled();
+  });
+
+  it('matches LABEL_ADDED rules with and without a label filter', async () => {
+    vi.mocked(prisma.automationRule.findMany).mockResolvedValue([
+      rule({
+        id: 'r1',
+        triggerType: 'LABEL_ADDED',
+        triggerConfig: { labelId: 'label-1' },
+        actions: [{ type: 'SET_PRIORITY', config: { priority: 'URGENT' } }],
+      }),
+    ] as any);
+    vi.mocked(prisma.task.update).mockResolvedValue({} as any);
+
+    await processAutomationEvent(
+      event({ trigger: 'LABEL_ADDED', addedLabelIds: ['label-1'] }),
+    );
+    expect(prisma.automationRule.update).toHaveBeenCalledTimes(1);
+
+    vi.mocked(prisma.automationRule.update).mockClear();
+    await processAutomationEvent(
+      event({ trigger: 'LABEL_ADDED', addedLabelIds: ['label-2'] }),
+    );
+    expect(prisma.automationRule.update).not.toHaveBeenCalled();
+  });
+
+  it('skips LABEL_ADDED rules when no label was added', async () => {
+    vi.mocked(prisma.automationRule.findMany).mockResolvedValue([
+      rule({
+        id: 'r1',
+        triggerType: 'LABEL_ADDED',
+        triggerConfig: {},
+        actions: [{ type: 'SET_PRIORITY', config: { priority: 'HIGH' } }],
+      }),
+    ] as any);
+
+    await processAutomationEvent(event({ trigger: 'LABEL_ADDED' }));
+    expect(prisma.automationRule.update).not.toHaveBeenCalled();
+  });
+
+  it('matches MENTION rules with and without a user filter', async () => {
+    vi.mocked(prisma.automationRule.findMany).mockResolvedValue([
+      rule({
+        id: 'r1',
+        triggerType: 'MENTION',
+        triggerConfig: { mentionedUserId: 'user-3' },
+        actions: [{ type: 'SET_PRIORITY', config: { priority: 'HIGH' } }],
+      }),
+    ] as any);
+    vi.mocked(prisma.task.update).mockResolvedValue({} as any);
+
+    await processAutomationEvent(
+      event({ trigger: 'MENTION', mentionedUserIds: ['user-3'] }),
+    );
+    expect(prisma.automationRule.update).toHaveBeenCalledTimes(1);
+
+    vi.mocked(prisma.automationRule.update).mockClear();
+    await processAutomationEvent(
+      event({ trigger: 'MENTION', mentionedUserIds: ['other-user'] }),
+    );
+    expect(prisma.automationRule.update).not.toHaveBeenCalled();
+  });
+
+  it('skips MENTION rules when nobody was mentioned', async () => {
+    vi.mocked(prisma.automationRule.findMany).mockResolvedValue([
+      rule({
+        id: 'r1',
+        triggerType: 'MENTION',
+        triggerConfig: {},
+        actions: [{ type: 'SET_PRIORITY', config: { priority: 'HIGH' } }],
+      }),
+    ] as any);
+
+    await processAutomationEvent(event({ trigger: 'MENTION' }));
+    expect(prisma.automationRule.update).not.toHaveBeenCalled();
+  });
+
   it('continues with remaining rules when one rule fails', async () => {
     vi.mocked(prisma.automationRule.findMany).mockResolvedValue([
       rule({ id: 'r-fail', actions: [{ type: 'SET_PRIORITY', config: { priority: 'HIGH' } }] }),

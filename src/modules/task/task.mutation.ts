@@ -18,8 +18,14 @@ import { TaskCache, AccessControlCache } from '../../lib/redis/cache.client.js';
 
 // ─── Callback types ───────────────────────────────────────────────────────────
 
-type OnTaskCreated  = (data: { task: any; assigneeIds: string[] }) => Promise<void>;
-type OnTaskUpdated  = (data: { task: any; oldStatus?: string; newStatus?: string; addedAssigneeIds: string[] }) => Promise<void>;
+type OnTaskCreated  = (data: { task: any; assigneeIds: string[]; labelIds: string[] }) => Promise<void>;
+type OnTaskUpdated  = (data: {
+  task: any;
+  oldStatus?: string;
+  newStatus?: string;
+  addedAssigneeIds: string[];
+  addedLabelIds: string[];
+}) => Promise<void>;
 
 /**
  * Refresh a task's live status onto the permission snapshot before computing
@@ -222,7 +228,7 @@ export const TaskMutation = {
     }
 
     if (onCreated) {
-      onCreated({ task, assigneeIds: data.assigneeIds || [] }).catch((err) =>
+      onCreated({ task, assigneeIds: data.assigneeIds || [], labelIds: data.labelIds || [] }).catch((err) =>
         console.error('Post-creation callback failed:', err),
       );
     }
@@ -362,6 +368,7 @@ export const TaskMutation = {
     }
 
     let addedAssigneeIds: string[] = [];
+    let addedLabelIds: string[] = [];
     if (data.assigneeIds !== undefined || data.labelIds !== undefined) {
       // Atomic replacement of assignees and labels within a transaction
       await prisma.$transaction(async (tx) => {
@@ -377,6 +384,10 @@ export const TaskMutation = {
         }
 
         if (data.labelIds !== undefined) {
+          const existingLabelIds = (
+            await tx.taskLabel.findMany({ where: { taskId }, select: { labelId: true } })
+          ).map((l: { labelId: string }) => l.labelId);
+          addedLabelIds = data.labelIds.filter((labelId) => !existingLabelIds.includes(labelId));
           await tx.taskLabel.deleteMany({ where: { taskId } });
           if (data.labelIds.length > 0) {
             await tx.taskLabel.createMany({
@@ -393,6 +404,7 @@ export const TaskMutation = {
         oldStatus:        data.status ? existingTask.status : undefined,
         newStatus:        data.status,
         addedAssigneeIds,
+        addedLabelIds,
       }).catch((err) => console.error('Post-update callback failed:', err));
     }
 
@@ -447,6 +459,7 @@ export const TaskMutation = {
         oldStatus:        existingTask.status,
         newStatus:        status,
         addedAssigneeIds: [],
+        addedLabelIds:    [],
       }).catch((err) => console.error('Post-status-update callback failed:', err));
     }
 

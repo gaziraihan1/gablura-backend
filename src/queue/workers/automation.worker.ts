@@ -26,6 +26,9 @@ interface WorkerTask {
   id: string;
   title: string;
   projectId: string | null;
+  workspaceId: string | null;
+  dueDate: Date | null;
+  status: string;
 }
 
 export function createAutomationWorker() {
@@ -64,7 +67,7 @@ export async function runRuleOnTask(
 ): Promise<boolean> {
   const task = await prisma.task.findUnique({
     where: { id: taskId },
-    select: { id: true, title: true, projectId: true },
+    select: { id: true, title: true, projectId: true, workspaceId: true, dueDate: true, status: true },
   });
   if (!task) return false;
 
@@ -93,6 +96,10 @@ export async function processAutomationEvent(event: AutomationEvent): Promise<vo
     where: {
       workspaceId: event.workspaceId,
       enabled: true,
+      // Cron-targeted events (DUE_DATE_APPROACHING) carry the exact rule id,
+      // so only that rule is considered — the cron already matched it against
+      // the task's due date.
+      ...(event.ruleId ? { id: event.ruleId } : {}),
       ...(event.projectId
         ? { OR: [{ projectId: event.projectId }, { projectId: null }] }
         : { projectId: null }),
@@ -102,14 +109,14 @@ export async function processAutomationEvent(event: AutomationEvent): Promise<vo
 
   const task = await prisma.task.findUnique({
     where: { id: event.taskId },
-    select: { id: true, title: true, projectId: true },
+    select: { id: true, title: true, projectId: true, workspaceId: true, dueDate: true, status: true },
   });
   if (!task) return; // Task was deleted before the worker ran — nothing to do.
 
   let executions = 0;
   for (const rule of rules) {
     if (executions >= MAX_RULE_EXECUTIONS_PER_BURST) break;
-    if (!matchesTrigger(rule, event)) continue;
+    if (!matchesTrigger(rule, event, task)) continue;
     executions += 1;
 
     try {
@@ -127,11 +134,19 @@ export async function processAutomationEvent(event: AutomationEvent): Promise<vo
 
 // ─── Trigger matching ─────────────────────────────────────────────────────────
 
-function matchesTrigger(rule: AutomationRuleRecord, event: AutomationEvent): boolean {
+function matchesTrigger(
+  rule: AutomationRuleRecord,
+  event: AutomationEvent,
+  task: WorkerTask,
+): boolean {
   const config = (rule.triggerConfig ?? {}) as {
     fromStatus?: string | null;
     toStatus?: string | null;
     projectId?: string | null;
+    daysBefore?: number | null;
+    assigneeUserId?: string | null;
+    labelId?: string | null;
+    mentionedUserId?: string | null;
   };
 
   if (rule.triggerType === 'STATUS_CHANGED') {
@@ -142,6 +157,39 @@ function matchesTrigger(rule: AutomationRuleRecord, event: AutomationEvent): boo
 
   if (rule.triggerType === 'TASK_CREATED') {
     if (config.projectId && config.projectId !== event.projectId) return false;
+    return true;
+  }
+
+  if (rule.triggerType === 'DUE_DATE_APPROACHING') {
+    // The cron only enqueues tasks whose due date falls inside the window, but
+    // re-check here so a rule whose config changed after the scan still behaves
+    // predictably (and a rescheduled task never fires a stale event).
+    const daysBefore = config.daysBefore ?? 3;
+    if (!task.dueDate) return false;
+    const now = Date.now();
+    const due = task.dueDate.getTime();
+    if (due <= now) return false; // due date already passed
+    return due - now <= daysBefore * 24 * 60 * 60 * 1000;
+  }
+
+  if (rule.triggerType === 'ASSIGNEE_CHANGED') {
+    const added = event.addedAssigneeIds ?? [];
+    if (added.length === 0) return false;
+    if (config.assigneeUserId) return added.includes(config.assigneeUserId);
+    return true;
+  }
+
+  if (rule.triggerType === 'LABEL_ADDED') {
+    const added = event.addedLabelIds ?? [];
+    if (added.length === 0) return false;
+    if (config.labelId) return added.includes(config.labelId);
+    return true;
+  }
+
+  if (rule.triggerType === 'MENTION') {
+    const mentioned = event.mentionedUserIds ?? [];
+    if (mentioned.length === 0) return false;
+    if (config.mentionedUserId) return mentioned.includes(config.mentionedUserId);
     return true;
   }
 

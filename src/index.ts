@@ -53,7 +53,10 @@ import { errorHandler, notFoundHandler } from "./errors/errorHandler.js";
 import { adminResourceRouter, publicResourceRouter } from "./modules/resource/index.js";
 import { captureException } from "./lib/sentry.js";
 import apiKeyRouter from "./modules/apikey/apikey.routes.js";
-import { automationRouter } from "./modules/automation/index.js";
+import {
+  automationRouter,
+  initAutomationCrons,
+} from "./modules/automation/index.js";
 import { aiRouter } from "./modules/ai/index.js";
 import { timeEntryRouter } from "./modules/timeEntry/index.js";
 import { integrationRouter, workspaceIntegrationRouter, integrationWebhookRouter } from "./modules/integration/index.js";
@@ -143,6 +146,7 @@ initDailyTaskCrons();
 initWellnessCrons();
 initBurnoutSignalCron();
 initTaskRecurrenceCrons();
+initAutomationCrons();
 
 // Initialize queue workers
 initQueueWorkers().catch((err) => {

@@ -31,6 +31,7 @@ export const taskForActivitySelect = {
   },
   project: {
     select: {
+      id: true,
       workspaceId: true,
       workspace: true,
     },

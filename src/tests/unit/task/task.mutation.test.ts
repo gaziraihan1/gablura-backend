@@ -384,6 +384,7 @@ describe("TaskMutation", () => {
             createMany: vi.fn().mockResolvedValue({}),
           },
           taskLabel: {
+            findMany: vi.fn().mockResolvedValue([]),
             deleteMany: vi.fn().mockResolvedValue({}),
             createMany: vi.fn().mockResolvedValue({}),
           },
@@ -412,6 +413,7 @@ describe("TaskMutation", () => {
             createMany: vi.fn().mockResolvedValue({}),
           },
           taskLabel: {
+            findMany: vi.fn().mockResolvedValue([]),
             deleteMany: vi.fn().mockResolvedValue({}),
             createMany: vi.fn().mockResolvedValue({}),
           },

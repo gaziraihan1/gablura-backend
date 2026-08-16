@@ -5,7 +5,13 @@
  * trigger rules that run configured actions inside the automation worker.
  */
 
-export type AutomationTrigger = 'STATUS_CHANGED' | 'TASK_CREATED';
+export type AutomationTrigger =
+  | 'STATUS_CHANGED'
+  | 'TASK_CREATED'
+  | 'DUE_DATE_APPROACHING'
+  | 'ASSIGNEE_CHANGED'
+  | 'LABEL_ADDED'
+  | 'MENTION';
 
 export type AutomationActionType = 'ASSIGN_USER' | 'SET_PRIORITY' | 'NOTIFY_MEMBERS';
 
@@ -30,7 +36,33 @@ export interface TaskCreatedTriggerConfig {
   projectId?: string | null;
 }
 
-export type TriggerConfig = StatusChangedTriggerConfig | TaskCreatedTriggerConfig;
+export interface DueDateApproachingTriggerConfig {
+  /** Fire when a task's due date is within this many days from now. */
+  daysBefore?: number | null;
+}
+
+export interface AssigneeChangedTriggerConfig {
+  /** Optional filter — only fire when this specific user is assigned. */
+  assigneeUserId?: string | null;
+}
+
+export interface LabelAddedTriggerConfig {
+  /** Optional filter — only fire when this specific label is added. */
+  labelId?: string | null;
+}
+
+export interface MentionTriggerConfig {
+  /** Optional filter — only fire when this specific user is mentioned. */
+  mentionedUserId?: string | null;
+}
+
+export type TriggerConfig =
+  | StatusChangedTriggerConfig
+  | TaskCreatedTriggerConfig
+  | DueDateApproachingTriggerConfig
+  | AssigneeChangedTriggerConfig
+  | LabelAddedTriggerConfig
+  | MentionTriggerConfig;
 
 // ─── Action configs ───────────────────────────────────────────────────────────
 
@@ -103,4 +135,14 @@ export interface AutomationEvent {
   /** Loosely typed on purpose — the task module uses its own status strings. */
   fromStatus?: string | null;
   toStatus?: string | null;
+  /** ISO due date, set by the cron for DUE_DATE_APPROACHING events. */
+  dueDate?: string | null;
+  /** When present, the worker only executes this specific rule (cron-targeted events). */
+  ruleId?: string | null;
+  /** Assignees added by the mutation that produced this event. */
+  addedAssigneeIds?: string[];
+  /** Labels added by the mutation that produced this event. */
+  addedLabelIds?: string[];
+  /** Users mentioned in a comment that produced this event. */
+  mentionedUserIds?: string[];
 }

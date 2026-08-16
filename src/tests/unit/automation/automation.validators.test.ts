@@ -48,6 +48,103 @@ describe('createAutomationSchema', () => {
     if (result.success) expect(result.data.triggerConfig).toEqual({});
   });
 
+  it('accepts a DUE_DATE_APPROACHING rule with daysBefore', () => {
+    const result = createAutomationSchema.safeParse({
+      workspaceId: 'ws1',
+      name: 'Warn about upcoming due dates',
+      triggerType: 'DUE_DATE_APPROACHING',
+      triggerConfig: { daysBefore: 5 },
+      actions: baseActions,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.triggerConfig).toEqual({ daysBefore: 5 });
+  });
+
+  it('accepts a DUE_DATE_APPROACHING rule without a config (defaults)', () => {
+    const result = createAutomationSchema.safeParse({
+      workspaceId: 'ws1',
+      name: 'Default window',
+      triggerType: 'DUE_DATE_APPROACHING',
+      actions: baseActions,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects a DUE_DATE_APPROACHING rule with an out-of-range daysBefore', () => {
+    const result = createAutomationSchema.safeParse({
+      workspaceId: 'ws1',
+      name: 'Bad window',
+      triggerType: 'DUE_DATE_APPROACHING',
+      triggerConfig: { daysBefore: 0 },
+      actions: baseActions,
+    });
+    expect(result.success).toBe(false);
+
+    const tooLarge = createAutomationSchema.safeParse({
+      workspaceId: 'ws1',
+      name: 'Bad window',
+      triggerType: 'DUE_DATE_APPROACHING',
+      triggerConfig: { daysBefore: 999 },
+      actions: baseActions,
+    });
+    expect(tooLarge.success).toBe(false);
+  });
+
+  it('rejects a DUE_DATE_APPROACHING rule with an invalid daysBefore type', () => {
+    const result = createAutomationSchema.safeParse({
+      workspaceId: 'ws1',
+      name: 'Bad window',
+      triggerType: 'DUE_DATE_APPROACHING',
+      triggerConfig: { daysBefore: 'three' },
+      actions: baseActions,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts an ASSIGNEE_CHANGED rule with an optional user filter', () => {
+    const result = createAutomationSchema.safeParse({
+      workspaceId: 'ws1',
+      name: 'Assignee added',
+      triggerType: 'ASSIGNEE_CHANGED',
+      triggerConfig: { assigneeUserId: 'user-9' },
+      actions: baseActions,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.triggerConfig).toEqual({ assigneeUserId: 'user-9' });
+
+    const noFilter = createAutomationSchema.safeParse({
+      workspaceId: 'ws1',
+      name: 'Any assignee',
+      triggerType: 'ASSIGNEE_CHANGED',
+      actions: baseActions,
+    });
+    expect(noFilter.success).toBe(true);
+  });
+
+  it('accepts a LABEL_ADDED rule with an optional label filter', () => {
+    const result = createAutomationSchema.safeParse({
+      workspaceId: 'ws1',
+      name: 'Label added',
+      triggerType: 'LABEL_ADDED',
+      triggerConfig: { labelId: 'label-1' },
+      actions: baseActions,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.triggerConfig).toEqual({ labelId: 'label-1' });
+  });
+
+  it('accepts a MENTION rule with an optional user filter', () => {
+    const result = createAutomationSchema.safeParse({
+      workspaceId: 'ws1',
+      name: 'Mentioned',
+      triggerType: 'MENTION',
+      triggerConfig: { mentionedUserId: 'user-3' },
+      actions: baseActions,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.triggerConfig).toEqual({ mentionedUserId: 'user-3' });
+  });
+
   it('rejects a missing workspace', () => {
     const result = createAutomationSchema.safeParse({
       name: 'No workspace',
@@ -112,7 +209,7 @@ describe('createAutomationSchema', () => {
     const result = createAutomationSchema.safeParse({
       workspaceId: 'ws1',
       name: 'Bad trigger',
-      triggerType: 'DUE_DATE_APPROACHING',
+      triggerType: 'NOT_A_TRIGGER',
       actions: baseActions,
     });
     expect(result.success).toBe(false);
