@@ -29,4 +29,6 @@ export interface UpdateTimeEntryDto {
 export interface MyTimeEntriesFilters {
   from?: Date;
   to?: Date;
+  /** Optional member filter for the workspace time log (OWNER/ADMIN only). */
+  memberUserId?: string;
 }

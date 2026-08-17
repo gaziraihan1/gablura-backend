@@ -6,21 +6,31 @@ export const TimeEntryAccess = {
    * Throws unless the user is a member (or the owner) of the workspace.
    * Used to gate the workspace-scoped time log — every member can view
    * the workspace's time entries.
+   *
+   * Returns the requester's role: OWNER for the workspace owner, otherwise
+   * the member's stored role (ADMIN / MEMBER / GUEST). The role drives what
+   * the workspace time log shows (OWNER/ADMIN see everyone's entries,
+   * MEMBER/GUEST only their own).
    */
-  async assertWorkspaceMembership(workspaceId: string, userId: string) {
+  async assertWorkspaceMembership(
+    workspaceId: string,
+    userId: string,
+  ): Promise<'OWNER' | 'ADMIN' | 'MEMBER' | 'GUEST'> {
     const workspace = await prisma.workspace.findUnique({
       where: { id: workspaceId },
       select: {
         ownerId: true,
-        members: { where: { userId }, select: { id: true }, take: 1 },
+        members: { where: { userId }, select: { role: true }, take: 1 },
       },
     });
 
     if (!workspace) throw new NotFoundError('Workspace', 'WORKSPACE_NOT_FOUND');
-    if (workspace.ownerId === userId) return;
-    if (!workspace.members[0]) {
+    if (workspace.ownerId === userId) return 'OWNER';
+    const member = workspace.members[0];
+    if (!member) {
       throw new ForbiddenError('You are not a member of this workspace');
     }
+    return member.role;
   },
 
   /**

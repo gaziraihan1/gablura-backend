@@ -1,6 +1,6 @@
 
 import { Router } from 'express';
-import { rateLimitUserApi } from '../../middleware/apiRateLimiter.js';
+import { rateLimitCalendarApi } from '../../middleware/apiRateLimiter.js';
 import {
   getCalendarAggregates,
   getCalendarInsights,
@@ -25,8 +25,11 @@ import {
 
 const router = Router();
 
-// Per-user API rate limiting (tier-based by billing plan, fail-closed).
-router.use(rateLimitUserApi);
+// Per-user API rate limiting (tier-based by billing plan, fail-closed) in a
+// dedicated calendar bucket — the page's ~15–20 parallel requests on load
+// must not exhaust the shared per-user API bucket used by the rest of the
+// dashboard.
+router.use(rateLimitCalendarApi);
 
 router.get('/aggregates',    getCalendarAggregates);
 router.get('/insights',      getCalendarInsights);

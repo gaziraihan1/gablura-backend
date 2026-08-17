@@ -3,6 +3,7 @@ import {
   createAnnouncement,
   getAnnouncements,
   getAnnouncement,
+  updateAnnouncement,
   deleteAnnouncement,
   togglePinAnnouncement,
   getProjectAnnouncements,
@@ -20,5 +21,6 @@ projectAnnouncementRouter.get('/', getProjectAnnouncements);
 export const announcementRouter = Router();
 
 announcementRouter.get(   '/:id',     getAnnouncement);
+announcementRouter.patch( '/:id',     updateAnnouncement);
 announcementRouter.delete('/:id',     deleteAnnouncement);
 announcementRouter.patch( '/:id/pin', togglePinAnnouncement);

@@ -6,6 +6,7 @@ import {
 } from './announcement.utils.js';
 import type {
   CreateAnnouncementInput,
+  UpdateAnnouncementInput,
   AnnouncementFilterParams,
 } from './announcement.types.js';
 import { WorkspaceRole } from '../workspace/workspace.types.js';
@@ -128,6 +129,66 @@ export const AnnouncementService = {
     }
 
     return announcement;
+  },
+
+  async update(id: string, userId: string, input: UpdateAnnouncementInput) {
+    const announcement = await AnnouncementRepository.findById(id);
+    if (!announcement) throw new NotFoundError('Announcement');
+
+    const member = await AnnouncementRepository.isWorkspaceMember(
+      announcement.workspaceSlug,
+      userId,
+    );
+    if (!member) throw new ForbiddenError('Not a workspace member');
+
+    const workspaceRole = member.role as WorkspaceRole;
+
+    if (announcement.projectId) {
+      const projectMember = await AnnouncementRepository.isProjectMember(
+        announcement.projectId,
+        userId,
+      );
+      if (!canManageProjectAnnouncements(workspaceRole, projectMember?.role ?? null)) {
+        throw new ForbiddenError('Not allowed to update project announcements');
+      }
+    } else {
+      if (!canManageAnnouncements(workspaceRole)) {
+        throw new ForbiddenError('Only admins and owners can update announcements');
+      }
+    }
+
+    const visibility = input.visibility ?? announcement.visibility;
+
+    if (visibility === 'PRIVATE') {
+      const targetIds = input.targetIds ??
+        announcement.targets.map((t) => t.userId);
+
+      if (targetIds.length === 0) {
+        throw new BadRequestError('Private announcements must have targets');
+      }
+
+      const checks = await Promise.all(
+        targetIds.map((uid) =>
+          AnnouncementRepository.isWorkspaceMember(announcement.workspaceSlug, uid),
+        ),
+      );
+      const invalid = targetIds.filter((_, i) => !checks[i]);
+      if (invalid.length) {
+        throw new BadRequestError('Some target users are not workspace members');
+      }
+    }
+
+    // When visibility is changing, sync the recipients: switching to PUBLIC
+    // clears targets; otherwise keep existing unless new ones were provided.
+    const repoInput: UpdateAnnouncementInput = { ...input };
+    if (input.visibility) {
+      repoInput.targetIds =
+        input.visibility === 'PUBLIC'
+          ? []
+          : (input.targetIds ?? announcement.targets.map((t) => t.userId));
+    }
+
+    return AnnouncementRepository.update(id, repoInput);
   },
 
   async delete(id: string, userId: string, onDeleted?: OnAnnouncementDeleted) {

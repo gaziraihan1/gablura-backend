@@ -171,4 +171,71 @@ describe("AnnouncementService", () => {
       await expect(AnnouncementService.togglePin("ann-1", mockUser)).rejects.toThrow(ForbiddenError);
     });
   });
+
+  describe("update", () => {
+    it("should throw NotFoundError if announcement missing", async () => {
+      vi.mocked(AnnouncementRepository.findById).mockResolvedValue(null);
+      await expect(AnnouncementService.update("ann-1", mockUser, { title: "X" })).rejects.toThrow(NotFoundError);
+    });
+
+    it("should throw ForbiddenError if user is not a workspace member", async () => {
+      vi.mocked(AnnouncementRepository.findById).mockResolvedValue({ id: "ann-1", workspaceSlug: mockWsSlug } as any);
+      vi.mocked(AnnouncementRepository.isWorkspaceMember).mockResolvedValue(null);
+      await expect(AnnouncementService.update("ann-1", mockUser, { title: "X" })).rejects.toThrow(ForbiddenError);
+    });
+
+    it("should throw ForbiddenError if non-admin tries to update workspace announcement", async () => {
+      vi.mocked(AnnouncementRepository.findById).mockResolvedValue({ id: "ann-1", workspaceSlug: mockWsSlug, projectId: null } as any);
+      vi.mocked(AnnouncementRepository.isWorkspaceMember).mockResolvedValue({ role: WorkspaceRole.MEMBER } as any);
+      await expect(AnnouncementService.update("ann-1", mockUser, { title: "X" })).rejects.toThrow(ForbiddenError);
+    });
+
+    it("should allow OWNER to update", async () => {
+      vi.mocked(AnnouncementRepository.findById).mockResolvedValue({
+        id: "ann-1", workspaceSlug: mockWsSlug, projectId: null,
+        visibility: "PUBLIC", targets: [],
+      } as any);
+      vi.mocked(AnnouncementRepository.isWorkspaceMember).mockResolvedValue({ role: WorkspaceRole.OWNER } as any);
+      vi.mocked(AnnouncementRepository.update).mockResolvedValue({ id: "ann-1", title: "Updated" } as any);
+
+      const result = await AnnouncementService.update("ann-1", mockUser, { title: "Updated" });
+      expect(result.title).toBe("Updated");
+      expect(AnnouncementRepository.update).toHaveBeenCalledWith("ann-1", { title: "Updated" });
+    });
+
+    it("should throw BadRequestError if private announcement has no targets", async () => {
+      vi.mocked(AnnouncementRepository.findById).mockResolvedValue({
+        id: "ann-1", workspaceSlug: mockWsSlug, projectId: null,
+        visibility: "PRIVATE", targets: [],
+      } as any);
+      vi.mocked(AnnouncementRepository.isWorkspaceMember).mockResolvedValue({ role: WorkspaceRole.OWNER } as any);
+      await expect(AnnouncementService.update("ann-1", mockUser, { visibility: "PRIVATE" })).rejects.toThrow(BadRequestError);
+    });
+
+    it("should clear targets when switching to PUBLIC", async () => {
+      vi.mocked(AnnouncementRepository.findById).mockResolvedValue({
+        id: "ann-1", workspaceSlug: mockWsSlug, projectId: null,
+        visibility: "PRIVATE", targets: [{ userId: "u2" }],
+      } as any);
+      vi.mocked(AnnouncementRepository.isWorkspaceMember).mockResolvedValue({ role: WorkspaceRole.OWNER } as any);
+      vi.mocked(AnnouncementRepository.update).mockResolvedValue({ id: "ann-1", visibility: "PUBLIC" } as any);
+
+      await AnnouncementService.update("ann-1", mockUser, { visibility: "PUBLIC" });
+      expect(AnnouncementRepository.update).toHaveBeenCalledWith("ann-1", { visibility: "PUBLIC", targetIds: [] });
+    });
+
+    it("should pass through targetIds when provided for a private announcement", async () => {
+      vi.mocked(AnnouncementRepository.findById).mockResolvedValue({
+        id: "ann-1", workspaceSlug: mockWsSlug, projectId: null,
+        visibility: "PRIVATE", targets: [{ userId: "u2" }],
+      } as any);
+      vi.mocked(AnnouncementRepository.isWorkspaceMember)
+        .mockResolvedValueOnce({ role: WorkspaceRole.OWNER } as any) // updater
+        .mockResolvedValueOnce({ role: WorkspaceRole.MEMBER } as any); // target u3
+      vi.mocked(AnnouncementRepository.update).mockResolvedValue({ id: "ann-1" } as any);
+
+      await AnnouncementService.update("ann-1", mockUser, { visibility: "PRIVATE", targetIds: ["u3"] });
+      expect(AnnouncementRepository.update).toHaveBeenCalledWith("ann-1", { visibility: "PRIVATE", targetIds: ["u3"] });
+    });
+  });
 });

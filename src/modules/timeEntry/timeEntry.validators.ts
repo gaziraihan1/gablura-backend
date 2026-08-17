@@ -63,6 +63,9 @@ export const updateTimeEntrySchema = z
 export const myTimeEntriesQuerySchema = z.object({
   from: startedAtSchema,
   to:   startedAtSchema,
+  // Optional member filter for the workspace time log. Only meaningful for
+  // OWNER/ADMIN — the query layer ignores it for regular members.
+  memberUserId: z.string().optional(),
 });
 
 // ─── Inferred types ───────────────────────────────────────────────────────────

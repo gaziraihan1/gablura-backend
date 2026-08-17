@@ -1,22 +1,28 @@
 import type { NextFunction, Response } from "express";
 import type { AuthRequest } from "./auth.js";
-import type { ApiTier } from "../lib/limiter.js";
+import type { ApiTier, RateLimitResult } from "../lib/limiter.js";
 
 /**
  * Per-user API rate limiting for the core CRUD routes (tasks, projects,
- * workspaces, comments, focus sessions).
+ * workspaces, comments, focus sessions, calendar).
  *
- * `rateLimitByUser(tier)` accepts either a static tier or a resolver function
- * that returns the tier for the request (used to honor the user's billing
- * plan). Buckets are keyed off the authenticated user id — one sliding window
- * per user shared across every route the middleware guards, so rotating IPs
- * never bypass the limit and one user's traffic never consumes another's.
+ * `rateLimitByUser(tier, limitFn)` accepts either a static tier or a resolver
+ * function that returns the tier for the request (used to honor the user's
+ * billing plan). Buckets are keyed off the authenticated user id — one sliding
+ * window per user shared across every route the middleware guards, so rotating
+ * IPs never bypass the limit and one user's traffic never consumes another's.
+ *
+ * `limitFn` swaps which bucket/limits are enforced. The default is
+ * `limitApiRequest` (shared `user:{id}` bucket). Calendar routes pass
+ * `limitCalendarRequest` so their bursty page load lives in its own
+ * `user:{id}:calendar` bucket with higher limits.
  *
  * Fail-closed: if the limiter cannot be verified (Redis down), the request is
  * rejected with 429 rather than let abuse through unchecked.
  */
 export const rateLimitByUser = (
   tier?: ApiTier | ((req: AuthRequest) => Promise<ApiTier> | ApiTier),
+  limitFn?: (userId: string, tier: ApiTier) => Promise<RateLimitResult>,
 ) => {
   return async (req: AuthRequest, res: Response, next: NextFunction) => {
     if (!req.user?.id) return next();
@@ -24,7 +30,8 @@ export const rateLimitByUser = (
     try {
       const { limitApiRequest } = await import("../lib/limiter.js");
       const resolvedTier = typeof tier === "function" ? await tier(req) : tier;
-      const result = await limitApiRequest(req.user.id, resolvedTier || "free");
+      const limiter = limitFn ?? limitApiRequest;
+      const result = await limiter(req.user.id, resolvedTier || "free");
 
       res.setHeader("X-RateLimit-Limit", result.limit ?? 60);
       res.setHeader("X-RateLimit-Remaining", result.remaining ?? 0);
@@ -55,3 +62,23 @@ export const rateLimitUserApi = rateLimitByUser(async (req: AuthRequest) => {
   const { resolveUserApiTier } = await import("../lib/limiter.js");
   return resolveUserApiTier(req.user!.id);
 });
+
+/**
+ * Ready-to-mount limiter for the calendar routes. Same tier resolution as
+ * `rateLimitUserApi`, but enforces a separate per-user bucket
+ * (`user:{id}:calendar`) with higher limits (FREE → 120/min, PRO → 600/min,
+ * BUSINESS / ENTERPRISE → 2000/min). The calendar page fires ~15–20 parallel
+ * requests on load, so it gets its own bucket — otherwise its burst would
+ * exhaust the shared per-user API limit and trigger "Rate limit exceeded" on
+ * the calendar page itself.
+ */
+export const rateLimitCalendarApi = rateLimitByUser(
+  async (req: AuthRequest) => {
+    const { resolveUserApiTier } = await import("../lib/limiter.js");
+    return resolveUserApiTier(req.user!.id);
+  },
+  async (userId: string, tier: ApiTier) => {
+    const { limitCalendarRequest } = await import("../lib/limiter.js");
+    return limitCalendarRequest(userId, tier);
+  },
+);

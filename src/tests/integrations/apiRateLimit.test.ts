@@ -5,10 +5,12 @@ import request from "supertest";
 // buckets. rateLimitUserApi lazy-imports ../lib/limiter.js at request time,
 // so these mocks are picked up by the app under test.
 const mockLimitApiRequest = vi.hoisted(() => vi.fn());
+const mockLimitCalendarRequest = vi.hoisted(() => vi.fn());
 const mockResolveUserApiTier = vi.hoisted(() => vi.fn());
 
 vi.mock("../../lib/limiter.js", () => ({
   limitApiRequest: (...args: any[]) => mockLimitApiRequest(...args),
+  limitCalendarRequest: (...args: any[]) => mockLimitCalendarRequest(...args),
   resolveUserApiTier: (...args: any[]) => mockResolveUserApiTier(...args),
 }));
 
@@ -19,6 +21,7 @@ import { authHeaders, authWithCsrfHeaders } from "../helpers/auth.js";
 describe("rateLimitUserApi on core CRUD routes", () => {
   beforeEach(() => {
     mockLimitApiRequest.mockReset();
+    mockLimitCalendarRequest.mockReset();
     mockResolveUserApiTier.mockReset();
     mockResolveUserApiTier.mockResolvedValue("pro");
   });
@@ -37,13 +40,15 @@ describe("rateLimitUserApi on core CRUD routes", () => {
     // controller, so no fixtures are needed — comments/subtasks are covered
     // via the task router (they are only mounted nested under /api/v1/tasks).
     // Only the upload route is state-changing, so it needs CSRF headers.
+    // Calendar routes use their own bucket (limitCalendarRequest) and are
+    // covered by a dedicated test below — they must NOT count against the
+    // shared per-user bucket asserted here.
     const routes = [
       { method: "get", path: "/api/v1/tasks" },
       { method: "get", path: "/api/v1/tasks/task-1/comments" },
       { method: "get", path: "/api/v1/projects/user/all" },
       { method: "get", path: "/api/v1/workspaces" },
       { method: "get", path: "/api/v1/focus-sessions/active" },
-      { method: "get", path: "/api/v1/calendar/aggregates" },
       { method: "get", path: "/api/v1/analytics/ws-1/overview" },
       { method: "get", path: "/api/v1/meetings/ws-1/meetings" },
       { method: "get", path: "/api/v1/labels" },
@@ -84,5 +89,49 @@ describe("rateLimitUserApi on core CRUD routes", () => {
     expect(mockResolveUserApiTier).toHaveBeenCalledWith(user.id);
     expect(mockLimitApiRequest).toHaveBeenCalledWith(user.id, "pro");
     expect(res.headers["x-ratelimit-limit"]).toBe("300");
+  });
+
+  it("rejects calendar routes from their own bucket with a 429 when exceeded", async () => {
+    const user = await createUser();
+    const headers = authHeaders(user);
+
+    mockLimitCalendarRequest.mockResolvedValue({
+      success: false,
+      limit: 600,
+      remaining: 0,
+      reset: Date.now() + 60_000,
+    });
+
+    const res = await request(app)
+      .get("/api/v1/calendar/aggregates?startDate=2025-01-01&endDate=2025-01-31")
+      .set(headers);
+
+    expect(res.status).toBe(429);
+    expect(res.body.success).toBe(false);
+    expect(res.body.code).toBe("RATE_LIMIT_EXCEEDED");
+    expect(res.headers["x-ratelimit-limit"]).toBe("600");
+    expect(mockLimitCalendarRequest).toHaveBeenCalledWith(user.id, "pro");
+    // The shared bucket must never be touched by calendar traffic.
+    expect(mockLimitApiRequest).not.toHaveBeenCalled();
+  });
+
+  it("passes calendar requests through under the calendar bucket limit", async () => {
+    const user = await createUser();
+    const headers = authHeaders(user);
+
+    mockLimitCalendarRequest.mockResolvedValue({
+      success: true,
+      limit: 600,
+      remaining: 599,
+      reset: Date.now() + 60_000,
+    });
+
+    const res = await request(app)
+      .get("/api/v1/calendar/aggregates?startDate=2025-01-01&endDate=2025-01-31")
+      .set(headers);
+
+    expect(res.status).toBe(200);
+    expect(res.headers["x-ratelimit-limit"]).toBe("600");
+    expect(mockLimitCalendarRequest).toHaveBeenCalledWith(user.id, "pro");
   });
 });

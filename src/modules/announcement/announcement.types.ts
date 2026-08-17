@@ -16,9 +16,11 @@ export interface CreateAnnouncementInput {
 }
 
 export interface UpdateAnnouncementInput {
-  title?:      string;
-  content?:    string;
-  isPinned?:   boolean;
+  title?:       string;
+  content?:     string;
+  visibility?:  AnnouncementVisibility;
+  isPinned?:    boolean;
+  targetIds?:   string[];   // userIds for PRIVATE visibility (replaces existing targets when provided)
 }
 
 export interface AnnouncementFilterParams {

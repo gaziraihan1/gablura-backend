@@ -9,6 +9,7 @@ import {
 import { asyncHandler, ValidationError } from "../../errors/index.js";
 import {
   createAnnouncementSchema,
+  updateAnnouncementSchema,
   listAnnouncementsSchema,
 } from "./announcement.validation.js";
 
@@ -143,6 +144,42 @@ export const getProjectAnnouncements = asyncHandler(
     });
 
     res.json({ success: true, ...result });
+  },
+);
+
+export const updateAnnouncement = asyncHandler(
+  async (req: AuthRequest, res: Response) => {
+    const parsed = updateAnnouncementSchema.safeParse(req.body);
+    if (!parsed.success)
+      throw new ValidationError("Validation error", parsed.error.issues);
+
+    const announcement = await AnnouncementService.update(
+      req.params.id,
+      req.user!.id,
+      parsed.data,
+    );
+
+    try {
+      await prisma.activity.create({
+        data: {
+          action: "UPDATED",
+          entityType: "ANNOUNCEMENT",
+          entityId: announcement.id,
+          user: { connect: { id: req.user!.id } },
+          workspace: { connect: { slug: announcement.workspaceSlug } },
+          workspaceSlug: announcement.workspaceSlug,
+          metadata: { announcementTitle: announcement.title },
+        },
+      });
+    } catch (e) {
+      console.error("Failed to log announcement update:", e);
+    }
+
+    res.json({
+      success: true,
+      message: "Announcement updated",
+      data: announcement,
+    });
   },
 );
 

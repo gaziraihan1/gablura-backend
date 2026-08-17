@@ -100,6 +100,32 @@ describe("ProjectMutation", () => {
       const updateCall = (prisma.project.update as any).mock.calls[0][0];
       expect(updateCall.data.completedAt).toBeDefined();
     });
+
+    it("awaits cache invalidation so a follow-up list read never sees stale data", async () => {
+      const { ProjectAccess } = await import("../../../modules/project/project.access.js");
+      const { ProjectCache } = await import("../../../lib/redis/cache.client.js");
+      (ProjectAccess.assertProjectAdminAccess as any).mockResolvedValue({ id: "p1" });
+      (prisma.project.findUnique as any).mockResolvedValue({ workspaceId: "ws1", workspace: { slug: "ws" }, slug: "p1" });
+      (prisma.project.update as any).mockResolvedValue({ id: "p1", status: "ARCHIVED" });
+
+      // Resolve the invalidation only after we observe it started — if the
+      // mutation returned before awaiting, this promise would still be pending.
+      let releaseInvalidation: () => void = () => {};
+      const gate = new Promise<void>((resolve) => { releaseInvalidation = resolve; });
+      (ProjectCache.invalidateWorkspaceProjects as any).mockReturnValueOnce(gate);
+
+      let resolved = false;
+      const mutation = ProjectMutation.updateProject("u1", "p1", { status: "ARCHIVED" as any })
+        .then(() => { resolved = true; });
+
+      // Give the mutation a beat to reach the invalidation step.
+      await new Promise((r) => setTimeout(r, 10));
+      expect(resolved).toBe(false);
+
+      releaseInvalidation();
+      await mutation;
+      expect(resolved).toBe(true);
+    });
   });
 
   describe("deleteProject", () => {

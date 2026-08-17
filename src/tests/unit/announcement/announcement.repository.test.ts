@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { prisma } from '../../../lib/prisma.js';
 
-vi.mock('../../../lib/prisma.js', () => ({
-  prisma: {
+vi.mock('../../../lib/prisma.js', () => {
+  const prisma = {
     announcement: {
       create: vi.fn(),
       findUnique: vi.fn(),
@@ -11,11 +11,18 @@ vi.mock('../../../lib/prisma.js', () => ({
       update: vi.fn(),
       delete: vi.fn(),
     },
+    announcementTarget: { deleteMany: vi.fn() },
     workspaceMember: { findFirst: vi.fn() },
     workspace: { findUnique: vi.fn() },
     projectMember: { findFirst: vi.fn() },
-  },
-}));
+  };
+  return {
+    prisma: {
+      ...prisma,
+      $transaction: vi.fn((cb: any) => cb(prisma)),
+    },
+  };
+});
 
 import { AnnouncementRepository } from '../../../modules/announcement/announcement.repository.js';
 
@@ -132,6 +139,39 @@ describe('AnnouncementRepository', () => {
 
       const result = await AnnouncementRepository.update('a1', { title: 'Updated' });
       expect(result.title).toBe('Updated');
+    });
+
+    it('should replace targets atomically when targetIds provided', async () => {
+      vi.mocked(prisma.announcementTarget.deleteMany).mockResolvedValue({ count: 1 } as any);
+      vi.mocked(prisma.announcement.update).mockResolvedValue({
+        ...mockAnnouncement,
+        visibility: 'PRIVATE',
+        targets: [{ userId: 'u2', user: { id: 'u2', name: 'Bob', image: null } }],
+      } as any);
+
+      const result = await AnnouncementRepository.update('a1', {
+        visibility: 'PRIVATE',
+        targetIds: ['u2'],
+      });
+
+      expect(prisma.announcementTarget.deleteMany).toHaveBeenCalledWith({
+        where: { announcementId: 'a1' },
+      });
+      const call = vi.mocked(prisma.announcement.update).mock
+        .calls[0]?.[0] as Record<string, any> | undefined;
+      expect(call?.data?.targets?.create).toEqual([{ userId: 'u2' }]);
+      expect(result.targets).toHaveLength(1);
+    });
+
+    it('should skip target replacement when targetIds not provided', async () => {
+      vi.mocked(prisma.announcement.update).mockResolvedValue({
+        ...mockAnnouncement,
+        isPinned: true,
+      } as any);
+
+      await AnnouncementRepository.update('a1', { isPinned: true });
+
+      expect(prisma.announcementTarget.deleteMany).not.toHaveBeenCalled();
     });
   });
 

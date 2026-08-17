@@ -83,22 +83,32 @@ export const TimeEntryQuery = {
   },
 
   /**
-   * Every entry on tasks in a workspace that the requesting user can access.
-   * The workspace membership gate runs first; then the task-access OR rule
-   * keeps the list limited to tasks the user could log time on.
+   * Entries on tasks in a workspace that the requesting user can access.
+   * Role-scoped: OWNER/ADMIN see every member's entries (optionally filtered
+   * to one member via `memberUserId`); MEMBER/GUEST see only their own and
+   * any `memberUserId` filter is ignored. The workspace membership gate runs
+   * first; then the task-access OR rule keeps the list limited to tasks the
+   * user could log time on.
    */
   async getWorkspaceEntries(
     workspaceId: string,
     userId: string,
     filters: MyTimeEntriesFilters = {},
   ) {
-    await TimeEntryAccess.assertWorkspaceMembership(workspaceId, userId);
+    const role = await TimeEntryAccess.assertWorkspaceMembership(workspaceId, userId);
+    const isPrivileged = role === 'OWNER' || role === 'ADMIN';
 
-    const { from, to } = filters;
+    const { from, to, memberUserId } = filters;
+
+    // OWNER/ADMIN: everyone (or one member when filtered). MEMBER/GUEST:
+    // always their own entries — a member-supplied memberUserId is ignored
+    // so a regular user can never peek at another member's time log.
+    const scopedUserId = isPrivileged ? memberUserId : userId;
 
     return prisma.timeEntry.findMany({
       where: {
         task: buildAccessibleWorkspaceTasksWhere(workspaceId, userId),
+        ...(scopedUserId ? { userId: scopedUserId } : {}),
         startedAt: {
           ...(from ? { gte: from } : {}),
           ...(to ? { lte: to } : {}),

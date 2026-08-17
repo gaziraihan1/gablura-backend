@@ -10,9 +10,11 @@ export const createAnnouncementSchema = z.object({
 });
 
 export const updateAnnouncementSchema = z.object({
-  title:    z.string().min(1).max(200).optional(),
-  content:  z.string().min(1).max(10000).optional(),
-  isPinned: z.boolean().optional(),
+  title:      z.string().min(1, 'Title is required').max(200).optional(),
+  content:    z.string().min(1, 'Content is required').max(10000).optional(),
+  visibility: z.enum(['PUBLIC', 'PRIVATE']).optional(),
+  isPinned:   z.boolean().optional(),
+  targetIds:  z.array(z.string()).optional(),
 });
 
 export const listAnnouncementsSchema = z.object({

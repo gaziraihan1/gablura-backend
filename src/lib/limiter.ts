@@ -9,6 +9,14 @@ export interface RateLimitResult {
 
 const USER_TIER_LIMITS = { free: 60, pro: 300, enterprise: 1000 } as const;
 
+// Calendar routes are intentionally bursty: a single calendar page load fans
+// out to ~15–20 parallel requests (aggregates across 4 date ranges, insights,
+// goals, system events, capacity, schedule, energy, burnout trends, ...).
+// They get their own per-user bucket with higher limits so the page's burst
+// never starves the rest of the dashboard (tasks, projects, workspaces, ...)
+// which share the shared `user:{id}` bucket above.
+const USER_TIER_CALENDAR_LIMITS = { free: 120, pro: 600, enterprise: 2000 } as const;
+
 export type ApiTier = keyof typeof USER_TIER_LIMITS;
 
 // Billing plan → API rate-limit tier. BUSINESS and ENTERPRISE share the top
@@ -113,4 +121,19 @@ export async function limitApiRequest(
   userTier: ApiTier = "free",
 ): Promise<RateLimitResult> {
   return limiterInstance.limit(`user:${userId}`, USER_TIER_LIMITS[userTier]);
+}
+
+/**
+ * Calendar-scoped per-user limiter. Uses a separate sliding-window bucket
+ * (`user:{id}:calendar`) so the calendar page's request burst never consumes
+ * the shared per-user API bucket used by the rest of the dashboard.
+ */
+export async function limitCalendarRequest(
+  userId: string,
+  userTier: ApiTier = "free",
+): Promise<RateLimitResult> {
+  return limiterInstance.limit(
+    `user:${userId}:calendar`,
+    USER_TIER_CALENDAR_LIMITS[userTier],
+  );
 }

@@ -8,6 +8,7 @@ vi.mock("../../../modules/billing/billing.service.js", () => ({
 
 import {
   limitApiRequest,
+  limitCalendarRequest,
   resolveUserApiTier,
 } from "../../../lib/limiter.js";
 import { BillingService } from "../../../modules/billing/billing.service.js";
@@ -46,6 +47,48 @@ describe("limitApiRequest", () => {
     const result = await limitApiRequest(limitUser, "free");
     expect(result.success).toBe(false);
     expect(result.remaining).toBe(0);
+  });
+
+  it("uses a separate calendar bucket with higher limits", async () => {
+    const calendarUser = "cal-user";
+
+    // The calendar bucket starts fresh — it must not inherit the shared
+    // bucket's usage for the same user.
+    const freeResult = await limitCalendarRequest(calendarUser, "free");
+    expect(freeResult.success).toBe(true);
+    expect(freeResult.limit).toBe(120);
+
+    const proResult = await limitCalendarRequest("cal-pro", "pro");
+    expect(proResult.limit).toBe(600);
+
+    const entResult = await limitCalendarRequest("cal-ent", "enterprise");
+    expect(entResult.limit).toBe(2000);
+  });
+
+  it("denies calendar requests once the calendar bucket is exhausted", async () => {
+    const calendarUser = "cal-limit";
+    const limit = 120;
+
+    for (let i = 0; i < limit; i++) {
+      await limitCalendarRequest(calendarUser, "free");
+    }
+
+    const result = await limitCalendarRequest(calendarUser, "free");
+    expect(result.success).toBe(false);
+    expect(result.remaining).toBe(0);
+  });
+
+  it("keeps the calendar bucket independent from the shared API bucket", async () => {
+    const sharedUser = "cal-independent";
+
+    // Exhaust the calendar bucket for this user.
+    for (let i = 0; i < 120; i++) {
+      await limitCalendarRequest(sharedUser, "free");
+    }
+
+    // The shared API bucket for the same user must be unaffected.
+    const result = await limitApiRequest(sharedUser, "free");
+    expect(result.success).toBe(true);
   });
 });
 

@@ -208,15 +208,19 @@ describe("GET /api/v1/time-entries/my — own entries", () => {
 });
 
 describe("GET /api/v1/time-entries/workspace/:workspaceId — workspace time log", () => {
-  it("200 — member sees entries on accessible tasks in the workspace", async () => {
+  it("200 — member sees only their own entries on accessible tasks", async () => {
     const { user, workspace } = await createWorkspaceWithOwner();
     const member = await createUser();
+    const otherMember = await createUser();
     await addMemberToWorkspace(member.id, workspace.id, WorkspaceRole.MEMBER);
+    await addMemberToWorkspace(otherMember.id, workspace.id, WorkspaceRole.MEMBER);
     const project = await createProject(workspace.id, user.id);
     const task = await createTask(workspace.id, user.id, { projectId: project.id });
     await assignUserToTask(task.id, member.id);
 
+    // Both members logged time on the same task the requesting member can access.
     await prisma.timeEntry.create({ data: { taskId: task.id, userId: member.id, duration: 30, startedAt: new Date() } });
+    await prisma.timeEntry.create({ data: { taskId: task.id, userId: otherMember.id, duration: 45, startedAt: new Date() } });
     const headers = authHeaders(member);
 
     const res = await request(app)
@@ -224,6 +228,7 @@ describe("GET /api/v1/time-entries/workspace/:workspaceId — workspace time log
       .set(headers);
 
     expect(res.status).toBe(200);
+    // A normal member only sees their own time log, not other members'.
     expect(res.body.data).toHaveLength(1);
     expect(res.body.data[0].userId).toBe(member.id);
     expect(res.body.data[0].task.title).toBe(task.title);
@@ -246,6 +251,144 @@ describe("GET /api/v1/time-entries/workspace/:workspaceId — workspace time log
 
     expect(res.status).toBe(200);
     expect(res.body.data).toHaveLength(0);
+  });
+
+  it("200 — admin sees every member's entries in the workspace", async () => {
+    const { user, workspace } = await createWorkspaceWithOwner();
+    const admin = await createUser();
+    const member = await createUser();
+    await addMemberToWorkspace(admin.id, workspace.id, WorkspaceRole.ADMIN);
+    await addMemberToWorkspace(member.id, workspace.id, WorkspaceRole.MEMBER);
+    const task = await createTask(workspace.id, user.id);
+    await assignUserToTask(task.id, member.id);
+
+    await prisma.timeEntry.create({ data: { taskId: task.id, userId: member.id, duration: 30, startedAt: new Date() } });
+    await prisma.timeEntry.create({ data: { taskId: task.id, userId: admin.id, duration: 15, startedAt: new Date() } });
+    const headers = authHeaders(admin);
+
+    const res = await request(app)
+      .get(`/api/v1/time-entries/workspace/${workspace.id}`)
+      .set(headers);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toHaveLength(2);
+    const userIds = res.body.data.map((e: { userId: string }) => e.userId);
+    expect(userIds).toContain(member.id);
+    expect(userIds).toContain(admin.id);
+  });
+
+  it("200 — owner sees every member's entries in the workspace", async () => {
+    const { user, workspace } = await createWorkspaceWithOwner();
+    const member = await createUser();
+    await addMemberToWorkspace(member.id, workspace.id, WorkspaceRole.MEMBER);
+    const task = await createTask(workspace.id, user.id);
+    await assignUserToTask(task.id, member.id);
+
+    await prisma.timeEntry.create({ data: { taskId: task.id, userId: member.id, duration: 30, startedAt: new Date() } });
+    await prisma.timeEntry.create({ data: { taskId: task.id, userId: user.id, duration: 60, startedAt: new Date() } });
+    const headers = authHeaders(user);
+
+    const res = await request(app)
+      .get(`/api/v1/time-entries/workspace/${workspace.id}`)
+      .set(headers);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toHaveLength(2);
+    const userIds = res.body.data.map((e: { userId: string }) => e.userId);
+    expect(userIds).toContain(member.id);
+    expect(userIds).toContain(user.id);
+  });
+
+  it("200 — guest sees only their own entries", async () => {
+    const { user, workspace } = await createWorkspaceWithOwner();
+    const guest = await createUser();
+    await addMemberToWorkspace(guest.id, workspace.id, WorkspaceRole.GUEST);
+    const task = await createTask(workspace.id, user.id);
+    await assignUserToTask(task.id, guest.id);
+
+    await prisma.timeEntry.create({ data: { taskId: task.id, userId: guest.id, duration: 20, startedAt: new Date() } });
+    await prisma.timeEntry.create({ data: { taskId: task.id, userId: user.id, duration: 90, startedAt: new Date() } });
+    const headers = authHeaders(guest);
+
+    const res = await request(app)
+      .get(`/api/v1/time-entries/workspace/${workspace.id}`)
+      .set(headers);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toHaveLength(1);
+    expect(res.body.data[0].userId).toBe(guest.id);
+  });
+
+  it("200 — admin filters the workspace time log to one member", async () => {
+    const { user, workspace } = await createWorkspaceWithOwner();
+    const admin = await createUser();
+    const memberA = await createUser();
+    const memberB = await createUser();
+    await addMemberToWorkspace(admin.id, workspace.id, WorkspaceRole.ADMIN);
+    await addMemberToWorkspace(memberA.id, workspace.id, WorkspaceRole.MEMBER);
+    await addMemberToWorkspace(memberB.id, workspace.id, WorkspaceRole.MEMBER);
+    const task = await createTask(workspace.id, user.id);
+    await assignUserToTask(task.id, memberA.id);
+    await assignUserToTask(task.id, memberB.id);
+
+    await prisma.timeEntry.create({ data: { taskId: task.id, userId: memberA.id, duration: 30, startedAt: new Date() } });
+    await prisma.timeEntry.create({ data: { taskId: task.id, userId: memberB.id, duration: 45, startedAt: new Date() } });
+    const headers = authHeaders(admin);
+
+    const res = await request(app)
+      .get(`/api/v1/time-entries/workspace/${workspace.id}?memberUserId=${memberA.id}`)
+      .set(headers);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toHaveLength(1);
+    expect(res.body.data[0].userId).toBe(memberA.id);
+  });
+
+  it("200 — owner filters the workspace time log to one member", async () => {
+    const { user, workspace } = await createWorkspaceWithOwner();
+    const memberA = await createUser();
+    const memberB = await createUser();
+    await addMemberToWorkspace(memberA.id, workspace.id, WorkspaceRole.MEMBER);
+    await addMemberToWorkspace(memberB.id, workspace.id, WorkspaceRole.MEMBER);
+    const task = await createTask(workspace.id, user.id);
+    await assignUserToTask(task.id, memberA.id);
+    await assignUserToTask(task.id, memberB.id);
+
+    await prisma.timeEntry.create({ data: { taskId: task.id, userId: memberA.id, duration: 30, startedAt: new Date() } });
+    await prisma.timeEntry.create({ data: { taskId: task.id, userId: memberB.id, duration: 45, startedAt: new Date() } });
+    const headers = authHeaders(user);
+
+    const res = await request(app)
+      .get(`/api/v1/time-entries/workspace/${workspace.id}?memberUserId=${memberB.id}`)
+      .set(headers);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toHaveLength(1);
+    expect(res.body.data[0].userId).toBe(memberB.id);
+  });
+
+  it("200 — a member-supplied memberUserId is ignored (only their own entries)", async () => {
+    const { user, workspace } = await createWorkspaceWithOwner();
+    const member = await createUser();
+    const otherMember = await createUser();
+    await addMemberToWorkspace(member.id, workspace.id, WorkspaceRole.MEMBER);
+    await addMemberToWorkspace(otherMember.id, workspace.id, WorkspaceRole.MEMBER);
+    const task = await createTask(workspace.id, user.id);
+    await assignUserToTask(task.id, member.id);
+
+    await prisma.timeEntry.create({ data: { taskId: task.id, userId: member.id, duration: 30, startedAt: new Date() } });
+    await prisma.timeEntry.create({ data: { taskId: task.id, userId: otherMember.id, duration: 45, startedAt: new Date() } });
+    const headers = authHeaders(member);
+
+    // Even with a forged memberUserId of another member, a normal member only
+    // sees their own entries — never someone else's.
+    const res = await request(app)
+      .get(`/api/v1/time-entries/workspace/${workspace.id}?memberUserId=${otherMember.id}`)
+      .set(headers);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toHaveLength(1);
+    expect(res.body.data[0].userId).toBe(member.id);
   });
 
   it("403 — a user outside the workspace cannot view the workspace time log", async () => {

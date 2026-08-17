@@ -103,11 +103,15 @@ export const ProjectMutation = {
   const workspaceId = existing.workspaceId as string;
   const projectSlug = existing.slug;
   const workspaceSlug = existing?.workspace?.slug;
-  // Invalidate caches in a non-blocking way.
+  // Invalidate caches BEFORE responding. If this were fire-and-forget, a
+  // client refetch (triggered by the frontend's invalidateQueries right
+  // after the PATCH resolves) could race the Redis DEL and be served the
+  // stale cached list — reverting the just-updated status (e.g. ARCHIVED)
+  // back to the old value until the TTL expires.
   // NOTE: ProjectCache.invalidateProject expects the PROJECT slug
   // (cache key `project:slug:<projectSlug>`); the workspace slug is used
   // only for WorkspaceCache invalidation.
-  Promise.all([
+  await Promise.all([
     ProjectCache.invalidateProject(projectId, projectSlug),
     ProjectCache.invalidateWorkspaceProjects(workspaceId),
     ProjectCache.invalidateUserProjects(userId),

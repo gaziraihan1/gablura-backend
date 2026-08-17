@@ -203,10 +203,27 @@ export const AnnouncementRepository = {
     id: string,
     input: UpdateAnnouncementInput,
   ): Promise<AnnouncementResult> {
-    const raw = await prisma.announcement.update({
-      where: { id },
-      data: input,
-      include: announcementInclude,
+    const { targetIds, ...data } = input;
+
+    // Replace targets atomically when targetIds is provided (visibility change
+    // or recipient list edit). Without targetIds, only the scalar fields change.
+    const raw = await prisma.$transaction(async (tx) => {
+      if (targetIds) {
+        await tx.announcementTarget.deleteMany({
+          where: { announcementId: id },
+        });
+      }
+
+      return tx.announcement.update({
+        where: { id },
+        data: {
+          ...data,
+          ...(targetIds
+            ? { targets: { create: targetIds.map((userId) => ({ userId })) } }
+            : {}),
+        },
+        include: announcementInclude,
+      });
     });
 
     return mapAnnouncement(raw);

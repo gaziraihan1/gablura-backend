@@ -477,6 +477,148 @@ describe('PATCH announcement — pin/unpin', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// PATCH /announcements/:id (update)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('PATCH announcement — update', () => {
+  it('200 — OWNER updates title and content', async () => {
+    const { user, workspace } = await createWorkspaceWithOwner();
+    const ann = await createAnnouncement(workspace.slug, user.id, {
+      title: 'Original',
+      content: 'Original content',
+    });
+
+    const res = await request(app)
+      .patch(announcementUrl(ann.id))
+      .set(await authWithCsrfHeaders(user))
+      .send({ title: 'Updated Title', content: 'Updated content' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.title).toBe('Updated Title');
+    expect(res.body.data.content).toBe('Updated content');
+  });
+
+  it('200 — ADMIN can update any workspace announcement', async () => {
+    const { user: owner, workspace } = await createWorkspaceWithOwner();
+    const admin = await createUser();
+    await addMemberToWorkspace(admin.id, workspace.id, WorkspaceRole.ADMIN);
+    const ann = await createAnnouncement(workspace.slug, owner.id);
+
+    const res = await request(app)
+      .patch(announcementUrl(ann.id))
+      .set(await authWithCsrfHeaders(admin))
+      .send({ title: 'By Admin' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.title).toBe('By Admin');
+  });
+
+  it('200 — ADMIN updates pinned state', async () => {
+    const { user: owner, workspace } = await createWorkspaceWithOwner();
+    const ann = await createAnnouncement(workspace.slug, owner.id, { isPinned: false });
+
+    const res = await request(app)
+      .patch(announcementUrl(ann.id))
+      .set(await authWithCsrfHeaders(owner))
+      .send({ isPinned: true });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.isPinned).toBe(true);
+  });
+
+  it('200 — replaces PRIVATE targets when new targetIds provided', async () => {
+    const { user: owner, workspace } = await createWorkspaceWithOwner();
+    const memberA = await createUser();
+    const memberB = await createUser();
+    await addMemberToWorkspace(memberA.id, workspace.id, WorkspaceRole.MEMBER);
+    await addMemberToWorkspace(memberB.id, workspace.id, WorkspaceRole.MEMBER);
+
+    const ann = await createAnnouncement(workspace.slug, owner.id, {
+      visibility: AnnouncementVisibility.PRIVATE,
+    });
+    await prisma.announcementTarget.createMany({
+      data: [{ announcementId: ann.id, userId: memberA.id }],
+    });
+
+    const res = await request(app)
+      .patch(announcementUrl(ann.id))
+      .set(await authWithCsrfHeaders(owner))
+      .send({
+        visibility: AnnouncementVisibility.PRIVATE,
+        targetIds: [memberB.id],
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.targets.map((t: any) => t.userId)).toEqual([memberB.id]);
+  });
+
+  it('200 — switching to PUBLIC clears targets', async () => {
+    const { user: owner, workspace } = await createWorkspaceWithOwner();
+    const memberA = await createUser();
+    await addMemberToWorkspace(memberA.id, workspace.id, WorkspaceRole.MEMBER);
+
+    const ann = await createAnnouncement(workspace.slug, owner.id, {
+      visibility: AnnouncementVisibility.PRIVATE,
+    });
+    await prisma.announcementTarget.createMany({
+      data: [{ announcementId: ann.id, userId: memberA.id }],
+    });
+
+    const res = await request(app)
+      .patch(announcementUrl(ann.id))
+      .set(await authWithCsrfHeaders(owner))
+      .send({ visibility: AnnouncementVisibility.PUBLIC });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.visibility).toBe('PUBLIC');
+
+    const db = await prisma.announcement.findUnique({
+      where: { id: ann.id },
+      include: { targets: true },
+    });
+    expect(db?.targets.length ?? 0).toBe(0);
+  });
+
+  it('400 — PRIVATE update with no targets', async () => {
+    const { user, workspace } = await createWorkspaceWithOwner();
+    const ann = await createAnnouncement(workspace.slug, user.id);
+
+    const res = await request(app)
+      .patch(announcementUrl(ann.id))
+      .set(await authWithCsrfHeaders(user))
+      .send({ visibility: AnnouncementVisibility.PRIVATE });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('403 — MEMBER cannot update', async () => {
+    const { user: owner, workspace } = await createWorkspaceWithOwner();
+    const ann = await createAnnouncement(workspace.slug, owner.id);
+
+    const member = await createUser();
+    await addMemberToWorkspace(member.id, workspace.id, WorkspaceRole.MEMBER);
+
+    const res = await request(app)
+      .patch(announcementUrl(ann.id))
+      .set(await authWithCsrfHeaders(member))
+      .send({ title: 'Hacked' });
+
+    expect(res.status).toBe(403);
+  });
+
+  it('404 — non-existent announcement', async () => {
+    const { user } = await createWorkspaceWithOwner();
+
+    const res = await request(app)
+      .patch(announcementUrl('non-existent-id'))
+      .set(await authWithCsrfHeaders(user))
+      .send({ title: 'X' });
+
+    expect(res.status).toBe(404);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // DELETE /announcements/:id
 // ─────────────────────────────────────────────────────────────────────────────
 
