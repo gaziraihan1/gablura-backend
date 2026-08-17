@@ -4,7 +4,7 @@ import fs from "fs";
 import path from "path";
 import { prisma } from "../lib/prisma.js";
 import { getRedisClient } from "../redis/redis.client.js";
-import { getClientIp, generateDeviceFingerprint, looksLikeServerToServerRequest, looksLikeServerToServerUA, SessionMetadata, validateSessionBinding } from "../lib/auth/sessionBinding.js";
+import { getClientIp, generateDeviceFingerprint, isPrivateIp, looksLikeServerToServerRequest, looksLikeServerToServerUA, SessionMetadata, validateSessionBinding } from "../lib/auth/sessionBinding.js";
 import { revokeAllRefreshTokens, isAccessTokenRevoked, isSessionRevoked } from "../lib/auth/tokenRevocation.js";
 import { auditLog } from "../lib/auth/auditLog.js";
 import { AccountBannedError, EmailNotVerifiedError, ForbiddenError, InvalidTokenError, SessionHijackError, TokenExpiredError, TokenRevokedError, UnauthorizedError } from "../errors/AppError.js";
@@ -189,8 +189,11 @@ export const authenticate = async (
               // machine — NOT a hijack. Re-bind the session to the current
               // device instead of revoking every token (which force-logs-out
               // the user mid-session). Only a device change from a DIFFERENT
-              // IP (a stolen token replayed from another network) is treated
-              // as a hijack.
+              // public IP (a stolen token replayed from another network) is
+              // treated as a hijack. Private/internal IPs (RFC1918, link-local)
+              // carry no client identity behind the hosting proxy — the
+              // server-side exchange and proxy hops surface 10.x addresses, so
+              // a device change observed from one is also a re-bind.
               //
               // Security trade-off (deliberate): an attacker sharing the
               // victim's network (same NAT) could replay a stolen refresh
@@ -202,7 +205,9 @@ export const authenticate = async (
               // SESSION_REBOUND audit event for review.
               const isSameIpDeviceChange =
                 bindingValidation.reason === "DEVICE_MISMATCH" &&
-                currentIp === metadata.ipAddress;
+                (currentIp === metadata.ipAddress ||
+                  isPrivateIp(currentIp) ||
+                  isPrivateIp(metadata.ipAddress));
 
               if (isSameIpDeviceChange) {
                 metadata.deviceId = generateDeviceFingerprint(req);

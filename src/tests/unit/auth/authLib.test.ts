@@ -40,6 +40,7 @@ import { auditLog, AuditEventType } from "../../../lib/auth/auditLog.js";
 import {
   generateDeviceFingerprint,
   getClientIp,
+  isPrivateIp,
   looksLikeServerToServerRequest,
   looksLikeServerToServerUA,
   createSessionMetadata,
@@ -481,6 +482,46 @@ describe("sessionBinding", () => {
     });
   });
 
+  describe("isPrivateIp", () => {
+    it("treats unknown / missing as private (unreliable)", () => {
+      expect(isPrivateIp("unknown")).toBe(true);
+      expect(isPrivateIp("")).toBe(true);
+    });
+
+    it("detects RFC1918 private ranges", () => {
+      expect(isPrivateIp("10.26.192.4")).toBe(true);
+      expect(isPrivateIp("10.0.0.1")).toBe(true);
+      expect(isPrivateIp("172.16.0.1")).toBe(true);
+      expect(isPrivateIp("172.31.255.255")).toBe(true);
+      expect(isPrivateIp("192.168.1.100")).toBe(true);
+    });
+
+    it("detects link-local addresses", () => {
+      expect(isPrivateIp("169.254.169.254")).toBe(true);
+    });
+
+    it("normalizes IPv4-mapped IPv6 private addresses", () => {
+      expect(isPrivateIp("::ffff:10.26.192.4")).toBe(true);
+    });
+
+    it("detects IPv6 loopback / unique-local", () => {
+      expect(isPrivateIp("::1")).toBe(true);
+      expect(isPrivateIp("fd00::1")).toBe(true);
+      expect(isPrivateIp("fc00::1")).toBe(true);
+      expect(isPrivateIp("fe80::1")).toBe(true);
+    });
+
+    it("returns false for public addresses", () => {
+      expect(isPrivateIp("8.8.8.8")).toBe(false);
+      expect(isPrivateIp("203.0.113.7")).toBe(false);
+      expect(isPrivateIp("1.1.1.1")).toBe(false);
+    });
+
+    it("does not treat loopback 127.0.0.1 as unreliable (local dev signal)", () => {
+      expect(isPrivateIp("127.0.0.1")).toBe(false);
+    });
+  });
+
   describe("validateSessionBinding", () => {
     it("returns valid for matching device and IP", () => {
       const req = mockReq();
@@ -533,6 +574,60 @@ describe("sessionBinding", () => {
       const result = validateSessionBinding(req2, meta);
 
       expect(result.valid).toBe(true);
+    });
+
+    it("does NOT flag SUSPICIOUS_IP_CHANGE when the current IP is private (proxy/internal hop)", () => {
+      // Bound to the browser's real public IP, then a request arrives from a
+      // private hosting IP (Render internal 10.x) — legitimate, not a hijack.
+      const req1 = mockReq({ remoteAddress: "8.8.8.8" });
+      const meta = { ...createSessionMetadata(req1), deviceId: generateDeviceFingerprint(req1) };
+      meta.lastActivity = Date.now() - 60_000; // 1 minute ago
+
+      const req2 = mockReq({ remoteAddress: "10.26.192.4" });
+      const result = validateSessionBinding(req2, meta);
+
+      expect(result.valid).toBe(true);
+      expect(result.reason).toBeUndefined();
+    });
+
+    it("does NOT flag SUSPICIOUS_IP_CHANGE when the stored IP is private (server-to-server exchange)", () => {
+      const req1 = mockReq({ remoteAddress: "10.0.0.5" });
+      const meta = { ...createSessionMetadata(req1), deviceId: generateDeviceFingerprint(req1) };
+      meta.lastActivity = Date.now() - 60_000;
+
+      const req2 = mockReq({ remoteAddress: "8.8.8.8" });
+      const result = validateSessionBinding(req2, meta);
+
+      expect(result.valid).toBe(true);
+    });
+
+    it("still flags SUSPICIOUS_IP_CHANGE between two public IPs within 5 min", () => {
+      const req1 = mockReq({ remoteAddress: "8.8.8.8" });
+      const meta = { ...createSessionMetadata(req1), deviceId: generateDeviceFingerprint(req1) };
+      meta.lastActivity = Date.now() - 60_000;
+
+      const req2 = mockReq({ remoteAddress: "8.8.4.4" });
+      const result = validateSessionBinding(req2, meta);
+
+      expect(result.valid).toBe(false);
+      expect(result.reason).toBe("SUSPICIOUS_IP_CHANGE");
+    });
+
+    it("still rejects a device change even when one IP is private (device is the real signal)", () => {
+      const req1 = mockReq({
+        headers: { "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36" },
+        remoteAddress: "8.8.8.8",
+      });
+      const meta = { ...createSessionMetadata(req1), deviceId: generateDeviceFingerprint(req1) };
+
+      const req2 = mockReq({
+        headers: { "user-agent": "Mozilla/5.0 (X11; Linux x86_64; rv:121.0) Gecko/20100101 Firefox/121.0" },
+        remoteAddress: "10.26.192.4",
+      });
+      const result = validateSessionBinding(req2, meta);
+
+      expect(result.valid).toBe(false);
+      expect(result.reason).toBe("DEVICE_MISMATCH");
     });
 
     it("returns DEVICE_MISMATCH before checking IP (device checked first)", () => {

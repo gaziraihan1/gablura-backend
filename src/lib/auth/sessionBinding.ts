@@ -146,6 +146,42 @@ export function createSessionMetadata(req: Request): SessionMetadata {
   };
 }
 
+/**
+ * True when an IP carries no end-user identity behind a reverse proxy.
+ * Private/internal addresses (RFC1918, link-local) and "unknown" legitimately
+ * differ across requests on hosted platforms: the server-to-server token
+ * exchange comes from the frontend's internal service IP (e.g. Render's
+ * 10.26.x.x), and proxy hops may surface a private address instead of the
+ * client's public IP. Comparing them false-positives SUSPICIOUS_IP_CHANGE and
+ * force-logs-out legitimate users. Loopback is intentionally NOT included:
+ * it only appears in local dev/tests where the IP signal is still meaningful.
+ */
+export function isPrivateIp(ip: string): boolean {
+  if (!ip || ip === 'unknown') return true;
+
+  // IPv4-mapped IPv6 (`::ffff:10.26.192.4`) → strip prefix so the RFC1918
+  // check below matches the same way getClientIp normalizes it.
+  const normalized = ip.startsWith('::ffff:') ? ip.slice(7) : ip;
+
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(normalized)) {
+    const [a, b] = normalized.split('.').map(Number);
+    return (
+      a === 10 ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) ||
+      (a === 169 && b === 254) // link-local
+    );
+  }
+
+  // IPv6 loopback / link-local / unique-local
+  return (
+    normalized === '::1' ||
+    /^fe80:/i.test(normalized) ||
+    /^fc/i.test(normalized) ||
+    /^fd/i.test(normalized)
+  );
+}
+
 export function validateSessionBinding(
   req: Request,
   storedMetadata: SessionMetadata
@@ -163,6 +199,15 @@ export function validateSessionBinding(
     };
   }
   if (currentIp !== storedMetadata.ipAddress) {
+    // Private/internal IPs carry no client identity behind a proxy — a
+    // browser request, the server-side exchange, and the hosting proxy all
+    // legitimately present different 10.x / 172.16-31.x / 192.168.x
+    // addresses. Drop the IP dimension when either side is non-public; the
+    // device fingerprint is still enforced above.
+    if (isPrivateIp(currentIp) || isPrivateIp(storedMetadata.ipAddress)) {
+      return { valid: true };
+    }
+
     const timeSinceLastActivity = Date.now() - storedMetadata.lastActivity;
     const maxIpChangeInterval = 5 * 60 * 1000; // 5 minutes
 

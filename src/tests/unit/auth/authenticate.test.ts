@@ -24,6 +24,7 @@ vi.mock("../../../redis/redis.client.js", () => ({
 vi.mock("../../../lib/auth/sessionBinding.js", () => ({
   getClientIp:                  vi.fn(() => "127.0.0.1"),
   generateDeviceFingerprint:    vi.fn(() => "device-fp-123"),
+  isPrivateIp:                  vi.fn(() => false),
   looksLikeServerToServerRequest: vi.fn(() => false),
   looksLikeServerToServerUA:    vi.fn(() => false),
   validateSessionBinding:       vi.fn(() => ({ valid: true })),
@@ -424,6 +425,39 @@ describe("authenticate middleware", () => {
     const saved = JSON.parse(metadataWrite![2]);
     expect(saved.deviceId).toBe("device-fp-123");
     expect(saved.ipAddress).toBe("127.0.0.1");
+  });
+
+  it("re-binds instead of revoking when the device changes from a private IP (proxy/internal hop)", async () => {
+    const fakeMetadata = JSON.stringify({
+      deviceId: "bound-device-fp",
+      ipAddress: "8.8.8.8",
+      userAgent: "Mozilla/5.0 Chrome/150.0.0.0",
+      lastActivity: Date.now(),
+    });
+    mockRedisGet.mockResolvedValueOnce(fakeMetadata);
+
+    const { auditLog } = await import("../../../lib/auth/auditLog.js");
+    const { validateSessionBinding, isPrivateIp, getClientIp } = await import("../../../lib/auth/sessionBinding.js");
+    vi.mocked(validateSessionBinding).mockReturnValueOnce({
+      valid: false,
+      reason: "DEVICE_MISMATCH",
+    });
+    vi.mocked(isPrivateIp).mockImplementation((ip: string) => ip.startsWith("10."));
+    vi.mocked(getClientIp).mockReturnValueOnce("10.26.192.4");
+
+    const { revokeAllRefreshTokens } = await import("../../../lib/auth/tokenRevocation.js");
+    vi.mocked(prisma.user.findUnique).mockResolvedValue(mockUser as any);
+
+    const next = makeNext();
+    const token = generateTestToken(mockUser, { sessionId: "private-ip-session" });
+    const req = makeReq(`Bearer ${token}`);
+    await authenticate(req, makeRes(), next);
+
+    // A device change from a private (Render internal) IP is a re-bind, NOT a hijack
+    expect(vi.mocked(next).mock.calls[0][0]).toBeUndefined();
+    expect(revokeAllRefreshTokens).not.toHaveBeenCalled();
+    expect(auditLog).toHaveBeenCalledWith("SESSION_REBOUND", expect.any(Object));
+    expect(auditLog).not.toHaveBeenCalledWith("SESSION_HIJACK_DETECTED", expect.any(Object));
   });
 
   it("keeps re-binding on repeated same-IP device changes without revoking", async () => {
