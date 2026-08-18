@@ -301,7 +301,7 @@ describe("PaddleProvider", () => {
       }));
     });
 
-    it("should normalize a SubscriptionTrialing event with trialStart", async () => {
+    it("should normalize a SubscriptionTrialing event as trial STARTED (not trial ending)", async () => {
       const mockEvent = {
         eventId: "evt_paddle_trial",
         eventType: "subscription.trialing",
@@ -321,11 +321,84 @@ describe("PaddleProvider", () => {
       const result = await provider.verifyAndParseWebhook(mockRawBody, mockHeaders);
 
       expect(result).toEqual(expect.objectContaining({
-        type: "SUBSCRIPTION_TRIAL_ENDING",
+        type: "SUBSCRIPTION_TRIAL_STARTED",
         providerSubscriptionId: "sub_paddle_trial",
         status: "TRIALING",
         trialStart: new Date("2026-01-15T00:00:00Z"),
         trialEnd: new Date("2026-01-29T00:00:00Z"),
+      }));
+    });
+
+    it("should normalize a SubscriptionActivated event as SUBSCRIPTION_ACTIVATED", async () => {
+      const mockEvent = {
+        eventId: "evt_paddle_activated",
+        eventType: "subscription.activated",
+        data: {
+          id: "sub_paddle_active",
+          customerId: "cus_paddle_123",
+          status: "active",
+          items: [{ price: { id: "price_pro_mo", billingCycle: { interval: "month" } } }],
+          currentBillingPeriod: { startsAt: "2026-02-01T00:00:00Z", endsAt: "2026-03-01T00:00:00Z" },
+          customData: { workspaceId: "ws_123" },
+        },
+      };
+      paddleMock.webhooks.unmarshal.mockResolvedValue(mockEvent);
+
+      const result = await provider.verifyAndParseWebhook(mockRawBody, mockHeaders);
+
+      expect(result).toEqual(expect.objectContaining({
+        type: "SUBSCRIPTION_ACTIVATED",
+        providerSubscriptionId: "sub_paddle_active",
+        status: "ACTIVE",
+        trialEnd: null,
+      }));
+    });
+
+    it("should normalize a SubscriptionPaused event as SUBSCRIPTION_PAUSED", async () => {
+      const mockEvent = {
+        eventId: "evt_paddle_paused",
+        eventType: "subscription.paused",
+        data: {
+          id: "sub_paddle_paused",
+          customerId: "cus_paddle_123",
+          status: "paused",
+          items: [{ price: { id: "price_pro_mo", billingCycle: { interval: "month" } } }],
+          currentBillingPeriod: { startsAt: "2026-02-01T00:00:00Z", endsAt: "2026-03-01T00:00:00Z" },
+          customData: { workspaceId: "ws_123" },
+        },
+      };
+      paddleMock.webhooks.unmarshal.mockResolvedValue(mockEvent);
+
+      const result = await provider.verifyAndParseWebhook(mockRawBody, mockHeaders);
+
+      expect(result).toEqual(expect.objectContaining({
+        type: "SUBSCRIPTION_PAUSED",
+        providerSubscriptionId: "sub_paddle_paused",
+        status: "PAUSED",
+      }));
+    });
+
+    it("should normalize a SubscriptionResumed event as SUBSCRIPTION_RESUMED", async () => {
+      const mockEvent = {
+        eventId: "evt_paddle_resumed",
+        eventType: "subscription.resumed",
+        data: {
+          id: "sub_paddle_resumed",
+          customerId: "cus_paddle_123",
+          status: "active",
+          items: [{ price: { id: "price_pro_mo", billingCycle: { interval: "month" } } }],
+          currentBillingPeriod: { startsAt: "2026-03-01T00:00:00Z", endsAt: "2026-04-01T00:00:00Z" },
+          customData: { workspaceId: "ws_123" },
+        },
+      };
+      paddleMock.webhooks.unmarshal.mockResolvedValue(mockEvent);
+
+      const result = await provider.verifyAndParseWebhook(mockRawBody, mockHeaders);
+
+      expect(result).toEqual(expect.objectContaining({
+        type: "SUBSCRIPTION_RESUMED",
+        providerSubscriptionId: "sub_paddle_resumed",
+        status: "ACTIVE",
       }));
     });
 
@@ -494,6 +567,70 @@ describe("PaddleProvider", () => {
         amountDue: 2000,
         amountPaid: 2000,
         status: "PAID",
+      }));
+    });
+
+    it("should normalize an AdjustmentCreated event as REFUND_CREATED", async () => {
+      const mockEvent = {
+        eventId: "evt_adj_1",
+        eventType: "adjustment.created",
+        data: {
+          id: "adj_123",
+          transactionId: "txn_123",
+          subscriptionId: "sub_paddle_123",
+          customerId: "cus_paddle_123",
+          action: "credit",
+          status: "approved",
+          currencyCode: "USD",
+          totals: { total: "-1000" },
+        },
+      };
+      paddleMock.webhooks.unmarshal.mockResolvedValue(mockEvent);
+
+      const result = await provider.verifyAndParseWebhook(mockRawBody, mockHeaders);
+
+      expect(result).toEqual({
+        type: "REFUND_CREATED",
+        providerEventId: "evt_adj_1",
+        providerRefundId: "adj_123",
+        providerTransactionId: "txn_123",
+        providerSubscriptionId: "sub_paddle_123",
+        providerCustomerId: "cus_paddle_123",
+        action: "credit",
+        status: "approved",
+        amount: 1000, // magnitude of the negative adjustment total, in cents
+        currency: "usd",
+        metadata: {},
+        raw: mockEvent,
+      });
+    });
+
+    it("should normalize an AdjustmentUpdated event as REFUND_UPDATED", async () => {
+      const mockEvent = {
+        eventId: "evt_adj_2",
+        eventType: "adjustment.updated",
+        data: {
+          id: "adj_456",
+          transactionId: "txn_456",
+          subscriptionId: null,
+          customerId: "cus_paddle_123",
+          action: "chargeback",
+          status: "approved",
+          currencyCode: "USD",
+          totals: { total: "-2500" },
+        },
+      };
+      paddleMock.webhooks.unmarshal.mockResolvedValue(mockEvent);
+
+      const result = await provider.verifyAndParseWebhook(mockRawBody, mockHeaders);
+
+      expect(result).toEqual(expect.objectContaining({
+        type: "REFUND_UPDATED",
+        providerRefundId: "adj_456",
+        providerTransactionId: "txn_456",
+        providerSubscriptionId: null,
+        action: "chargeback",
+        amount: 2500,
       }));
     });
 

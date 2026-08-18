@@ -5,6 +5,7 @@ import { getPaymentProvider } from "./provider.registry.js";
 import type {
   NormalisedSubscriptionEvent,
   NormalisedInvoiceEvent,
+  NormalisedRefundEvent,
 } from "./IpaymentProvider.js";
 import {
   BillingEventType,
@@ -78,7 +79,11 @@ export async function webhookHandler(
 ): Promise<void> {
   const provider = getPaymentProvider();
 
-  let event: NormalisedSubscriptionEvent | NormalisedInvoiceEvent | null;
+  let event:
+    | NormalisedSubscriptionEvent
+    | NormalisedInvoiceEvent
+    | NormalisedRefundEvent
+    | null;
   try {
     event = await provider.verifyAndParseWebhook(
       req.body as Buffer,
@@ -144,17 +149,21 @@ providerEventId: event.providerEventId,
 // ---------------------------------------------------------------------------
 
 async function processEvent(
-  event: NormalisedSubscriptionEvent | NormalisedInvoiceEvent,
+  event: NormalisedSubscriptionEvent | NormalisedInvoiceEvent | NormalisedRefundEvent,
 ): Promise<void> {
   switch (event.type) {
     case "CHECKOUT_COMPLETED":
       return handleCheckoutCompleted(event as NormalisedSubscriptionEvent);
     case "SUBSCRIPTION_CREATED":
     case "SUBSCRIPTION_UPDATED":
+    case "SUBSCRIPTION_TRIAL_STARTED":
+    case "SUBSCRIPTION_ACTIVATED":
+    case "SUBSCRIPTION_PAUSED":
+    case "SUBSCRIPTION_RESUMED":
       return handleSubscriptionUpserted(event as NormalisedSubscriptionEvent);
     case "SUBSCRIPTION_CANCELED":
       return handleSubscriptionCanceled(event as NormalisedSubscriptionEvent);
-    case "SUBSCRIPTION_TRIAL_ENDING":
+    case "SUBSCRIPTION_TRIAL_ENDING": // Stripe-only: customer.subscription.trial_will_end
       return handleTrialEnding(event as NormalisedSubscriptionEvent);
     case "INVOICE_PAID":
       return handleInvoicePaid(event as NormalisedInvoiceEvent);
@@ -163,8 +172,13 @@ async function processEvent(
     case "INVOICE_CREATED":
     case "INVOICE_UPDATED":
       return handleInvoiceUpsert(event as NormalisedInvoiceEvent);
+    case "REFUND_CREATED":
+    case "REFUND_UPDATED":
+      return handleRefund(event as NormalisedRefundEvent);
     default:
-      console.log(`[Webhook] No handler for event type: ${event.type}`);
+      // Unreachable for known event types (the switch is exhaustive), but kept
+      // for forward-compatibility with provider events we don't handle yet.
+      console.log("[Webhook] No handler for event type:", event);
   }
 }
 
@@ -413,7 +427,7 @@ async function handleTrialEnding(event: NormalisedSubscriptionEvent) {
 // ---------------------------------------------------------------------------
 
 async function handleInvoicePaid(event: NormalisedInvoiceEvent) {
-  await upsertInvoice(event);
+  const invoice = await upsertInvoice(event);
 
   if (event.providerPaymentId) {
     const workspaceId = await resolveWorkspaceFromSubId(event.providerSubscriptionId);
@@ -428,13 +442,17 @@ async function handleInvoicePaid(event: NormalisedInvoiceEvent) {
         stripePaymentIntentId: event.providerPaymentId,
         workspaceId:           workspaceId ?? undefined,
         payerId:               event.metadata?.ownerId ?? undefined,
+        invoiceId:             invoice?.id,
         amount:                event.amountPaid,
         currency:              event.currency,
         status:                "SUCCEEDED",
         paymentMethod:         event.paymentMethodType ?? undefined,
         last4:                 event.cardLast4 ?? undefined,
       },
-      update: { status: "SUCCEEDED" },
+      update: {
+        status: "SUCCEEDED",
+        ...(invoice?.id && { invoiceId: invoice.id }),
+      },
     });
   }
 
@@ -470,7 +488,9 @@ async function handleInvoiceUpsert(event: NormalisedInvoiceEvent) {
 // Invoice upsert — shared by paid, failed, created, updated handlers
 // ---------------------------------------------------------------------------
 
-async function upsertInvoice(event: NormalisedInvoiceEvent) {
+async function upsertInvoice(
+  event: NormalisedInvoiceEvent,
+): Promise<{ id: string } | null> {
   console.log(`[Webhook] Invoice event: ${event.status} ${event.providerInvoiceId}`);
 
   // 1. Try metadata first (fastest — always set by Paddle via customData)
@@ -515,7 +535,7 @@ async function upsertInvoice(event: NormalisedInvoiceEvent) {
       : undefined) ||
     undefined;
 
-  await prisma.invoice.upsert({
+  const savedInvoice = await prisma.invoice.upsert({
     // STRIPE: stripeInvoiceId = in_xxx
     // PADDLE: stripeInvoiceId = Paddle transaction ID (txn_xxx) — same column, legacy label
     // TO SWITCH BACK TO STRIPE: no change needed here.
@@ -561,6 +581,162 @@ async function upsertInvoice(event: NormalisedInvoiceEvent) {
   if (workspaceId) {
     await BILLING_CACHE.invalidateWorkspace(workspaceId, payerId);
   }
+
+  return savedInvoice;
+}
+
+// ---------------------------------------------------------------------------
+// Refund handler (Paddle adjustments: credit / refund / chargeback)
+// ---------------------------------------------------------------------------
+
+const REFUND_ACTIONS = new Set([
+  "credit",
+  "refund",
+  "chargeback",
+  "chargeback_warning",
+]);
+
+const REFUND_REVERSAL_ACTIONS = new Set([
+  "credit_reverse",
+  "chargeback_reverse",
+  "chargeback_warning_reverse",
+]);
+
+async function handleRefund(event: NormalisedRefundEvent) {
+  const isReversal = REFUND_REVERSAL_ACTIONS.has(event.action);
+
+  // Only approved adjustments move money. Record everything in BillingEvent
+  // (the outer handler does that) but only apply approved adjustments here.
+  if (event.status !== "approved") {
+    console.log(
+      `[Webhook] Refund ${event.providerRefundId} (${event.action}) not applied — status=${event.status}`,
+    );
+    return;
+  }
+
+  // Resolve the workspace: subscription → invoice → customer.
+  let workspaceId: string | undefined = event.providerSubscriptionId
+    ? await resolveWorkspaceFromSubId(event.providerSubscriptionId)
+    : undefined;
+
+  const invoice = event.providerTransactionId
+    ? await prisma.invoice.findUnique({
+        where: { stripeInvoiceId: event.providerTransactionId },
+      })
+    : null;
+
+  if (!workspaceId) workspaceId = invoice?.workspaceId ?? undefined;
+  if (!workspaceId && event.providerCustomerId) {
+    workspaceId = await resolveWorkspaceFromCustomerId(event.providerCustomerId);
+  }
+  if (!workspaceId) {
+    throw new Error(
+      `Refund event ${event.providerEventId} missing workspaceId — no invoice or subscription row yet`,
+    );
+  }
+
+  const payment = invoice?.id
+    ? await prisma.payment.findFirst({ where: { invoiceId: invoice.id } })
+    : null;
+
+  if (isReversal) {
+    // A refund/chargeback was reversed (money returned to the merchant) — undo
+    // the refund marks so the invoice/payment reflect the true state.
+    if (invoice) {
+      const remainingRefunded = Math.max(0, (invoice.amountRefunded ?? 0) - event.amount);
+      await prisma.invoice.update({
+        where: { id: invoice.id },
+        data: {
+          amountRefunded: { decrement: event.amount },
+          ...(remainingRefunded > 0
+            ? { status: "REFUNDED" }
+            : { status: "PAID", refundedAt: null }),
+        },
+      });
+    }
+    if (payment) {
+      const remainingRefunded = Math.max(0, (payment.refundedAmount ?? 0) - event.amount);
+      await prisma.payment.update({
+        where: { id: payment.id },
+        data: {
+          refundedAmount: { decrement: event.amount },
+          status: remainingRefunded > 0 ? "PARTIALLY_REFUNDED" : "SUCCEEDED",
+          refundedAt: remainingRefunded > 0 ? payment.refundedAt ?? undefined : null,
+        },
+      });
+    }
+    await BILLING_CACHE.invalidateWorkspace(workspaceId);
+    console.log(`[Webhook] Refund reversed: ${event.providerRefundId} for workspace ${workspaceId}`);
+    return;
+  }
+
+  if (!REFUND_ACTIONS.has(event.action)) {
+    console.log(`[Webhook] Ignoring adjustment action: ${event.action}`);
+    return;
+  }
+
+  // Apply the refund.
+  const fullyRefunded =
+    !!invoice && (invoice.amountRefunded ?? 0) + event.amount >= invoice.amountPaid;
+
+  if (invoice) {
+    await prisma.invoice.update({
+      where: { id: invoice.id },
+      data: {
+        amountRefunded: { increment: event.amount },
+        ...(fullyRefunded
+          ? { status: "REFUNDED", refundedAt: new Date() }
+          : {}),
+      },
+    });
+  }
+
+  if (payment) {
+    const payFullyRefunded =
+      (payment.refundedAmount ?? 0) + event.amount >= payment.amount;
+    await prisma.payment.update({
+      where: { id: payment.id },
+      data: {
+        refundedAmount: { increment: event.amount },
+        refundedAt:     new Date(),
+        status:         payFullyRefunded ? "REFUNDED" : "PARTIALLY_REFUNDED",
+      },
+    });
+  }
+
+  // Full refund → revoke access, matching the refund policy ("once the refund
+  // is approved, access may be revoked before the period ends"). DB-side only:
+  // the Paddle subscription is expected to have been cancelled as part of the
+  // refund process.
+  if (invoice && fullyRefunded) {
+    const sub = await prisma.subscription.findFirst({
+      where: { workspaceId },
+    });
+    if (sub && sub.status !== "CANCELED") {
+      const freePlan = await prisma.plan.findUnique({ where: { name: "FREE" } });
+      await prisma.subscription.update({
+        where: { id: sub.id },
+        data: {
+          status:       "CANCELED",
+          canceledAt:   new Date(),
+          cancelReason: "refunded",
+        },
+      });
+      await prisma.workspace.update({
+        where: { id: workspaceId },
+        data: {
+          plan:       "FREE",
+          maxMembers: freePlan?.maxMembersPerWs ?? 5,
+          maxStorage: freePlan?.maxStorageMb ?? 500,
+        },
+      });
+    }
+  }
+
+  await BILLING_CACHE.invalidateWorkspace(workspaceId);
+  console.log(
+    `[Webhook] Refund ${event.providerRefundId} (${event.action}) of ${event.amount} ${event.currency} applied for workspace ${workspaceId}`,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -573,11 +749,20 @@ function mapEventType(type: string): BillingEventType {
     SUBSCRIPTION_CREATED:      "SUBSCRIPTION_CREATED",
     SUBSCRIPTION_UPDATED:      "SUBSCRIPTION_UPDATED",
     SUBSCRIPTION_CANCELED:     "SUBSCRIPTION_CANCELED",
-    SUBSCRIPTION_TRIAL_ENDING: "SUBSCRIPTION_TRIAL_ENDED",
+    SUBSCRIPTION_TRIAL_ENDING: "SUBSCRIPTION_TRIAL_ENDED", // Stripe trial_will_end
+    // Paddle reports subscription lifecycle as distinct events; the closest
+    // BillingEventType (enum has no TRIAL_STARTED/ACTIVATED/PAUSED/RESUMED
+    // values) is SUBSCRIPTION_UPDATED — each of these events updates the row.
+    SUBSCRIPTION_TRIAL_STARTED: "SUBSCRIPTION_UPDATED",
+    SUBSCRIPTION_ACTIVATED:     "SUBSCRIPTION_UPDATED",
+    SUBSCRIPTION_PAUSED:        "SUBSCRIPTION_UPDATED",
+    SUBSCRIPTION_RESUMED:       "SUBSCRIPTION_UPDATED",
     INVOICE_PAID:              "INVOICE_PAID",
     INVOICE_PAYMENT_FAILED:    "INVOICE_PAYMENT_FAILED",
     INVOICE_CREATED:           "INVOICE_CREATED",
     INVOICE_UPDATED:           "INVOICE_CREATED", // no INVOICE_UPDATED in BillingEventType enum yet
+    REFUND_CREATED:            "PAYMENT_REFUNDED",
+    REFUND_UPDATED:            "PAYMENT_REFUNDED",
   };
   return map[type] ?? "SUBSCRIPTION_UPDATED";
 }

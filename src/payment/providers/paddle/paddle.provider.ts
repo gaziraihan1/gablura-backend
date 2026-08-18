@@ -2,10 +2,15 @@
 
 import {
   EventName,
-  type SubscriptionCreatedEvent,
-  type SubscriptionUpdatedEvent,
+  type AdjustmentCreatedEvent,
+  type AdjustmentUpdatedEvent,
+  type SubscriptionActivatedEvent,
   type SubscriptionCanceledEvent,
+  type SubscriptionCreatedEvent,
+  type SubscriptionPausedEvent,
+  type SubscriptionResumedEvent,
   type SubscriptionTrialingEvent,
+  type SubscriptionUpdatedEvent,
   type TransactionBilledEvent,
   type TransactionCompletedEvent,
   type TransactionCreatedEvent,
@@ -28,6 +33,7 @@ import type {
   PortalResult,
   NormalisedSubscriptionEvent,
   NormalisedInvoiceEvent,
+  NormalisedRefundEvent,
   NormalisedSubStatus,
   NormalisedInvoiceStatus,
 } from '../../IpaymentProvider.js';
@@ -286,7 +292,10 @@ export class PaddleProvider implements IPaymentProvider {
     rawBody: Buffer,
     headers: Record<string, string | string[] | undefined>,
   ): Promise<
-    NormalisedSubscriptionEvent | NormalisedInvoiceEvent | null
+    | NormalisedSubscriptionEvent
+    | NormalisedInvoiceEvent
+    | NormalisedRefundEvent
+    | null
   > {
     const sig = headers['paddle-signature'];
     const sigStr = Array.isArray(sig) ? sig[0] : sig;
@@ -338,11 +347,46 @@ export class PaddleProvider implements IPaymentProvider {
           ),
         };
 
+      // Paddle fires subscription.trialing when a subscription ENTERS trial
+      // (trial starts) — NOT when it's about to end. There is no "trial ending
+      // soon" event in Paddle, so this is mapped to SUBSCRIPTION_TRIAL_STARTED.
       case EventName.SubscriptionTrialing:
         return {
-          type: 'SUBSCRIPTION_TRIAL_ENDING',
+          type: 'SUBSCRIPTION_TRIAL_STARTED',
           ...buildSubFields(
             (event as SubscriptionTrialingEvent).data,
+            eventId,
+            event,
+          ),
+        };
+
+      // subscription.activated: trial ended and the first payment succeeded, or
+      // the subscription was (re)activated after being paused.
+      case EventName.SubscriptionActivated:
+        return {
+          type: 'SUBSCRIPTION_ACTIVATED',
+          ...buildSubFields(
+            (event as SubscriptionActivatedEvent).data,
+            eventId,
+            event,
+          ),
+        };
+
+      case EventName.SubscriptionPaused:
+        return {
+          type: 'SUBSCRIPTION_PAUSED',
+          ...buildSubFields(
+            (event as SubscriptionPausedEvent).data,
+            eventId,
+            event,
+          ),
+        };
+
+      case EventName.SubscriptionResumed:
+        return {
+          type: 'SUBSCRIPTION_RESUMED',
+          ...buildSubFields(
+            (event as SubscriptionResumedEvent).data,
             eventId,
             event,
           ),
@@ -380,9 +424,52 @@ export class PaddleProvider implements IPaymentProvider {
           event,
         );
 
+      // Paddle reports refunds, credits, and chargebacks as adjustments against
+      // a transaction (adjustment.created / adjustment.updated).
+      case EventName.AdjustmentCreated:
+        return this.normaliseAdjustmentAsRefund(
+          'REFUND_CREATED',
+          (event as AdjustmentCreatedEvent).data,
+          eventId,
+          event,
+        );
+
+      case EventName.AdjustmentUpdated:
+        return this.normaliseAdjustmentAsRefund(
+          'REFUND_UPDATED',
+          (event as AdjustmentUpdatedEvent).data,
+          eventId,
+          event,
+        );
+
       default:
         return null;
     }
+  }
+
+  private normaliseAdjustmentAsRefund(
+    type: 'REFUND_CREATED' | 'REFUND_UPDATED',
+    adj: AdjustmentCreatedEvent['data'],
+    eventId: string,
+    raw: unknown,
+  ): NormalisedRefundEvent {
+    return {
+      type,
+      providerEventId: eventId,
+      providerRefundId: adj.id,
+      providerTransactionId: adj.transactionId ?? null,
+      providerSubscriptionId: adj.subscriptionId ?? null,
+      providerCustomerId: adj.customerId ?? null,
+      action: adj.action,
+      status: adj.status,
+      // Adjustment totals are negative (money returned to the customer), so the
+      // handler stores the magnitude in minor units — consistent with every
+      // other amount in the billing tables.
+      amount: Math.abs(Number(adj.totals?.total ?? 0)),
+      currency: (adj.currencyCode ?? 'USD').toLowerCase(),
+      metadata: {},
+      raw,
+    };
   }
 
   private normaliseTxnAsInvoice(

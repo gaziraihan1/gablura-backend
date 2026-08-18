@@ -1,6 +1,17 @@
 // backend/src/billing/service/plans.config.ts
 
-export const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000';
+// Base URL of the frontend, used to build checkout success/cancel URLs and the
+// customer portal return URL. Resolution order matches the rest of the codebase
+// (CLIENT_URL is the convention used by CORS, emails, and OAuth redirects):
+//   CLIENT_URL -> APP_URL -> NEXT_PUBLIC_APP_URL -> FRONTEND_URL -> localhost
+// NOTE: `.env` defines APP_URL; the previous code only read NEXT_PUBLIC_APP_URL,
+// so checkout redirects silently pointed at http://localhost:3000 in prod.
+export const APP_URL =
+  process.env.CLIENT_URL ||
+  process.env.APP_URL ||
+  process.env.NEXT_PUBLIC_APP_URL ||
+  process.env.FRONTEND_URL ||
+  'http://localhost:3000';
 
 export const PLAN_LIMITS = {
   FREE: {

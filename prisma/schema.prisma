@@ -76,6 +76,8 @@ model Invoice {
   amountDue       Int
   amountPaid      Int
   amountRemaining Int           @default(0)
+  amountRefunded  Int           @default(0)
+  refundedAt      DateTime?
   currency        String        @default("usd")
   status          InvoiceStatus @default(DRAFT)
   invoiceNumber   String?
@@ -1236,6 +1238,7 @@ enum InvoiceStatus {
   PAID
   VOID
   UNCOLLECTIBLE
+  REFUNDED
 }
 
 enum PaymentStatus {

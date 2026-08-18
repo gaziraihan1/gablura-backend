@@ -265,7 +265,7 @@ describe("BillingService", () => {
   });
 
   describe("createCheckoutSession — trial eligibility", () => {
-    it("grants a 7-day trial on the very first checkout (no customer yet)", async () => {
+    it("grants a 14-day trial on the very first checkout (no customer yet)", async () => {
       const input: CreateCheckoutInput = {
         workspaceId: "ws-123",
         workspaceSlug: "test-ws",
@@ -290,7 +290,7 @@ describe("BillingService", () => {
       await BillingService.createCheckoutSession(input);
 
       expect(mockProvider.createCheckoutSession).toHaveBeenCalledWith(
-        expect.objectContaining({ trialDays: 7 }),
+        expect.objectContaining({ trialDays: 14 }),
       );
     });
 
@@ -393,6 +393,93 @@ describe("BillingService", () => {
         },
       });
       expect(BILLING_CACHE.invalidateWorkspace).toHaveBeenCalled();
+    });
+
+    it("uses PADDLE_PRICE_* env for the paddle provider, ignoring the Plan table's Stripe price IDs", async () => {
+      vi.stubEnv("PAYMENT_PROVIDER", "paddle");
+      vi.stubEnv("PADDLE_PRICE_BUSINESS_MONTHLY", "pri_paddle_biz_m");
+
+      const input = {
+        workspaceId: "ws-123",
+        ownerId: "user-123",
+        newPlanName: "BUSINESS" as const,
+        billingCycle: "MONTHLY" as const,
+      };
+
+      vi.mocked(prisma.workspace.findUniqueOrThrow).mockResolvedValue({ ownerId: "user-123" } as unknown as Workspace);
+      vi.mocked(prisma.subscription.findUnique).mockResolvedValue({
+        workspaceId: "ws-123",
+        planId: "plan_pro",
+        billingCycle: "MONTHLY",
+        status: "ACTIVE",
+        stripeSubscriptionId: "sub_paddle",
+      } as unknown as Subscription);
+
+      // The Plan row holds a Stripe price ID — it must NOT be sent to Paddle.
+      vi.mocked(prisma.plan.findUnique).mockImplementation((({ where }: any) => {
+        if (where?.name === "BUSINESS") {
+          return Promise.resolve({
+            id: "plan_biz",
+            name: "BUSINESS",
+            maxMembersPerWs: 100,
+            maxStorageMb: 102400,
+            stripePriceIdMonthly: "price_stripe_biz_m",
+            stripePriceIdYearly: null,
+          } as any);
+        }
+        if (where?.id === "plan_pro") {
+          return Promise.resolve({ id: "plan_pro", name: "PRO" } as any);
+        }
+        return Promise.resolve(null);
+      }) as any);
+
+      vi.mocked(prisma.workspace.findUnique).mockResolvedValue({ slug: "test-ws" } as unknown as Workspace);
+      mockProvider.changePlan.mockResolvedValue(undefined);
+
+      await BillingService.changePlan(input);
+
+      expect(mockProvider.changePlan).toHaveBeenCalledWith(
+        expect.objectContaining({ newProviderPriceId: "pri_paddle_biz_m" }),
+      );
+      expect(prisma.subscription.update).toHaveBeenCalledWith({
+        where: { workspaceId: "ws-123" },
+        data: {
+          planId: "plan_biz",
+          billingCycle: "MONTHLY",
+          stripePriceId: "pri_paddle_biz_m",
+        },
+      });
+    });
+
+    it("throws BadRequestError when the paddle provider has no PADDLE_PRICE_* env set", async () => {
+      vi.stubEnv("PAYMENT_PROVIDER", "paddle");
+      delete process.env.PADDLE_PRICE_BUSINESS_MONTHLY;
+
+      const input = {
+        workspaceId: "ws-123",
+        ownerId: "user-123",
+        newPlanName: "BUSINESS" as const,
+        billingCycle: "MONTHLY" as const,
+      };
+
+      vi.mocked(prisma.workspace.findUniqueOrThrow).mockResolvedValue({ ownerId: "user-123" } as unknown as Workspace);
+      vi.mocked(prisma.subscription.findUnique).mockResolvedValue({
+        workspaceId: "ws-123",
+        planId: "plan_pro",
+        billingCycle: "MONTHLY",
+        status: "ACTIVE",
+        stripeSubscriptionId: "sub_paddle",
+      } as unknown as Subscription);
+      // Plan row even has a Stripe price — must still fail because the
+      // paddle path never reads the Plan table's price columns.
+      vi.mocked(prisma.plan.findUnique).mockResolvedValue({
+        id: "plan_biz",
+        name: "BUSINESS",
+        stripePriceIdMonthly: "price_stripe_biz_m",
+        stripePriceIdYearly: null,
+      } as any);
+
+      await expect(BillingService.changePlan(input)).rejects.toThrow(BadRequestError);
     });
 
     it("throws BadRequestError when the Plan row has no price and no env var is set", async () => {

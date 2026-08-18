@@ -57,11 +57,17 @@ export type NormalisedEventType =
   | "SUBSCRIPTION_CREATED"
   | "SUBSCRIPTION_UPDATED"
   | "SUBSCRIPTION_CANCELED"
-  | "SUBSCRIPTION_TRIAL_ENDING"
+  | "SUBSCRIPTION_TRIAL_ENDING" // Stripe: customer.subscription.trial_will_end
+  | "SUBSCRIPTION_TRIAL_STARTED" // Paddle: subscription.trialing (trial begins)
+  | "SUBSCRIPTION_ACTIVATED" // Paddle: subscription.activated (trial → active, or reactivated)
+  | "SUBSCRIPTION_PAUSED" // Paddle: subscription.paused
+  | "SUBSCRIPTION_RESUMED" // Paddle: subscription.resumed
   | "INVOICE_PAID"
   | "INVOICE_PAYMENT_FAILED"
   | "INVOICE_CREATED"
-  | "INVOICE_UPDATED";
+  | "INVOICE_UPDATED"
+  | "REFUND_CREATED"
+  | "REFUND_UPDATED";
 
 export interface NormalisedSubscriptionEvent {
   type: NormalisedEventType;
@@ -86,7 +92,7 @@ export interface NormalisedInvoiceEvent {
   type: NormalisedEventType;
   providerEventId: string;
   providerInvoiceId: string;
-  providerCustomerId: string | null; // ← add this
+  providerCustomerId: string | null;
   providerSubscriptionId: string | null;
   providerPaymentId: string | null;
   amountDue: number; // cents
@@ -105,6 +111,26 @@ export interface NormalisedInvoiceEvent {
   paymentMethodType: string | null;
   cardLast4: string | null;
   lineItems: unknown;
+  metadata: Record<string, string>;
+  raw: unknown;
+}
+
+/**
+ * A refund/chargeback (or its reversal) reported by the payment provider.
+ * Paddle reports refunds as adjustments (`adjustment.created` /
+ * `adjustment.updated`) against a transaction.
+ */
+export interface NormalisedRefundEvent {
+  type: "REFUND_CREATED" | "REFUND_UPDATED";
+  providerEventId: string; // for idempotency (Paddle event_id)
+  providerRefundId: string; // Paddle adjustment ID (adj_xxx)
+  providerTransactionId: string | null; // transaction that was refunded (txn_xxx)
+  providerSubscriptionId: string | null;
+  providerCustomerId: string | null;
+  action: string; // credit | refund | chargeback | ..._reverse
+  status: string; // approved | pending_approval | rejected | reversed
+  amount: number; // |adjustment total| in minor units (cents)
+  currency: string;
   metadata: Record<string, string>;
   raw: unknown;
 }
@@ -142,5 +168,10 @@ export interface IPaymentProvider {
   verifyAndParseWebhook(
     rawBody: Buffer,
     headers: Record<string, string | string[] | undefined>,
-  ): Promise<NormalisedSubscriptionEvent | NormalisedInvoiceEvent | null>;
+  ): Promise<
+    | NormalisedSubscriptionEvent
+    | NormalisedInvoiceEvent
+    | NormalisedRefundEvent
+    | null
+  >;
 }

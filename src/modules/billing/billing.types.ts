@@ -40,15 +40,17 @@ export interface WorkspaceSubscriptionResponse {
 }
 
 export interface InvoiceResponse {
-  id:            string;
-  amount:        number;
-  currency:      string;
-  status:        string;
-  pdfUrl:        string | null;
-  hostedUrl:     string | null;
-  invoiceNumber: string | null;
-  periodStart:   Date | null;
-  periodEnd:     Date | null;
-  paidAt:        Date | null;
-  createdAt:     Date;
+  id:             string;
+  amount:         number;
+  amountRefunded: number;
+  refundedAt:     Date | null;
+  currency:       string;
+  status:         string;
+  pdfUrl:         string | null;
+  hostedUrl:      string | null;
+  invoiceNumber:  string | null;
+  periodStart:    Date | null;
+  periodEnd:      Date | null;
+  paidAt:         Date | null;
+  createdAt:      Date;
 }

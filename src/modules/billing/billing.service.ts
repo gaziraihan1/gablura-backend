@@ -82,9 +82,9 @@ export const BillingService = {
     const provider = getPaymentProvider();
 
 
-    // One 7-day trial per customer — a user who cancels (or lets a trial lapse)
+    // One 14-day trial per customer — a user who cancels (or lets a trial lapse)
     // and re-upgrades must not receive a fresh trial every time.
-    let trialDays: number | undefined = existing ? undefined : 7;
+    let trialDays: number | undefined = existing ? undefined : 14;
     if (!existing) {
       const trialUser = await prisma.user.findUnique({
         where: { id: ownerId },
@@ -192,24 +192,39 @@ const checkoutParams = {
 
     const targetCycle = billingCycle ?? sub.billingCycle;
 
-    // Resolve the new price from the Plan row first (single source of truth —
-    // webhooks resolve the plan back from these same price IDs), then fall back
-    // to the provider env var so a missing DB row never hard-fails locally.
     const newPlan = await prisma.plan.findUnique({
       where: { name: newPlanName },
     });
     if (!newPlan) throw new BadRequestError(`Plan not found: ${newPlanName}`);
-    const providerPrefix = (
-      process.env.PAYMENT_PROVIDER ?? "STRIPE"
-    ).toUpperCase();
+
+    // Resolve the price ID from the source that matches the ACTIVE provider.
+    //   Stripe: the Plan row's stripePriceId* columns first (single source of
+    //           truth — webhooks resolve the plan back from these same IDs),
+    //           then the STRIPE_PRICE_* env var.
+    //   Paddle: the PADDLE_PRICE_* env vars ONLY. The Plan table's
+    //           stripePriceId* columns hold Stripe price IDs (seeded from
+    //           STRIPE_PRICE_*), so they must never be sent to Paddle — a
+    //           Stripe `price_...` ID makes Paddle's subscriptions.update fail.
+    //           This mirrors PaddleProvider.createCheckoutSession, which also
+    //           resolves prices from PADDLE_PRICE_IDS (env).
+    const providerName = (
+      process.env.PAYMENT_PROVIDER ?? "stripe"
+    ).toLowerCase();
+    const providerPrefix = providerName === "paddle" ? "PADDLE" : "STRIPE";
     const newPriceId =
-      (targetCycle === "YEARLY"
-        ? newPlan.stripePriceIdYearly
-        : newPlan.stripePriceIdMonthly) ??
-      process.env[`${providerPrefix}_PRICE_${newPlanName}_${targetCycle}`];
+      providerName === "paddle"
+        ? process.env[`PADDLE_PRICE_${newPlanName}_${targetCycle}`]
+        : (targetCycle === "YEARLY"
+            ? newPlan.stripePriceIdYearly
+            : newPlan.stripePriceIdMonthly) ??
+          process.env[`STRIPE_PRICE_${newPlanName}_${targetCycle}`];
     if (!newPriceId)
       throw new BadRequestError(
-        `No price configured for ${newPlanName} ${targetCycle} (set the Plan row or ${providerPrefix}_PRICE_${newPlanName}_${targetCycle})`,
+        `No price configured for ${newPlanName} ${targetCycle} (${
+          providerName === "paddle"
+            ? `set PADDLE_PRICE_${newPlanName}_${targetCycle}`
+            : `set the Plan row or STRIPE_PRICE_${newPlanName}_${targetCycle}`
+        })`,
       );
 
     const currentPlan = await prisma.plan.findUnique({
@@ -356,6 +371,8 @@ const checkoutParams = {
     const result: InvoiceResponse[] = invoices.map((inv) => ({
       id: inv.id,
       amount: inv.amountPaid,
+      amountRefunded: inv.amountRefunded,
+      refundedAt: inv.refundedAt,
       currency: inv.currency,
       status: inv.status,
       pdfUrl: inv.invoicePdf,

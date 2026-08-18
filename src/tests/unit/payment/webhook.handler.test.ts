@@ -28,9 +28,13 @@ vi.mock("../../../lib/prisma.js", () => ({
     invoice: {
       upsert: vi.fn(),
       updateMany: vi.fn(),
+      findUnique: vi.fn(),
+      update: vi.fn(),
     },
     payment: {
       upsert: vi.fn(),
+      findFirst: vi.fn(),
+      update: vi.fn(),
     },
   },
 }));
@@ -158,6 +162,59 @@ describe("webhook.handler", () => {
         where: { id: "billing_123" },
         data: { processed: true },
       });
+      expect(mockRes.json).toHaveBeenCalledWith({ received: true });
+    });
+
+    it("routes SUBSCRIPTION_PAUSED into the subscription upsert with status PAUSED", async () => {
+      const mockEvent = {
+        providerEventId: "evt_sub_paused",
+        type: "SUBSCRIPTION_PAUSED",
+        raw: {},
+        metadata: { workspaceId: "ws_123" },
+        planName: "PRO",
+        providerSubscriptionId: "sub_123",
+        providerCustomerId: "cus_123",
+        providerPriceId: "price_123",
+        billingCycle: "MONTHLY",
+        status: "PAUSED",
+        currentPeriodStart: new Date(),
+        currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        cancelAtPeriodEnd: false,
+      };
+
+      vi.mocked(getPaymentProvider).mockReturnValue({
+        verifyAndParseWebhook: vi.fn().mockResolvedValue(mockEvent),
+      } as any);
+
+      vi.mocked(prisma.billingEvent.findUnique).mockResolvedValue(null);
+      vi.mocked(prisma.billingEvent.upsert).mockResolvedValue({ id: "billing_sub_paused" } as any);
+      vi.mocked(prisma.plan.findUnique).mockResolvedValue({
+        id: "plan_123",
+        name: "PRO",
+        maxMembersPerWs: 10,
+        maxStorageMb: 5000,
+      } as any);
+      vi.mocked(prisma.subscription.upsert).mockResolvedValue({
+        id: "sub_123",
+        workspaceId: "ws_123",
+      } as any);
+      vi.mocked(prisma.workspace.update).mockResolvedValue({} as any);
+      vi.mocked(prisma.subscription.findUnique).mockResolvedValue(null); // no invoice backfill
+
+      await webhookHandler(mockReq, mockRes);
+
+      // Paused events keep the row in sync instead of being dropped
+      expect(prisma.subscription.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { workspaceId: "ws_123" },
+          update: expect.objectContaining({ status: "PAUSED" }),
+        })
+      );
+      expect(prisma.billingEvent.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({ type: "SUBSCRIPTION_UPDATED" }),
+        })
+      );
       expect(mockRes.json).toHaveBeenCalledWith({ received: true });
     });
 
@@ -417,6 +474,125 @@ describe("webhook.handler", () => {
           }),
         })
       );
+      expect(mockRes.json).toHaveBeenCalledWith({ received: true });
+    });
+
+    it("processes REFUND_CREATED and marks invoice/payment refunded + revokes access on full refund", async () => {
+      const mockEvent = {
+        providerEventId: "evt_adj_1",
+        type: "REFUND_CREATED",
+        raw: {},
+        metadata: {},
+        providerRefundId: "adj_123",
+        providerTransactionId: "txn_123",
+        providerSubscriptionId: "sub_paddle_123",
+        providerCustomerId: "cus_paddle_123",
+        action: "credit",
+        status: "approved",
+        amount: 1000,
+        currency: "usd",
+      };
+
+      vi.mocked(getPaymentProvider).mockReturnValue({
+        verifyAndParseWebhook: vi.fn().mockResolvedValue(mockEvent),
+      } as any);
+
+      vi.mocked(prisma.billingEvent.findUnique).mockResolvedValue(null);
+      vi.mocked(prisma.billingEvent.upsert).mockResolvedValue({ id: "billing_refund_1" } as any);
+      // resolveWorkspaceFromSubId + the full-refund downgrade lookup
+      vi.mocked(prisma.subscription.findFirst).mockResolvedValue({
+        id: "sub_123",
+        workspaceId: "ws_123",
+        status: "ACTIVE",
+      } as any);
+      vi.mocked(prisma.invoice.findUnique).mockResolvedValue({
+        id: "inv_123",
+        workspaceId: "ws_123",
+        amountPaid: 1000,
+        amountRefunded: 0,
+        status: "PAID",
+      } as any);
+      vi.mocked(prisma.payment.findFirst).mockResolvedValue({
+        id: "pay_123",
+        amount: 1000,
+        refundedAmount: 0,
+        status: "SUCCEEDED",
+      } as any);
+      vi.mocked(prisma.plan.findUnique).mockResolvedValue({
+        name: "FREE",
+        maxMembersPerWs: 5,
+        maxStorageMb: 500,
+      } as any);
+
+      await webhookHandler(mockReq, mockRes);
+
+      // BillingEvent recorded as PAYMENT_REFUNDED
+      expect(prisma.billingEvent.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({ type: "PAYMENT_REFUNDED" }),
+        })
+      );
+      // Invoice marked REFUNDED with the amount
+      expect(prisma.invoice.update).toHaveBeenCalledWith({
+        where: { id: "inv_123" },
+        data: expect.objectContaining({
+          amountRefunded: { increment: 1000 },
+          status: "REFUNDED",
+        }),
+      });
+      // Payment marked REFUNDED with the amount
+      expect(prisma.payment.update).toHaveBeenCalledWith({
+        where: { id: "pay_123" },
+        data: expect.objectContaining({
+          refundedAmount: { increment: 1000 },
+          status: "REFUNDED",
+        }),
+      });
+      // Full refund revokes access: subscription canceled + workspace downgraded
+      expect(prisma.subscription.update).toHaveBeenCalledWith({
+        where: { id: "sub_123" },
+        data: expect.objectContaining({ status: "CANCELED", cancelReason: "refunded" }),
+      });
+      expect(prisma.workspace.update).toHaveBeenCalledWith({
+        where: { id: "ws_123" },
+        data: expect.objectContaining({ plan: "FREE", maxMembers: 5, maxStorage: 500 }),
+      });
+      expect(mockRes.json).toHaveBeenCalledWith({ received: true });
+    });
+
+    it("ignores non-approved refund adjustments", async () => {
+      const mockEvent = {
+        providerEventId: "evt_adj_pending",
+        type: "REFUND_UPDATED",
+        raw: {},
+        metadata: {},
+        providerRefundId: "adj_789",
+        providerTransactionId: "txn_789",
+        providerSubscriptionId: "sub_paddle_123",
+        providerCustomerId: "cus_paddle_123",
+        action: "credit",
+        status: "pending_approval",
+        amount: 1000,
+        currency: "usd",
+      };
+
+      vi.mocked(getPaymentProvider).mockReturnValue({
+        verifyAndParseWebhook: vi.fn().mockResolvedValue(mockEvent),
+      } as any);
+
+      vi.mocked(prisma.billingEvent.findUnique).mockResolvedValue(null);
+      vi.mocked(prisma.billingEvent.upsert).mockResolvedValue({ id: "billing_refund_2" } as any);
+
+      await webhookHandler(mockReq, mockRes);
+
+      // Event is recorded, but no refund/invoice/payment mutation happens
+      expect(prisma.invoice.update).not.toHaveBeenCalled();
+      expect(prisma.payment.update).not.toHaveBeenCalled();
+      expect(prisma.subscription.update).not.toHaveBeenCalled();
+      expect(prisma.billingEvent.update).toHaveBeenCalledWith({
+        where: { id: "billing_refund_2" },
+        data: { processed: true },
+      });
       expect(mockRes.json).toHaveBeenCalledWith({ received: true });
     });
 
