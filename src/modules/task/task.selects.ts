@@ -36,6 +36,7 @@ export const projectWithWorkspaceIdSelect = {
 
 export const taskFullInclude = {
   createdBy: { select: createdBySelect },
+  editedBy: { select: createdBySelect },
   assignees: {
     include: {
       user: { select: assigneeUserSelect },
@@ -57,6 +58,7 @@ export const taskFullInclude = {
 
 export const taskDetailInclude = {
   createdBy: { select: createdBySelect },
+  editedBy: { select: createdBySelect },
   assignees: {
     include: {
       user: { select: assigneeUserSelect },

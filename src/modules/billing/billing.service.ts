@@ -292,6 +292,36 @@ const checkoutParams = {
       reason,
     });
 
+    // Optimistically update the DB immediately so the user sees the correct
+    // state without waiting for the webhook. The webhook handler is idempotent
+    // and will reconcile if Paddle's status differs.
+    if (immediately) {
+      const freePlan = await prisma.plan.findUnique({ where: { name: 'FREE' } });
+      await prisma.subscription.update({
+        where: { workspaceId },
+        data: {
+          status: 'CANCELED',
+          canceledAt: new Date(),
+          cancelAtPeriodEnd: false,
+          cancelReason: reason ?? 'user_canceled',
+        },
+      });
+      await prisma.workspace.update({
+        where: { id: workspaceId },
+        data: {
+          plan: 'FREE',
+          maxMembers: freePlan?.maxMembersPerWs ?? 5,
+          maxStorage: freePlan?.maxStorageMb ?? 500,
+        },
+      });
+    } else {
+      // End-of-period cancel: mark intent, actual CANCELED status arrives via webhook
+      await prisma.subscription.update({
+        where: { workspaceId },
+        data: { cancelAtPeriodEnd: true, cancelReason: reason ?? 'user_canceled' },
+      });
+    }
+
     const workspace = await prisma.workspace.findUnique({
       where: { id: workspaceId },
       select: { slug: true },

@@ -62,6 +62,7 @@ export type NormalisedEventType =
   | "SUBSCRIPTION_ACTIVATED" // Paddle: subscription.activated (trial → active, or reactivated)
   | "SUBSCRIPTION_PAUSED" // Paddle: subscription.paused
   | "SUBSCRIPTION_RESUMED" // Paddle: subscription.resumed
+  | "SUBSCRIPTION_PAST_DUE" // Paddle: subscription.past_due (payment failure escalated)
   | "INVOICE_PAID"
   | "INVOICE_PAYMENT_FAILED"
   | "INVOICE_CREATED"

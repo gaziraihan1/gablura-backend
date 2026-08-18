@@ -160,6 +160,7 @@ async function processEvent(
     case "SUBSCRIPTION_ACTIVATED":
     case "SUBSCRIPTION_PAUSED":
     case "SUBSCRIPTION_RESUMED":
+    case "SUBSCRIPTION_PAST_DUE":
       return handleSubscriptionUpserted(event as NormalisedSubscriptionEvent);
     case "SUBSCRIPTION_CANCELED":
       return handleSubscriptionCanceled(event as NormalisedSubscriptionEvent);
@@ -757,6 +758,7 @@ function mapEventType(type: string): BillingEventType {
     SUBSCRIPTION_ACTIVATED:     "SUBSCRIPTION_UPDATED",
     SUBSCRIPTION_PAUSED:        "SUBSCRIPTION_UPDATED",
     SUBSCRIPTION_RESUMED:       "SUBSCRIPTION_UPDATED",
+    SUBSCRIPTION_PAST_DUE:      "SUBSCRIPTION_UPDATED",
     INVOICE_PAID:              "INVOICE_PAID",
     INVOICE_PAYMENT_FAILED:    "INVOICE_PAYMENT_FAILED",
     INVOICE_CREATED:           "INVOICE_CREATED",

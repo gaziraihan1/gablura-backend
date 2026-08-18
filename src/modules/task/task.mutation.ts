@@ -318,6 +318,7 @@ export const TaskMutation = {
       if (!milestone) throw new BadRequestError('Milestone does not belong to this task project');
     }
 
+    updateData.editedById = userId;
     const task = await prisma.task.update({
       where:   { id: taskId },
       data:    updateData,

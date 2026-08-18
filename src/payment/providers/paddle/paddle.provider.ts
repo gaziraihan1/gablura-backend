@@ -7,6 +7,7 @@ import {
   type SubscriptionActivatedEvent,
   type SubscriptionCanceledEvent,
   type SubscriptionCreatedEvent,
+  type SubscriptionPastDueEvent,
   type SubscriptionPausedEvent,
   type SubscriptionResumedEvent,
   type SubscriptionTrialingEvent,
@@ -367,6 +368,16 @@ export class PaddleProvider implements IPaymentProvider {
           type: 'SUBSCRIPTION_ACTIVATED',
           ...buildSubFields(
             (event as SubscriptionActivatedEvent).data,
+            eventId,
+            event,
+          ),
+        };
+
+      case EventName.SubscriptionPastDue:
+        return {
+          type: 'SUBSCRIPTION_UPDATED',
+          ...buildSubFields(
+            (event as SubscriptionPastDueEvent).data,
             eventId,
             event,
           ),

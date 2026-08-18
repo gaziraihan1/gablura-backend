@@ -256,6 +256,7 @@ model User {
   projectMembers          ProjectMember[]
   systemEvents            SystemCalendarEvent[]
   createdTasks            Task[]                   @relation("TaskCreator")
+  editedTasks             Task[]                   @relation("TaskEditor")
   assignedTasks           TaskAssignee[]
   timeEntries             TimeEntry[]
   UploadRateLimit         UploadRateLimit[]
@@ -597,6 +598,7 @@ model Task {
   milestoneId              String?
   milestone                ProjectMilestone? @relation(fields: [milestoneId], references: [id], onDelete: SetNull)
   createdById              String
+  editedById              String?
   parentId                 String?
   workspaceId              String?
   depth                    Int         @default(0)
@@ -647,6 +649,7 @@ model Task {
   files         File[]
   focusSessions FocusSession[]
   createdBy     User             @relation("TaskCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  editedBy    User?            @relation("TaskEditor", fields: [editedById], references: [id], onDelete: SetNull)
   parent        Task?            @relation("Subtasks", fields: [parentId], references: [id])
   subtasks      Task[]           @relation("Subtasks")
   sprint        Sprint?          @relation(fields: [sprintId], references: [id])
@@ -663,6 +666,7 @@ model Task {
 
   @@index([projectId])
   @@index([createdById])
+  @@index([editedById])
   @@index([status])
   @@index([priority])
   @@index([dueDate])

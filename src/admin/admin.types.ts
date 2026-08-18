@@ -290,6 +290,8 @@ export interface AdminBilling {
   recentInvoices: {
     id: string;
     amountPaid: number;
+    amountRefunded: number;
+    refundedAt: Date | null;
     currency: string;
     status: string;
     paidAt: Date | null;

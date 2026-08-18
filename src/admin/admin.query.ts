@@ -724,7 +724,8 @@ export async function queryBilling(
           orderBy: { createdAt: "desc" },
           take:    3,
           select: {
-            id: true, amountPaid: true, currency: true,
+            id: true, amountPaid: true, amountRefunded: true,
+            refundedAt: true, currency: true,
             status: true, paidAt: true, invoicePdf: true,
           },
         },

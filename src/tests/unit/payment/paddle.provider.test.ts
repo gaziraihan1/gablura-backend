@@ -378,6 +378,30 @@ describe("PaddleProvider", () => {
       }));
     });
 
+    it("should normalize a SubscriptionPastDue event as SUBSCRIPTION_UPDATED with PAST_DUE status", async () => {
+      const mockEvent = {
+        eventId: "evt_paddle_past_due",
+        eventType: "subscription.past_due",
+        data: {
+          id: "sub_paddle_past_due",
+          customerId: "cus_paddle_123",
+          status: "past_due",
+          items: [{ price: { id: "price_pro_mo", billingCycle: { interval: "month" } } }],
+          currentBillingPeriod: { startsAt: "2026-02-01T00:00:00Z", endsAt: "2026-03-01T00:00:00Z" },
+          customData: { workspaceId: "ws_123" },
+        },
+      };
+      paddleMock.webhooks.unmarshal.mockResolvedValue(mockEvent);
+
+      const result = await provider.verifyAndParseWebhook(mockRawBody, mockHeaders);
+
+      expect(result).toEqual(expect.objectContaining({
+        type: "SUBSCRIPTION_UPDATED",
+        providerSubscriptionId: "sub_paddle_past_due",
+        status: "PAST_DUE",
+      }));
+    });
+
     it("should normalize a SubscriptionResumed event as SUBSCRIPTION_RESUMED", async () => {
       const mockEvent = {
         eventId: "evt_paddle_resumed",
