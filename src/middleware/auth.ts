@@ -54,6 +54,132 @@ try {
 
 const CURRENT_TOKEN_VERSION = 1;
 
+/**
+ * Session binding validation (device/IP fingerprint). Must run on EVERY
+ * authenticated request — including ones served from the auth-result cache —
+ * otherwise a token whose first request populated the cache would never be
+ * re-validated: binding adoption, same-IP re-binding, and cross-IP hijack
+ * detection would all be silently skipped.
+ *
+ * Returns an Error to pass to `next()` (e.g. SESSION_HIJACK_DETECTED) or
+ * `null` when the request may proceed. Best-effort: missing metadata (legacy
+ * sessions) is allowed through.
+ */
+async function enforceSessionBinding(
+  req: AuthRequest,
+  decoded: FocuraJwtPayload,
+): Promise<Error | null> {
+  if (!decoded.sessionId) return null;
+
+  const redis = getRedisClient();
+  const metadataKey = `session:metadata:${decoded.sessionId}`;
+  const storedMetadata = await redis.get(metadataKey);
+
+  if (!storedMetadata) return null;
+
+  const metadata: SessionMetadata = JSON.parse(storedMetadata);
+
+  // The Next.js server legitimately calls this API with the user's
+  // access token (SSR data hydration via lib/api/server.ts). Those
+  // server-to-server requests carry no browser headers and can never be
+  // device-bound — skip binding enforcement for them entirely, and never
+  // let them claim the binding ahead of the real browser.
+  // Trade-off: a stolen token used through a runtime-style client (curl,
+  // undici, axios) also bypasses device binding — the real boundary stays
+  // the RS256 tokens + HMAC exchange proof + revocation.
+  if (looksLikeServerToServerRequest(req)) return null;
+
+  // A session minted by the server-to-server token exchange has no
+  // browser binding (deviceId === null), or the stored binding was
+  // created by a server process (runtime user-agent). Adopt the
+  // fingerprint of the first real browser request instead of rejecting
+  // it — otherwise every fresh session false-positives as a
+  // DEVICE_MISMATCH and the user is logged out immediately after login.
+  if (
+    metadata.deviceId == null ||
+    looksLikeServerToServerUA(metadata.userAgent)
+  ) {
+    // Trust boundary: the exchange happened server-to-server, so the
+    // first real browser request claims the device binding. This keeps
+    // legitimate logins working; the security boundary remains the
+    // RS256 tokens + HMAC exchange proof, and all later requests are
+    // bound.
+    metadata.deviceId = generateDeviceFingerprint(req);
+    metadata.ipAddress = getClientIp(req);
+    metadata.userAgent = req.headers["user-agent"] || "unknown";
+    metadata.lastActivity = Date.now();
+    auditLog("SESSION_BOUND", {
+      userId: decoded.sub,
+      sessionId: decoded.sessionId,
+      ip: metadata.ipAddress,
+      userAgent: metadata.userAgent,
+    });
+  } else {
+    const bindingValidation = validateSessionBinding(req, metadata);
+    const currentIp = getClientIp(req);
+
+    if (!bindingValidation.valid) {
+      // Same IP + different device fingerprint is almost always a
+      // legitimate device switch — DevTools mobile emulation, a
+      // browser update, or moving between browsers on the same
+      // machine — NOT a hijack. Re-bind the session to the current
+      // device instead of revoking every token (which force-logs-out
+      // the user mid-session). Only a device change from a DIFFERENT
+      // public IP (a stolen token replayed from another network) is
+      // treated as a hijack. Private/internal IPs (RFC1918, link-local)
+      // carry no client identity behind the hosting proxy — the
+      // server-side exchange and proxy hops surface 10.x addresses, so
+      // a device change observed from one is also a re-bind.
+      //
+      // Security trade-off (deliberate): an attacker sharing the
+      // victim's network (same NAT) could replay a stolen refresh
+      // token and get a silent re-bind instead of a revocation. This
+      // is accepted because the real boundary remains the RS256
+      // tokens + HMAC exchange proof + rotation (device binding is a
+      // soft secondary signal, and runtime-style clients already
+      // bypass it). Every re-bind is recorded via the
+      // SESSION_REBOUND audit event for review.
+      const isSameIpDeviceChange =
+        bindingValidation.reason === "DEVICE_MISMATCH" &&
+        (currentIp === metadata.ipAddress ||
+          isPrivateIp(currentIp) ||
+          isPrivateIp(metadata.ipAddress));
+
+      if (isSameIpDeviceChange) {
+        metadata.deviceId = generateDeviceFingerprint(req);
+        metadata.userAgent = req.headers["user-agent"] || "unknown";
+        auditLog("SESSION_REBOUND", {
+          userId: decoded.sub,
+          sessionId: decoded.sessionId,
+          ip: currentIp,
+          userAgent: metadata.userAgent,
+        });
+      } else {
+        // Genuine hijack — revoke all tokens, drop the cached auth
+        // result, and log the suspicious activity before erroring.
+        await revokeAllRefreshTokens(decoded.sub);
+        if (decoded.jti) {
+          await CacheClient.delete(CACHE_KEYS.authResult(decoded.jti));
+        }
+        auditLog("SESSION_HIJACK_DETECTED", {
+          userId: decoded.sub,
+          sessionId: decoded.sessionId,
+          reason: bindingValidation.reason,
+          ip: currentIp,
+          userAgent: req.headers["user-agent"],
+        });
+        return new SessionHijackError(bindingValidation.reason);
+      }
+    }
+  }
+
+  // Bump lastActivity
+  metadata.lastActivity = Date.now();
+  await redis.setex(metadataKey, 7 * 24 * 60 * 60, JSON.stringify(metadata));
+
+  return null;
+}
+
 export const authenticate = async (
   req: AuthRequest,
   _res: Response,
@@ -98,7 +224,13 @@ export const authenticate = async (
         }
         // Valid cached result — skip revocation checks (steps 3-6) and
         // jump directly to the user lookup (step 7) to avoid 3 extra
-        // Redis round-trips per request.
+        // Redis round-trips per request. Session binding is a security
+        // control, not a revocation check, so it still runs on cached
+        // requests (binding adoption, re-bind, and hijack detection must
+        // not be skipped).
+        const bindingError = await enforceSessionBinding(req, decoded);
+        if (bindingError) return next(bindingError);
+
         let user;
         const userProfileKey = CACHE_KEYS.userProfile(decoded.sub);
         const cachedUser = await CacheClient.get<{
@@ -168,113 +300,8 @@ export const authenticate = async (
     }
 
     // 6. Session binding validation (Redis)
-    if (decoded.sessionId) {
-      const redis = getRedisClient();
-      const metadataKey = `session:metadata:${decoded.sessionId}`;
-      const storedMetadata = await redis.get(metadataKey);
- 
-      if (storedMetadata) {
-                        const metadata: SessionMetadata = JSON.parse(storedMetadata);
-
-        // The Next.js server legitimately calls this API with the user's
-        // access token (SSR data hydration via lib/api/server.ts). Those
-        // server-to-server requests carry no browser headers and can never be
-        // device-bound — skip binding enforcement for them entirely, and never
-        // let them claim the binding ahead of the real browser.
-        // Trade-off: a stolen token used through a runtime-style client (curl,
-        // undici, axios) also bypasses device binding — the real boundary stays
-        // the RS256 tokens + HMAC exchange proof + revocation.
-        if (!looksLikeServerToServerRequest(req)) {
-          // A session minted by the server-to-server token exchange has no
-          // browser binding (deviceId === null), or the stored binding was
-          // created by a server process (runtime user-agent). Adopt the
-          // fingerprint of the first real browser request instead of rejecting
-          // it — otherwise every fresh session false-positives as a
-          // DEVICE_MISMATCH and the user is logged out immediately after login.
-          if (
-            metadata.deviceId == null ||
-            looksLikeServerToServerUA(metadata.userAgent)
-          ) {
-            // Trust boundary: the exchange happened server-to-server, so the
-            // first real browser request claims the device binding. This keeps
-            // legitimate logins working; the security boundary remains the
-            // RS256 tokens + HMAC exchange proof, and all later requests are
-            // bound.
-            metadata.deviceId = generateDeviceFingerprint(req);
-            metadata.ipAddress = getClientIp(req);
-            metadata.userAgent = req.headers["user-agent"] || "unknown";
-            metadata.lastActivity = Date.now();
-            auditLog("SESSION_BOUND", {
-              userId: decoded.sub,
-              sessionId: decoded.sessionId,
-              ip: metadata.ipAddress,
-              userAgent: metadata.userAgent,
-            });
-          } else {
-            const bindingValidation = validateSessionBinding(req, metadata);
-            const currentIp = getClientIp(req);
-
-            if (!bindingValidation.valid) {
-              // Same IP + different device fingerprint is almost always a
-              // legitimate device switch — DevTools mobile emulation, a
-              // browser update, or moving between browsers on the same
-              // machine — NOT a hijack. Re-bind the session to the current
-              // device instead of revoking every token (which force-logs-out
-              // the user mid-session). Only a device change from a DIFFERENT
-              // public IP (a stolen token replayed from another network) is
-              // treated as a hijack. Private/internal IPs (RFC1918, link-local)
-              // carry no client identity behind the hosting proxy — the
-              // server-side exchange and proxy hops surface 10.x addresses, so
-              // a device change observed from one is also a re-bind.
-              //
-              // Security trade-off (deliberate): an attacker sharing the
-              // victim's network (same NAT) could replay a stolen refresh
-              // token and get a silent re-bind instead of a revocation. This
-              // is accepted because the real boundary remains the RS256
-              // tokens + HMAC exchange proof + rotation (device binding is a
-              // soft secondary signal, and runtime-style clients already
-              // bypass it). Every re-bind is recorded via the
-              // SESSION_REBOUND audit event for review.
-              const isSameIpDeviceChange =
-                bindingValidation.reason === "DEVICE_MISMATCH" &&
-                (currentIp === metadata.ipAddress ||
-                  isPrivateIp(currentIp) ||
-                  isPrivateIp(metadata.ipAddress));
-
-              if (isSameIpDeviceChange) {
-                metadata.deviceId = generateDeviceFingerprint(req);
-                metadata.userAgent = req.headers["user-agent"] || "unknown";
-                auditLog("SESSION_REBOUND", {
-                  userId: decoded.sub,
-                  sessionId: decoded.sessionId,
-                  ip: currentIp,
-                  userAgent: metadata.userAgent,
-                });
-              } else {
-                // Genuine hijack — revoke all tokens, drop the cached auth
-                // result, and log the suspicious activity before erroring.
-                await revokeAllRefreshTokens(decoded.sub);
-                if (decoded.jti) {
-                  await CacheClient.delete(CACHE_KEYS.authResult(decoded.jti));
-                }
-                auditLog("SESSION_HIJACK_DETECTED", {
-                  userId: decoded.sub,
-                  sessionId: decoded.sessionId,
-                  reason: bindingValidation.reason,
-                  ip: currentIp,
-                  userAgent: req.headers["user-agent"],
-                });
-                return next(new SessionHijackError(bindingValidation.reason));
-              }
-            }
-          }
-
-          // Bump lastActivity
-          metadata.lastActivity = Date.now();
-          await redis.setex(metadataKey, 7 * 24 * 60 * 60, JSON.stringify(metadata));
-        }
-      }
-    }
+    const bindingError = await enforceSessionBinding(req, decoded);
+    if (bindingError) return next(bindingError);
  
     // 7. DB user lookup with caching
     const userProfileKey = CACHE_KEYS.userProfile(decoded.sub);
