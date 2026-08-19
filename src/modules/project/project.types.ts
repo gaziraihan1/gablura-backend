@@ -70,6 +70,7 @@ export interface ProjectForStats {
 }
 
 export interface ProjectForPermission {
+  id:        string;
   workspace: {
     id:      string;
     ownerId: string;

@@ -102,13 +102,24 @@ export const ProjectAccess = {
     if (!project.workspace) return false;
     if (project.workspace.ownerId === userId) return true;
 
-    const adminMember = await prisma.workspaceMember.findFirst({
+    // Workspace OWNER or ADMIN
+    const workspaceAdmin = await prisma.workspaceMember.findFirst({
       where: {
         workspaceId: project.workspace.id,
         userId,
         role: { in: ['OWNER', 'ADMIN'] },
       },
     });
-    return !!adminMember;
+    if (workspaceAdmin) return true;
+
+    // Project MANAGER
+    const projectManager = await prisma.projectMember.findFirst({
+      where: {
+        projectId: project.id,
+        userId,
+        role: 'MANAGER',
+      },
+    });
+    return !!projectManager;
   },
 };

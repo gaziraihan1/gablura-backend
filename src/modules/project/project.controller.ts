@@ -14,6 +14,9 @@ import { FavoriteQuery } from "./project.favorite.query.js";
 import { FavoriteMutation } from "./project.favorite.mutation.js";
 import { asyncHandler, ValidationError } from "../../errors/index.js";
 import { ProjectAccess } from "./project.access.js";
+import { ProjectActivity } from "./project.activity.js";
+import { ProjectNotifications } from "./project.notifications.js";
+import { prisma } from "../../lib/prisma.js";
 import {
   createProjectSchema,
   updateProjectSchema,
@@ -89,6 +92,16 @@ export const createProject = asyncHandler(
       ...parsed.data,
       createdById: req.user!.id,
     });
+
+    if (project.workspaceId) {
+      void ProjectActivity.logCreated({
+        projectId:   project.id,
+        projectName: project.name,
+        userId:      req.user!.id,
+        workspaceId: project.workspaceId,
+      });
+    }
+
     res.status(201).json({
       success: true,
       data: project,
@@ -108,6 +121,28 @@ export const updateProject = asyncHandler(
       req.params.projectId,
       parsed.data,
     );
+
+    if (project.workspaceId) {
+      const changes: Record<string, unknown> = {};
+      if (parsed.data.name !== undefined)        changes.name = parsed.data.name;
+      if (parsed.data.description !== undefined)  changes.description = parsed.data.description;
+      if (parsed.data.status !== undefined)       changes.status = parsed.data.status;
+      if (parsed.data.priority !== undefined)     changes.priority = parsed.data.priority;
+      if (parsed.data.color !== undefined)        changes.color = parsed.data.color;
+      if (parsed.data.startDate !== undefined)    changes.startDate = parsed.data.startDate;
+      if (parsed.data.dueDate !== undefined)      changes.dueDate = parsed.data.dueDate;
+
+      if (Object.keys(changes).length > 0) {
+        void ProjectActivity.logUpdated({
+          projectId:   project.id,
+          projectName: project.name,
+          userId:      req.user!.id,
+          workspaceId: project.workspaceId,
+          changes,
+        });
+      }
+    }
+
     res.json({
       success: true,
       data: project,
@@ -118,7 +153,25 @@ export const updateProject = asyncHandler(
 
 export const deleteProject = asyncHandler(
   async (req: AuthRequest, res: Response) => {
+    // Fetch project data before deletion for activity logging
+    const project = await prisma.project.findUnique({
+      where:  { id: req.params.projectId },
+      select: { name: true, status: true, priority: true, workspaceId: true },
+    });
+
     await ProjectMutation.deleteProject(req.user!.id, req.params.projectId);
+
+    if (project?.workspaceId) {
+      void ProjectActivity.logDeleted({
+        projectId:   req.params.projectId,
+        projectName: project.name,
+        userId:      req.user!.id,
+        workspaceId: project.workspaceId,
+        status:      project.status,
+        priority:    project.priority,
+      });
+    }
+
     res.json({ success: true, message: "Project deleted successfully" });
   },
 );
@@ -136,6 +189,44 @@ export const addProjectMember = asyncHandler(
       req.params.projectId,
       parsed.data,
     );
+
+    // Log activity + notify — need project workspace info
+    const projectForActivity = await prisma.project.findUnique({
+      where:  { id: req.params.projectId },
+      select: {
+        name: true,
+        workspaceId: true,
+        workspace: { select: { slug: true } },
+      },
+    });
+    if (projectForActivity?.workspaceId) {
+      void ProjectActivity.logMemberAdded({
+        projectId:   req.params.projectId,
+        projectName: projectForActivity.name,
+        userId:      req.user!.id,
+        addedUserId: parsed.data.userId,
+        role:        parsed.data.role ?? "COLLABORATOR",
+        workspaceId: projectForActivity.workspaceId,
+      });
+
+      void ProjectNotifications.notifyMemberAdded({
+        addedUserId:   parsed.data.userId,
+        adderId:       req.user!.id,
+        projectName:   projectForActivity.name,
+        projectId:     req.params.projectId,
+        workspaceSlug: projectForActivity.workspace?.slug ?? '',
+      });
+
+      void ProjectNotifications.notifyManagersMemberAdded({
+        projectId:     req.params.projectId,
+        projectName:   projectForActivity.name,
+        adderId:       req.user!.id,
+        addedUserName: member.user?.name ?? 'Someone',
+        workspaceId:   projectForActivity.workspaceId,
+        workspaceSlug: projectForActivity.workspace?.slug ?? '',
+      });
+    }
+
     res.status(201).json({
       success: true,
       data: member,
@@ -150,12 +241,48 @@ export const updateProjectMemberRole = asyncHandler(
     if (!parsed.success)
       throw new ValidationError("Validation error", parsed.error.issues);
 
+    // Fetch old role before update for activity logging
+    const oldMember = await prisma.projectMember.findUnique({
+      where:  { projectId_userId: { projectId: req.params.projectId, userId: req.params.memberId } },
+      select: { role: true },
+    });
+
     const member = await ProjectMutation.updateProjectMemberRole(
       req.user!.id,
       req.params.projectId,
       req.params.memberId,
       parsed.data,
     );
+
+    const projectForRoleActivity = await prisma.project.findUnique({
+      where:  { id: req.params.projectId },
+      select: {
+        name: true,
+        workspaceId: true,
+        workspace: { select: { slug: true } },
+      },
+    });
+    if (projectForRoleActivity?.workspaceId && oldMember) {
+      void ProjectActivity.logMemberRoleChanged({
+        projectId:     req.params.projectId,
+        projectName:   projectForRoleActivity.name,
+        userId:        req.user!.id,
+        targetUserId:  req.params.memberId,
+        oldRole:       oldMember.role,
+        newRole:       parsed.data.role,
+        workspaceId:   projectForRoleActivity.workspaceId,
+      });
+
+      void ProjectNotifications.notifyMemberRoleChanged({
+        targetUserId:  req.params.memberId,
+        updaterId:     req.user!.id,
+        projectName:   projectForRoleActivity.name,
+        projectId:     req.params.projectId,
+        workspaceSlug: projectForRoleActivity.workspace?.slug ?? '',
+        newRole:       parsed.data.role,
+      });
+    }
+
     res.json({
       success: true,
       data: member,
@@ -166,11 +293,34 @@ export const updateProjectMemberRole = asyncHandler(
 
 export const removeProjectMember = asyncHandler(
   async (req: AuthRequest, res: Response) => {
+    // Fetch project data before removal for activity logging + notification
+    const projectForRemoveActivity = await prisma.project.findUnique({
+      where:  { id: req.params.projectId },
+      select: { name: true, workspaceId: true },
+    });
+
     await ProjectMutation.removeProjectMember(
       req.user!.id,
       req.params.projectId,
       req.params.memberId,
     );
+
+    if (projectForRemoveActivity?.workspaceId) {
+      void ProjectActivity.logMemberRemoved({
+        projectId:     req.params.projectId,
+        projectName:   projectForRemoveActivity.name,
+        userId:        req.user!.id,
+        removedUserId: req.params.memberId,
+        workspaceId:   projectForRemoveActivity.workspaceId,
+      });
+
+      void ProjectNotifications.notifyMemberRemoved({
+        removedUserId: req.params.memberId,
+        removerId:     req.user!.id,
+        projectName:   projectForRemoveActivity.name,
+      });
+    }
+
     res.json({ success: true, message: "Member removed successfully" });
   },
 );

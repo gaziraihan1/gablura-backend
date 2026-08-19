@@ -8,6 +8,7 @@ vi.mock("../../../lib/prisma.js", () => ({
     workspace: { findFirst: vi.fn() },
     project: { findFirst: vi.fn(), findUnique: vi.fn() },
     workspaceMember: { findFirst: vi.fn() },
+    projectMember: { findFirst: vi.fn() },
   },
 }));
 
@@ -112,24 +113,32 @@ describe("ProjectAccess", () => {
 
   describe("isProjectAdmin", () => {
     it("should return true if user is workspace owner", async () => {
-      const result = await ProjectAccess.isProjectAdmin("u1", { workspace: { id: "ws1", ownerId: "u1" } } as any);
+      const result = await ProjectAccess.isProjectAdmin("u1", { id: "p1", workspace: { id: "ws1", ownerId: "u1" } } as any);
       expect(result).toBe(true);
     });
 
     it("should return true if user is workspace admin/owner member", async () => {
       (prisma.workspaceMember.findFirst as any).mockResolvedValue({ id: "wm1" });
-      const result = await ProjectAccess.isProjectAdmin("u1", { workspace: { id: "ws1", ownerId: "u2" } } as any);
+      const result = await ProjectAccess.isProjectAdmin("u1", { id: "p1", workspace: { id: "ws1", ownerId: "u2" } } as any);
       expect(result).toBe(true);
     });
 
     it("should return false if workspace is null", async () => {
-      const result = await ProjectAccess.isProjectAdmin("u1", { workspace: null } as any);
+      const result = await ProjectAccess.isProjectAdmin("u1", { id: "p1", workspace: null } as any);
       expect(result).toBe(false);
     });
 
-    it("should return false if user is not admin", async () => {
+    it("should return true if user is project MANAGER", async () => {
       (prisma.workspaceMember.findFirst as any).mockResolvedValue(null);
-      const result = await ProjectAccess.isProjectAdmin("u1", { workspace: { id: "ws1", ownerId: "u2" } } as any);
+      (prisma.projectMember.findFirst as any).mockResolvedValue({ id: "pm1", role: "MANAGER" });
+      const result = await ProjectAccess.isProjectAdmin("u1", { id: "p1", workspace: { id: "ws1", ownerId: "u2" } } as any);
+      expect(result).toBe(true);
+    });
+
+    it("should return false if user is not admin or manager", async () => {
+      (prisma.workspaceMember.findFirst as any).mockResolvedValue(null);
+      (prisma.projectMember.findFirst as any).mockResolvedValue(null);
+      const result = await ProjectAccess.isProjectAdmin("u1", { id: "p1", workspace: { id: "ws1", ownerId: "u2" } } as any);
       expect(result).toBe(false);
     });
   });
