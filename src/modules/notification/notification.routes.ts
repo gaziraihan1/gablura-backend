@@ -1,6 +1,7 @@
 
 import { Router } from "express";
 import { authenticate } from "../../middleware/auth.js";
+import { sessionTimeout } from "../../middleware/sessionTimeout.js";
 import {
   getNotifications,
   getUnreadCount,
@@ -18,8 +19,9 @@ const router = Router();
 // ─── SSE stream: uses its own query-string token auth ────────
 router.get("/stream", notificationStreamHandler);
 
-// ─── All other endpoints require Bearer auth ─────────────────
+// ─── All other endpoints require Bearer auth + session timeout ─
 router.use(authenticate);
+router.use(sessionTimeout);
 
 // ─── Mint a fresh 30s single-use token for the SSE stream ────
 router.get("/sse-token", getSseToken);

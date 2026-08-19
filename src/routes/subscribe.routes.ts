@@ -36,7 +36,7 @@ router.post("/", asyncHandler(async (req, res) => {
     });
   }
 
-  const alreadyExists = await prisma.subscribeList.findUnique({
+  const alreadyExists = await prisma.templateList.findUnique({
     where: { email },
   });
 

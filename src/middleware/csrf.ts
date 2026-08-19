@@ -89,11 +89,6 @@ export const requireCsrfToken = () => {
       return next();
     }
 
-    // GitHub/Slack link endpoints are safe (only updates task metadata)
-    if (req.path.includes("/github-link") || req.path.includes("/slack-link") || req.path.includes("/slack-unlink")) {
-      return next();
-    }
-
     const csrfToken = req.headers["x-csrf-token"] as string;
     const user = req.user;
 

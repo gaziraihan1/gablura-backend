@@ -163,6 +163,8 @@ app.get("/api/v1/auth/activity", authenticate, sessionTimeout, (_req, res) =>
 );
 
 // ── Public routes ──────────────────────────────────────────
+// Notification router applies authenticate + sessionTimeout internally
+// (the SSE /stream endpoint uses its own token-based auth)
 app.use("/api/v1/notifications", notificationRouter);
 app.use("/api/v1/contact", contactRouter);
 app.use("/api/v1/jobs", jobRouter);

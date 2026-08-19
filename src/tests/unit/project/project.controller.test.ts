@@ -8,8 +8,16 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // ── Mock modules ─────────────────────────────────────────────────────────────
 
 vi.mock('../../../lib/prisma.js', () => ({
-  prisma: {},
+  prisma: {
+    project: {
+      findUnique: vi.fn().mockResolvedValue(null),
+    },
+    projectMember: {
+      findUnique: vi.fn().mockResolvedValue(null),
+    },
+  },
 }));
+import { prisma } from '../../../lib/prisma.js';
 
 vi.mock('../../../lib/redis/cache.client.js', () => ({
   CacheClient: vi.fn().mockImplementation(() => ({})),
@@ -155,6 +163,28 @@ vi.mock('../../../modules/project/project.favorite.mutation.js', () => ({
   },
 }));
 import { FavoriteMutation } from '../../../modules/project/project.favorite.mutation.js';
+
+vi.mock('../../../modules/project/project.activity.js', () => ({
+  ProjectActivity: {
+    logCreated: vi.fn(),
+    logUpdated: vi.fn(),
+    logDeleted: vi.fn(),
+    logMemberAdded: vi.fn(),
+    logMemberRoleChanged: vi.fn(),
+    logMemberRemoved: vi.fn(),
+  },
+}));
+import { ProjectActivity } from '../../../modules/project/project.activity.js';
+
+vi.mock('../../../modules/project/project.notifications.js', () => ({
+  ProjectNotifications: {
+    notifyMemberAdded: vi.fn(),
+    notifyManagersMemberAdded: vi.fn(),
+    notifyMemberRoleChanged: vi.fn(),
+    notifyMemberRemoved: vi.fn(),
+  },
+}));
+import { ProjectNotifications } from '../../../modules/project/project.notifications.js';
 
 // ── Validators (pass-through so zod schema.safeParse works) ──────────────────
 

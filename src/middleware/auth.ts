@@ -49,7 +49,6 @@ try {
     );
   }
 } catch (error) {
-  console.error("❌  Failed to load JWT public key:", error);
   throw new Error("JWT public key not found. Copy keys/public.pem from frontend.", { cause: error });
 }
 
