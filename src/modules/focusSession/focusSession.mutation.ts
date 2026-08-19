@@ -21,6 +21,32 @@ export const FocusSessionMutation = {
       );
     }
 
+    // Validate taskId exists and user has access before creating
+    if (input.taskId) {
+      const task = await prisma.task.findFirst({
+        where: {
+          id: input.taskId,
+          OR: [
+            { createdById: input.userId },
+            { assignees: { some: { userId: input.userId } } },
+            { project: { members: { some: { userId: input.userId } } } },
+            {
+              project: {
+                workspace: {
+                  OR: [
+                    { ownerId: input.userId },
+                    { members: { some: { userId: input.userId } } },
+                  ],
+                },
+              },
+            },
+          ],
+        },
+        select: { id: true },
+      });
+      if (!task) throw new NotFoundError('Task', 'TASK_NOT_FOUND');
+    }
+
     const session = await prisma.focusSession.create({
       data: {
         userId:    input.userId,

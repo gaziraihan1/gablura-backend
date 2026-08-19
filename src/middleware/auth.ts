@@ -79,11 +79,6 @@ export const authenticate = async (
         issuer: "focura-app",
         audience: "focura-backend",
       }) as FocuraJwtPayload;
-      
- 
-      if (process.env.NODE_ENV !== "production") {
-        console.log("✅ Token verified:", { userId: decoded.sub, jti: decoded.jti?.slice(0, 8) });
-      }
     } catch (err: any) {
       if (err.name === "TokenExpiredError") {
         return next(new TokenExpiredError());
@@ -97,14 +92,52 @@ export const authenticate = async (
       const cachedResult = await CacheClient.get<{ userId: string; valid: boolean }>(cacheKey);
       
       if (cachedResult) {
-    if (process.env.NODE_ENV !== "production") {
-      console.log("✅ Auth result cache hit for token:", decoded.jti?.slice(0, 8));
-    }
         // If cached result indicates invalid, return error immediately
         if (!cachedResult.valid) {
           return next(new InvalidTokenError("INVALID_TOKEN_CACHED"));
         }
-        // If valid, continue to revocation check below
+        // Valid cached result — skip revocation checks (steps 3-6) and
+        // jump directly to the user lookup (step 7) to avoid 3 extra
+        // Redis round-trips per request.
+        let user;
+        const userProfileKey = CACHE_KEYS.userProfile(decoded.sub);
+        const cachedUser = await CacheClient.get<{
+          id: string;
+          email: string;
+          name: string | null;
+          role: string;
+          emailVerified: Date | null;
+          bannedAt: Date | null;
+          banReason: string | null;
+        }>(userProfileKey);
+
+        if (cachedUser) {
+          user = cachedUser;
+        } else {
+          user = await prisma.user.findUnique({
+            where: { id: decoded.sub },
+            select: {
+              id: true, email: true, name: true, role: true,
+              emailVerified: true, bannedAt: true, banReason: true,
+            },
+          });
+          if (user) {
+            await CacheClient.set(userProfileKey, user, CACHE_TTL.USER_PROFILE);
+          }
+        }
+
+        if (!user) return next(new UnauthorizedError("User not found", "USER_NOT_FOUND"));
+        if (!user.emailVerified) return next(new EmailNotVerifiedError());
+        if (user.bannedAt) return next(new AccountBannedError(user.banReason, user.bannedAt));
+
+        req.user = {
+          id: user.id, email: user.email, name: user.name,
+          role: user.role, tokenJti: decoded.jti, sessionId: decoded.sessionId,
+        };
+        setUserContext({ id: user.id, email: user.email, username: user.name || undefined });
+        addBreadcrumb({ category: "auth", message: "User authenticated successfully", level: "info",
+          data: { userId: user.id, email: user.email, role: user.role } });
+        return next();
       }
     }
  
@@ -258,14 +291,8 @@ export const authenticate = async (
     let user;
     
     if (cachedUser) {
-      if (process.env.NODE_ENV !== "production") {
-        console.log("✅ User profile cache hit for:", decoded.sub);
-      }
       user = cachedUser;
     } else {
-      if (process.env.NODE_ENV !== "production") {
-        console.log("❌ User profile cache miss for:", decoded.sub);
-      }
       user = await prisma.user.findUnique({
         where: { id: decoded.sub },
         select: {

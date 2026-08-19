@@ -13,7 +13,7 @@ export type FocusSessionErrorCode = typeof FocusSessionError[keyof typeof FocusS
 export interface CreateFocusSessionInput {
   userId: string;
   taskId?: string;
-  type?: FocusType;
+  type: FocusType;
   duration: number;
 }
 
