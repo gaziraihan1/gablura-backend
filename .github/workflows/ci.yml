@@ -182,6 +182,53 @@ jobs:
           kill $SERVER_PID
 
       # ─────────────────────────────────────────────
+      # POST-DEPLOY HEALTH CHECK (Render auto-deploys on push to main)
+      # ─────────────────────────────────────────────
+      - name: Wait for Render deploy
+        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          echo "⏳ Waiting 60s for Render to pick up the push and deploy..."
+          sleep 60
+
+      - name: Health check gate
+        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          HEALTH_URL="${{ secrets.PRODUCTION_URL }}/health"
+          echo "🔍 Checking $HEALTH_URL"
+
+          for i in {1..15}; do
+            RESPONSE=$(curl -s -w "\n%{http_code}" -m 10 "$HEALTH_URL" 2>/dev/null)
+            HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+            BODY=$(echo "$RESPONSE" | sed '$d')
+
+            echo "Attempt $i: HTTP $HTTP_CODE"
+
+            if [ "$HTTP_CODE" = "200" ]; then
+              STATUS=$(echo "$BODY" | grep -o '"status":"[^"]*"' | head -1)
+              DB_PRIMARY=$(echo "$BODY" | grep -o '"primary":"[^"]*"' | head -1)
+              echo "✅ Health check passed: $STATUS, $DB_PRIMARY"
+              exit 0
+            fi
+
+            echo "⚠️  Not ready, retrying in 15s..."
+            sleep 15
+          done
+
+          echo "❌ Health check failed after ~4 minutes"
+          echo "Response body: $BODY"
+          echo ""
+          echo "Render may still be spinning up (cold start). Check: https://dashboard.render.com"
+          exit 1
+
+      - name: Warn on health check failure
+        if: failure() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          echo "🚨 Post-deploy health check failed"
+          echo "The push to main triggered a Render auto-deploy, but /health did not return 200."
+          echo "Check Render dashboard: https://dashboard.render.com"
+          echo "If this is a cold start, Render may just need more time."
+
+      # ─────────────────────────────────────────────
       # ARTIFACTS
       # ─────────────────────────────────────────────
       - name: Upload artifacts on failure
