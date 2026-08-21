@@ -290,10 +290,22 @@ export async function notificationStreamHandler(
 
   // Single-use enforcement: the token's jti is atomically consumed from Redis
   // so it can open exactly one stream. A null result means the token was
-  // already used (replay), expired, or never issued — reject it. This check is
-  // deliberately fail-closed: if Redis is unreachable we cannot prove the
-  // token is unused, so no stream is opened.
-  const boundUserId = await consumeSseToken(payload.jti);
+  // already used (replay), expired, or never issued — reject it.
+  let boundUserId: string | null;
+  try {
+    boundUserId = await consumeSseToken(payload.jti);
+  } catch (err) {
+    // Redis is unreachable or rate-limited (e.g. Upstash daily quota).
+    // Return 503 so the frontend knows to retry later instead of treating
+    // this as an auth failure and logging the user out.
+    console.error("[SSE] Redis unavailable during token consumption:", err);
+    res.status(503).json({
+      success: false,
+      message: "Service temporarily unavailable. Please try again.",
+      code: "REDIS_UNAVAILABLE",
+    });
+    return;
+  }
   if (boundUserId !== userId) {
     res.status(401).json({
       success: false,

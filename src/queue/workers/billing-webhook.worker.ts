@@ -59,7 +59,8 @@ export function createBillingWebhookWorker() {
         password: process.env.REDIS_PASSWORD ?? undefined,
         tls: process.env.REDIS_URL?.startsWith("rediss://") ? {} : undefined,
       },
-      concurrency: 3,
+      concurrency: 2,
+      stalledInterval: 90_000, // 90s (default: 30s) — billing retries are infrequent
       limiter: {
         max: 10,
         duration: 1000,

@@ -334,7 +334,7 @@ describe('notification.cron.ts', () => {
   it('startTaskReminderCron registers schedule and logs startup', async () => {
     const { startTaskReminderCron } = await import('../../modules/notification/notification.cron.js');
     startTaskReminderCron();
-    expect(mockCronSchedule).toHaveBeenCalledWith('*/5 * * * *', expect.any(Function));
+    expect(mockCronSchedule).toHaveBeenCalledWith('*/15 * * * *', expect.any(Function));
     expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Task reminder cron started'));
   });
 
@@ -402,7 +402,7 @@ describe('notification.cron.ts', () => {
     mockPrisma.meeting.findMany.mockResolvedValue([]);
     const { startMeetingReminderCron } = await import('../../modules/notification/meeting.cron.js');
     startMeetingReminderCron();
-    expect(mockCronSchedule).toHaveBeenCalledWith('*/5 * * * *', expect.any(Function));
+    expect(mockCronSchedule).toHaveBeenCalledWith('*/15 * * * *', expect.any(Function));
     const handler = mockCronSchedule.mock.calls[mockCronSchedule.mock.calls.length - 1][1];
     await handler();
     expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Meeting reminder cron done'));

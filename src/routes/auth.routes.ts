@@ -182,7 +182,14 @@ router.post(
     // it — replaying a used token is rejected (401). Being 30s/one-use, it is
     // safe to pass as a query parameter, unlike the 15-minute access token.
     const sseToken = createSseToken(user.id);
-    await storeSseToken(extractJti(sseToken), user.id);
+    try {
+      await storeSseToken(extractJti(sseToken), user.id);
+    } catch (err) {
+      // Redis down or rate-limited — the SSE token was minted but won't be
+      // consumable. The stream handler will return 503 so the frontend can
+      // distinguish this from an auth failure.
+      console.warn("[Exchange] Failed to store SSE token (stream will 503):", err);
+    }
 
     // Record the session so the server can enforce inactivity timeout,
     // absolute timeout, session binding (device/IP), and max concurrent
@@ -320,17 +327,34 @@ router.post(
       // Fresh single-use SSE token on every rotation — the stream reconnects
       // with the newest one, so a rotated/consumed token never lingers.
       const sseToken = createSseToken(decoded.id);
-      await storeSseToken(extractJti(sseToken), decoded.id);
+      try {
+        await storeSseToken(extractJti(sseToken), decoded.id);
+      } catch (err) {
+        console.warn("[Refresh] Failed to store SSE token (stream will 503):", err);
+      }
 
-      const rotated = await rotateRefreshToken(
-        decoded.id,
-        decoded.jti,
-        extractJti(tokens.refreshToken),
-        parseExpiry(REFRESH_TOKEN_EXPIRY) / 1000,
-      );
+      let rotated: boolean;
+      try {
+        rotated = await rotateRefreshToken(
+          decoded.id,
+          decoded.jti,
+          extractJti(tokens.refreshToken),
+          parseExpiry(REFRESH_TOKEN_EXPIRY) / 1000,
+        );
+      } catch (err) {
+        // Redis is unavailable (rate-limited, down, etc.). Fail open: issue
+        // new tokens anyway so the user stays logged in. The old refresh
+        // token can't be revoked from Redis, but it will expire naturally
+        // in 7 days. This prevents the false TOKEN_REPLAY_DETECTED that was
+        // logging users out after 15 minutes when Upstash hit its quota.
+        console.warn("[Refresh] Redis unavailable during rotation (fail-open):", err);
+        rotated = true;
+      }
 
       if (!rotated) {
-        // Rotation failed — wait briefly in case a concurrent request is mid-cache
+        // Rotation returned false (not threw) → old token genuinely not in
+        // Redis → real replay or already-rotated. Wait briefly in case a
+        // concurrent request is mid-cache.
         for (let i = 0; i < 3; i++) {
           await sleep(75);
           const duplicateResponse = await getCachedRefreshResponse(refreshReplayCacheKey);

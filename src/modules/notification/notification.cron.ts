@@ -201,14 +201,14 @@ async function runTaskReminderCron(): Promise<void> {
 // ─── Exports ──────────────────────────────────────────────────────────────────
 
 export function startTaskReminderCron(): void {
-  cron.schedule("*/5 * * * *", async () => {
+  cron.schedule("*/15 * * * *", async () => {
     try {
       await runTaskReminderCron();
     } catch (error) {
       console.error("❌ Task reminder cron failed:", error);
     }
   });
-  console.log("✅ Task reminder cron started (every 5 min, BullMQ-backed)");
+  console.log("✅ Task reminder cron started (every 15 min, BullMQ-backed)");
 }
 
 export function startNotificationCleanupCron(): void {

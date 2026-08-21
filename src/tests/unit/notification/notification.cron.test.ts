@@ -15,6 +15,6 @@ describe("Notification Cron", () => {
 
   it("should schedule task reminder cron", () => {
     startTaskReminderCron();
-    expect(cron.schedule).toHaveBeenCalledWith("*/5 * * * *", expect.any(Function));
+    expect(cron.schedule).toHaveBeenCalledWith("*/15 * * * *", expect.any(Function));
   });
 });

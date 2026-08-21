@@ -116,7 +116,8 @@ export function createActivityWorker() {
         password: process.env.REDIS_PASSWORD ?? undefined,
         tls: process.env.REDIS_URL?.startsWith("rediss://") ? {} : undefined,
       },
-      concurrency: 10,
+      concurrency: 3,
+      stalledInterval: 120_000, // 2 min (default: 30s) — non-urgent, reduce Redis polling
     }
   );
 

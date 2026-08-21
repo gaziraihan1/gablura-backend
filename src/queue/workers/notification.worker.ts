@@ -65,7 +65,8 @@ export function createNotificationWorker() {
         password: process.env.REDIS_PASSWORD ?? undefined,
         tls: process.env.REDIS_URL?.startsWith("rediss://") ? {} : undefined,
       },
-      concurrency: 10,
+      concurrency: 5,
+      stalledInterval: 60_000, // 60s (default: 30s) — reduce Redis polling
     }
   );
 

@@ -144,6 +144,17 @@ describe('notificationStreamHandler', () => {
     expect(mockRes.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'TOKEN_REUSED' }));
   });
 
+  it('should return 503 when Redis is unavailable', async () => {
+    mockReq.query.token = 'valid-token';
+    (verifyToken as any).mockReturnValue({ id: 'user-123', jti: 'jti-123' });
+    vi.mocked(consumeSseToken).mockRejectedValue(new Error('max requests limit exceeded'));
+
+    await notificationStreamHandler(mockReq, mockRes);
+
+    expect(mockRes.status).toHaveBeenCalledWith(503);
+    expect(mockRes.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'REDIS_UNAVAILABLE' }));
+  });
+
   it('should establish SSE connection for valid single-use token', async () => {
     mockReq.query.token = 'valid-token';
     mockValidSseToken();

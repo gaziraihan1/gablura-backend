@@ -40,9 +40,14 @@ export const getSseToken = async (req: AuthRequest, res: Response) => {
     const sseToken = createSseToken(userId);
     await storeSseToken(extractJti(sseToken), userId);
     res.json({ success: true, sseToken });
-  } catch (error) {
+  } catch (error: any) {
     console.error("Get SSE token error:", error);
-    res.status(500).json({ success: false, message: "Failed to issue SSE token" });
+    // Distinguish Redis failures (503) from unexpected errors (500)
+    const isRedisError = error?.name === 'ReplyError' || error?.code === 'ECONNREFUSED' || error?.message?.includes('max requests');
+    res.status(isRedisError ? 503 : 500).json({
+      success: false,
+      message: isRedisError ? 'Service temporarily unavailable. Please try again.' : 'Failed to issue SSE token',
+    });
   }
 };
 

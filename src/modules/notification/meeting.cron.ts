@@ -150,12 +150,12 @@ async function runMeetingReminderCron(): Promise<void> {
 // ─── Exports ──────────────────────────────────────────────────────────────────
 
 export function startMeetingReminderCron(): void {
-  cron.schedule("*/5 * * * *", async () => {
+  cron.schedule("*/15 * * * *", async () => {
     try {
       await runMeetingReminderCron();
     } catch (error) {
       console.error("❌ Meeting reminder cron failed:", error);
     }
   });
-  console.log("✅ Meeting reminder cron started (every 5 min)");
+  console.log("✅ Meeting reminder cron started (every 15 min)");
 }

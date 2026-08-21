@@ -39,7 +39,8 @@ export function createAnalyticsWorker() {
         password: process.env.REDIS_PASSWORD ?? undefined,
         tls: process.env.REDIS_URL?.startsWith("rediss://") ? {} : undefined,
       },
-      concurrency: 2,
+      concurrency: 1,
+      stalledInterval: 120_000, // 2 min (default: 30s) — non-urgent, reduce Redis polling
     }
   );
 

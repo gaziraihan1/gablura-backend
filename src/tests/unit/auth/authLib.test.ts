@@ -1537,30 +1537,12 @@ describe("tokenRevocation", () => {
       expect(result).toBe(false);
     });
 
-    it("returns false on Redis error", async () => {
+    it("throws on Redis error so the refresh endpoint can fail-open", async () => {
       mockRedis.eval.mockRejectedValueOnce(new Error("REDIS DOWN"));
 
-      const result = await rotateRefreshToken(
-        "user1",
-        "oldJti",
-        "newJti",
-        3600
-      );
-
-      expect(result).toBe(false);
-    });
-
-    it("logs error on Redis failure", async () => {
-      const spy = vi.spyOn(console, "error").mockImplementation(() => {});
-      mockRedis.eval.mockRejectedValueOnce(new Error("REDIS DOWN"));
-
-      await rotateRefreshToken("user1", "oldJti", "newJti", 3600);
-
-      expect(spy).toHaveBeenCalledWith(
-        "[TokenRevocation] Failed to rotate refresh token:",
-        expect.any(Error)
-      );
-      spy.mockRestore();
+      await expect(
+        rotateRefreshToken("user1", "oldJti", "newJti", 3600)
+      ).rejects.toThrow("REDIS DOWN");
     });
 
     it("passes correct Lua script arguments", async () => {
@@ -1593,25 +1575,12 @@ describe("tokenRevocation", () => {
       );
     });
 
-    it("does not throw on Redis error", async () => {
+    it("throws on Redis error so callers know the token was never stored", async () => {
       mockRedis.setex.mockRejectedValueOnce(new Error("REDIS DOWN"));
 
       await expect(
         storeSseToken("jti-sse", "user1")
-      ).resolves.toBeUndefined();
-    });
-
-    it("logs error on Redis failure", async () => {
-      const spy = vi.spyOn(console, "error").mockImplementation(() => {});
-      mockRedis.setex.mockRejectedValueOnce(new Error("REDIS DOWN"));
-
-      await storeSseToken("jti-sse", "user1");
-
-      expect(spy).toHaveBeenCalledWith(
-        "[TokenRevocation] Failed to store SSE token:",
-        expect.any(Error)
-      );
-      spy.mockRestore();
+      ).rejects.toThrow("REDIS DOWN");
     });
   });
 
@@ -1637,25 +1606,10 @@ describe("tokenRevocation", () => {
       expect(result).toBeNull();
     });
 
-    it("returns null on Redis error", async () => {
+    it("throws on Redis error so the caller can distinguish it from not-found", async () => {
       mockRedis.eval.mockRejectedValueOnce(new Error("REDIS DOWN"));
 
-      const result = await consumeSseToken("jti-sse");
-
-      expect(result).toBeNull();
-    });
-
-    it("logs error on Redis failure", async () => {
-      const spy = vi.spyOn(console, "error").mockImplementation(() => {});
-      mockRedis.eval.mockRejectedValueOnce(new Error("REDIS DOWN"));
-
-      await consumeSseToken("jti-sse");
-
-      expect(spy).toHaveBeenCalledWith(
-        "[TokenRevocation] Failed to consume SSE token:",
-        expect.any(Error)
-      );
-      spy.mockRestore();
+      await expect(consumeSseToken("jti-sse")).rejects.toThrow("REDIS DOWN");
     });
 
     it("consumes in a single atomic Lua round-trip (no get-then-del race)", async () => {

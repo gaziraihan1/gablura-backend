@@ -77,73 +77,74 @@ export async function rotateRefreshToken(
   newJti: string,
   expiresInSeconds: number,
 ): Promise<boolean> {
-  try {
-    const redis = getRedisClient();
-    const oldKey = refreshTokenKey(userId, oldJti);
-    const newKey = refreshTokenKey(userId, newJti);
-    const indexKey = refreshIndexKey(userId);
+  const redis = getRedisClient();
+  const oldKey = refreshTokenKey(userId, oldJti);
+  const newKey = refreshTokenKey(userId, newJti);
+  const indexKey = refreshIndexKey(userId);
 
-    const result = await redis.eval(
-      `
-      if redis.call("EXISTS", KEYS[1]) == 1 then
-        redis.call("DEL", KEYS[1])
-        redis.call("SETEX", KEYS[2], ARGV[1], ARGV[2])
-        redis.call("SREM", KEYS[3], KEYS[1])
-        redis.call("SADD", KEYS[3], KEYS[2])
-        return 1
-      else
-        return 0
-      end
-      `,
-      3,
-      oldKey,
-      newKey,
-      indexKey,
-      expiresInSeconds.toString(),
-      JSON.stringify({ jti: newJti, createdAt: Date.now() }),
-    );
+  // NOTE: Redis errors propagate so the refresh endpoint can distinguish
+  // "token not found" (result=0 → replay) from "Redis unavailable" (throw
+  // → fail-open and issue new tokens). Previously both cases returned false,
+  // causing a false TOKEN_REPLAY_DETECTED401 that logged users out after
+  // 15 minutes whenever Upstash hit its request limit.
+  const result = await redis.eval(
+    `
+    if redis.call("EXISTS", KEYS[1]) == 1 then
+      redis.call("DEL", KEYS[1])
+      redis.call("SETEX", KEYS[2], ARGV[1], ARGV[2])
+      redis.call("SREM", KEYS[3], KEYS[1])
+      redis.call("SADD", KEYS[3], KEYS[2])
+      return 1
+    else
+      return 0
+    end
+    `,
+    3,
+    oldKey,
+    newKey,
+    indexKey,
+    expiresInSeconds.toString(),
+    JSON.stringify({ jti: newJti, createdAt: Date.now() }),
+  );
 
-    return result === 1;
-  } catch (err) {
-    console.error("[TokenRevocation] Failed to rotate refresh token:", err);
-    return false;
-  }
+  return result === 1;
 }
 
 export async function storeSseToken(jti: string, userId: string): Promise<void> {
-  try {
-    // TTL is derived from the token's own expiry (30s) so the two can never
-    // drift apart when SSE_TOKEN_EXPIRY changes.
-    await getRedisClient().setex(
-      `focura:sse:${jti}`,
-      parseExpiry(SSE_TOKEN_EXPIRY) / 1000,
-      userId,
-    );
-  } catch (err) {
-    console.error("[TokenRevocation] Failed to store SSE token:", err);
-  }
+  // TTL is derived from the token's own expiry (30s) so the two can never
+  // drift apart when SSE_TOKEN_EXPIRY changes.
+  //
+  // NOTE: Redis errors propagate so callers (exchange, refresh, getSseToken)
+  // know the token was never persisted. Previously this swallowed errors and
+  // returned the SSE token to the client anyway — when Redis was down the
+  // token would always fail at stream-connect time.
+  await getRedisClient().setex(
+    `focura:sse:${jti}`,
+    parseExpiry(SSE_TOKEN_EXPIRY) / 1000,
+    userId,
+  );
 }
 
 export async function consumeSseToken(jti: string): Promise<string | null> {
-  try {
-    const redis = getRedisClient();
-    const key = `focura:sse:${jti}`;
-    // Atomic get-and-delete via Lua: exactly ONE concurrent stream connection
-    // may consume the token. A naive get-then-del races — two replays could
-    // both observe the key before either deletes it. Single round-trip, no
-    // TOCTOU window, no extra commands.
-    const userId = await redis.eval(
-      `local v = redis.call("GET", KEYS[1])
-       if v then redis.call("DEL", KEYS[1]) end
-       return v`,
-      1,
-      key,
-    );
-    return typeof userId === "string" ? userId : null;
-  } catch (err) {
-    console.error("[TokenRevocation] Failed to consume SSE token:", err);
-    return null;
-  }
+  const redis = getRedisClient();
+  const key = `focura:sse:${jti}`;
+  // Atomic get-and-delete via Lua: exactly ONE concurrent stream connection
+  // may consume the token. A naive get-then-del races — two replays could
+  // both observe the key before either deletes it. Single round-trip, no
+  // TOCTOU window, no extra commands.
+  //
+  // NOTE: Redis errors propagate to the caller so the SSE stream handler
+  // can distinguish "token not found" (401) from "Redis unavailable" (503).
+  // Swallowing the error here caused a misleading TOKEN_REUSED 401 when the
+  // real problem was Upstash rate-limit exhaustion.
+  const userId = await redis.eval(
+    `local v = redis.call("GET", KEYS[1])
+     if v then redis.call("DEL", KEYS[1]) end
+     return v`,
+    1,
+    key,
+  );
+  return typeof userId === "string" ? userId : null;
 }
 
 export async function markSessionRevoked(sessionId: string): Promise<void> {

@@ -76,7 +76,8 @@ export function createEmailWorker() {
         password: process.env.REDIS_PASSWORD ?? undefined,
         tls: process.env.REDIS_URL?.startsWith("rediss://") ? {} : undefined,
       },
-      concurrency: 5,
+      concurrency: 3,
+      stalledInterval: 60_000, // 60s (default: 30s) — reduce Redis polling
       limiter: {
         max: 10,
         duration: 1000,
