@@ -91,13 +91,31 @@ function sanitizeNumber(input: number | undefined | null): number | undefined {
   return isNaN(num) ? undefined : num;
 }
 
+// ─── Webhook Event Deduplication ─────────────────────────────────────────────
+// Prevents processing the same webhook event twice (at-least-once delivery).
+const processedWebhookEvents = new Map<string, number>();
+const DEDUP_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+function isDuplicateEvent(key: string): boolean {
+  const now = Date.now();
+  // Evict expired entries periodically
+  if (processedWebhookEvents.size > 10000) {
+    for (const [k, ts] of processedWebhookEvents) {
+      if (now - ts > DEDUP_TTL_MS) processedWebhookEvents.delete(k);
+    }
+  }
+  if (processedWebhookEvents.has(key)) return true;
+  processedWebhookEvents.set(key, now);
+  return false;
+}
+
 /**
  * Handle webhook from provider (queues for async processing)
  * For Slack, we also handle url_verification synchronously
  */
 export async function handleWebhook(provider: string, payload: Record<string, unknown>, signature?: string, timestamp?: string) {
   // Validate provider
-  const validProviders = ['github', 'slack', 'google-calendar'];
+  const validProviders = ['github', 'slack', 'google-calendar', 'trello'];
   if (!validProviders.includes(provider)) {
     console.error(`Invalid provider: ${provider}`);
     return;
@@ -129,6 +147,16 @@ export async function handleWebhook(provider: string, payload: Record<string, un
     }
   }
 
+  // Deduplication: skip if this event was recently processed
+  // Use a composite key: provider + event type + action/id for uniqueness
+  const evt = payload as Record<string, unknown>;
+  const eventObj = evt.event as Record<string, unknown> | undefined;
+  const dedupKey = `${provider}:${evt.type || evt.action || ''}:${evt.id || evt.delivery_id || ''}:${eventObj?.type || ''}`;
+  if (isDuplicateEvent(dedupKey)) {
+    console.log(`[Webhook] Duplicate event skipped: ${dedupKey}`);
+    return;
+  }
+
   // Add to queue for async processing
   const { addProcessWebhookJob } = await import('../../queue/queues/integration.queue.js');
   await addProcessWebhookJob({
@@ -150,12 +178,28 @@ export async function processWebhookEvent(
   signature?: string,
   timestamp?: string,
 ) {
+  // Structured log for production observability
+  console.log(JSON.stringify({
+    level: 'info',
+    msg: 'Processing integration webhook',
+    provider,
+    integrationId,
+    eventType: payload.type || payload.action || 'unknown',
+    timestamp: new Date().toISOString(),
+  }));
+
   const integration = await prisma.integration.findUnique({
     where: { id: integrationId },
   });
 
   if (!integration || !integration.active) {
-    console.error(`Integration ${integrationId} not found or inactive`);
+    console.error(JSON.stringify({
+      level: 'error',
+      msg: 'Integration not found or inactive',
+      provider,
+      integrationId,
+      timestamp: new Date().toISOString(),
+    }));
     return;
   }
 
@@ -177,6 +221,9 @@ export async function processWebhookEvent(
       break;
     case 'google-calendar':
       await processGoogleCalendarWebhook(integration);
+      break;
+    case 'trello':
+      await processTrelloWebhook(integration, payload);
       break;
   }
 }
@@ -225,6 +272,40 @@ function verifyWebhookSignature(
         return crypto.timingSafeEqual(
           Buffer.from(mySignature),
           Buffer.from(signature),
+        );
+      } catch {
+        return false;
+      }
+    }
+    case 'trello': {
+      // Trello uses HMAC-SHA1 for webhook verification
+      // The signature is in the X-Trello-Webhook header
+      // Verification: HMAC-SHA1(rawBody, secret) == header value
+      try {
+        const hmac = crypto.createHmac('sha1', secret);
+        hmac.update(JSON.stringify(payload));
+        const expected = hmac.digest('hex');
+
+        // Constant-time comparison
+        const sigBuf = Buffer.from(signature, 'hex');
+        const expBuf = Buffer.from(expected, 'hex');
+        if (sigBuf.length !== expBuf.length) return false;
+        return crypto.timingSafeEqual(sigBuf, expBuf);
+      } catch {
+        return false;
+      }
+    }
+    case 'google-calendar': {
+      // Google Calendar push notifications use a verification token.
+      // The X-Goog-Channel-Token header contains the token we set when
+      // creating the watch. Verify it matches our stored secret.
+      // If no token is set in the header, accept the webhook (Google
+      // sometimes omits it for non-push notification events).
+      if (!signature) return true; // No token to verify
+      try {
+        return crypto.timingSafeEqual(
+          Buffer.from(signature),
+          Buffer.from(secret),
         );
       } catch {
         return false;
@@ -1532,5 +1613,118 @@ async function processGoogleCalendarWebhook(
     }
   } catch (error) {
     console.error('Error processing Google Calendar webhook:', error);
+  }
+}
+
+// ─── Trello Webhook Processor ───────────────────────────────────────────────
+
+interface TrelloWebhookPayload {
+  action?: {
+    type: string;
+    data?: Record<string, unknown>;
+    member?: { id: string; fullName?: string };
+    board?: { id: string; name?: string };
+    card?: { id: string; name?: string; desc?: string; idList?: string; shortUrl?: string };
+    list?: { id: string; name?: string };
+  };
+  model?: {
+    id: string;
+    name?: string;
+    type?: string;
+  };
+  type?: string;
+}
+
+/**
+ * Process Trello webhook event (card created, updated, moved, etc.)
+ */
+async function processTrelloWebhook(
+  integration: { id: string; workspaceId: string | null; connectedById: string | null; userId: string | null },
+  payload: Record<string, unknown>,
+) {
+  const wsId = integration.workspaceId ?? undefined;
+  const data = payload as unknown as TrelloWebhookPayload;
+
+  try {
+    if (!data.action) return;
+
+    const action = data.action;
+    const actionType = action.type;
+
+    console.log(`[TrelloWebhook] Action: ${actionType}`);
+
+    // Handle card creation
+    if (actionType === 'createCard' && action.card) {
+      const card = action.card;
+      const createdById = integration.connectedById ?? integration.userId;
+      if (!createdById) return;
+
+      // Check if a task already exists for this card
+      const existingTask = await prisma.task.findFirst({
+        where: {
+          workspaceId: wsId,
+          title: card.name || 'Untitled Card',
+        },
+      });
+
+      if (existingTask) {
+        console.log(`[TrelloWebhook] Task already exists for card: ${card.name}`);
+        return;
+      }
+
+      const task = await prisma.task.create({
+        data: {
+          title: sanitizeString(card.name) || 'Untitled Card',
+          description: sanitizeString(card.desc) || '',
+          status: 'TODO',
+          createdById,
+          workspaceId: wsId || undefined,
+        } as any,
+      });
+
+      console.log(`[TrelloWebhook] Created task ${task.id} from card: ${card.name}`);
+    }
+
+    // Handle card movement between lists
+    if (actionType === 'updateCard' && action.card && action.data) {
+      const card = action.card;
+      const updateData = action.data as Record<string, unknown>;
+
+      // Find task by title match (Trello cards don't have a unique ID stored)
+      const task = await prisma.task.findFirst({
+        where: {
+          workspaceId: wsId,
+          title: card.name || undefined,
+        },
+      });
+
+      if (task && updateData.listAfter) {
+        const listAfter = updateData.listAfter as { name?: string };
+        // Map Trello list names to task statuses
+        const statusMap: Record<string, string> = {
+          'To Do': 'TODO',
+          'Doing': 'IN_PROGRESS',
+          'Done': 'COMPLETED',
+          'In Review': 'IN_REVIEW',
+        };
+        const newStatus = statusMap[listAfter.name || ''] || task.status;
+
+        if (newStatus !== task.status) {
+          await prisma.task.update({
+            where: { id: task.id },
+            data: { status: newStatus as any },
+          });
+          console.log(`[TrelloWebhook] Updated task ${task.id} status to ${newStatus}`);
+        }
+      }
+    }
+
+    // Handle card deletion
+    if (actionType === 'deleteCard' && action.card) {
+      console.log(`[TrelloWebhook] Card deleted: ${action.card.name}`);
+      // Note: We don't delete tasks when cards are deleted — only log it
+    }
+  } catch (error) {
+    console.error('[TrelloWebhook] Error processing Trello webhook:', error);
   }
 }

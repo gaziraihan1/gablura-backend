@@ -323,6 +323,8 @@ async function createGitHubWebhooks(
 
     // Create webhooks for user's repositories (limit to first 10 for performance)
     const reposToHook = repos.slice(0, 10);
+    const successRepos: string[] = [];
+    const failedRepos: string[] = [];
 
     for (const repo of reposToHook) {
       try {
@@ -347,10 +349,16 @@ async function createGitHubWebhooks(
         });
 
         if (hookResponse.ok) {
-          console.log(`Created webhook for ${repo.full_name}`);
+          successRepos.push(repo.full_name);
+          console.log(`[GitHub] Created webhook for ${repo.full_name}`);
+        } else {
+          const errorBody = await hookResponse.text();
+          failedRepos.push(repo.full_name);
+          console.error(`[GitHub] Failed to create webhook for ${repo.full_name}: ${hookResponse.status} ${errorBody}`);
         }
       } catch (error) {
-        console.error(`Failed to create webhook for ${repo.full_name}:`, error);
+        failedRepos.push(repo.full_name);
+        console.error(`[GitHub] Failed to create webhook for ${repo.full_name}:`, error);
       }
     }
 
@@ -360,14 +368,17 @@ async function createGitHubWebhooks(
       data: {
         webhookSecret,
         config: {
-          selectedRepos: reposToHook.map((r) => r.full_name),
+          selectedRepos: successRepos, // Only track successfully hooked repos
         },
       },
     });
 
-    console.log(`Created webhooks for ${reposToHook.length} repositories`);
+    console.log(`[GitHub] Webhook creation complete: ${successRepos.length} succeeded, ${failedRepos.length} failed`);
+    if (failedRepos.length > 0) {
+      console.warn(`[GitHub] Failed repos: ${failedRepos.join(', ')}`);
+    }
   } catch (error) {
-    console.error('Failed to create GitHub webhooks:', error);
+    console.error('[GitHub] Failed to create webhooks:', error);
   }
 }
 
@@ -600,13 +611,14 @@ export async function refreshToken(integrationId: string): Promise<string | null
 
     switch (integration.provider) {
       case 'github':
-        // GitHub tokens don't expire, but we refresh if needed
+        // GitHub OAuth tokens expire after 6 months of inactivity.
+        // Refresh using the refresh_token grant.
         newTokens = await refreshGithubToken(decryptedRefreshToken!, clientId, clientSecret);
         break;
       case 'google-calendar':
         newTokens = await refreshGoogleToken(decryptedRefreshToken!, clientId, clientSecret);
         break;
-      // Slack and Trello tokens don't refresh
+      // Slack bot tokens and Trello tokens don't expire — no refresh needed.
     }
 
     if (newTokens) {

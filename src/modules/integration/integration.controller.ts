@@ -324,7 +324,8 @@ export const handleWebhook = asyncHandler(async (req: AuthRequest, res: Response
   const provider = req.params.provider;
   const signature = req.headers['x-hub-signature-256'] as string ||
                     req.headers['x-slack-signature'] as string ||
-                    req.headers['x-goog-signature'] as string;
+                    req.headers['x-goog-signature'] as string ||
+                    req.headers['x-trello-webhook'] as string;
   const slackTimestamp = req.headers['x-slack-request-timestamp'] as string | undefined;
 
   const result = await IntegrationMutation.handleWebhook(provider, req.body, signature, slackTimestamp);

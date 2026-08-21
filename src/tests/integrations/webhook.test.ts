@@ -42,7 +42,21 @@ vi.mock("../../lib/prisma.js", () => ({
   },
 }));
 
-vi.mock("../../redis/redis.client.js", () => ({
+vi.mock("../../redis/redis.client.ts", () => ({
+  getRedisClient: vi.fn(() => ({
+    get: vi.fn(),
+    setex: vi.fn(),
+    del: vi.fn(),
+    keys: vi.fn(),
+    ping: vi.fn(),
+    pipeline: vi.fn(() => ({
+      zremrangebyscore: vi.fn(),
+      zadd: vi.fn(),
+      zcard: vi.fn(),
+      expire: vi.fn(),
+      exec: vi.fn().mockResolvedValue([[null, 0], [null, 1], [null, 1], [null, 1]]),
+    })),
+  })),
   BILLING_CACHE: {
     invalidateWorkspace: vi.fn(),
   },

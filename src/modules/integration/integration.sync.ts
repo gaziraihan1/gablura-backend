@@ -292,8 +292,11 @@ async function syncGoogleCalendarData(integration: { id: string }, accessToken: 
  */
 async function syncTrelloData(integration: { id: string }, accessToken: string) {
   // Fetch user's boards
+  // Trello API requires 'key' (API key) and 'token' (user token) as separate params.
+  // TRELLO_API_KEY is the application API key from https://trello.com/app-key
+  const trelloApiKey = process.env.TRELLO_API_KEY || process.env.TRELLO_CLIENT_ID || '';
   const boardsResponse = await fetch(
-    `https://api.trello.com/1/members/me/boards?key=${process.env.TRELLO_CLIENT_ID}&token=${accessToken}&fields=name,url`,
+    `https://api.trello.com/1/members/me/boards?key=${trelloApiKey}&token=${accessToken}&fields=name,url`,
     { signal: AbortSignal.timeout(15_000) },
   );
 

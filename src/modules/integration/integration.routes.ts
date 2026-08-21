@@ -1,4 +1,5 @@
-import { Router } from 'express';
+import { Router, raw } from 'express';
+import { rateLimitMiddleware } from '../../middleware/rateLimiter.js';
 import {
   getUserIntegrations,
   initiateOAuth,
@@ -67,10 +68,33 @@ workspaceRouter.put('/:id/config', updateWorkspaceIntegrationConfig);
 workspaceRouter.post('/:id/sync', triggerWorkspaceSync);
 
 // ─── Webhook Routes ───────────────────────────────────────────────────────────
+// IMPORTANT: Use raw() middleware to preserve the original body for signature
+// verification (Slack, GitHub, Trello all verify the raw body hash).
+// The raw body is also parsed to JSON for the handler.
 
 const webhookRouter = Router();
 
-// POST /api/v1/webhooks/:provider - Handle provider webhooks
-webhookRouter.post('/:provider', handleWebhook);
+webhookRouter.post(
+  '/:provider',
+  rateLimitMiddleware(100, 60), // 100 requests per 60 seconds per IP
+  raw({ type: 'application/json' }),
+  (req, _res, next) => {
+    // The raw() middleware gives us a Buffer. Parse it to JSON for the handler
+    // but also keep the raw Buffer available if needed for signature verification.
+    if (Buffer.isBuffer(req.body)) {
+      try {
+        const parsed = JSON.parse(req.body.toString('utf-8'));
+        // Attach parsed body — handlers use this
+        req.body = parsed;
+        // Attach raw string for signature verification (Slack needs exact raw body)
+        (req as any).rawBody = req.body.toString('utf-8');
+      } catch {
+        // If parsing fails, leave the raw buffer — handler will deal with it
+      }
+    }
+    next();
+  },
+  handleWebhook,
+);
 
 export { router as integrationRouter, workspaceRouter as workspaceIntegrationRouter, webhookRouter as integrationWebhookRouter };

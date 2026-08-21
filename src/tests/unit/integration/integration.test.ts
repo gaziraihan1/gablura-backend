@@ -28,6 +28,17 @@ vi.mock('../../../lib/redis/cache.client.js', () => ({
   },
 }));
 
+// Mock rate limiter (pass-through in tests)
+vi.mock('../../../middleware/rateLimiter.js', () => ({
+  rateLimitMiddleware: () => (req: any, res: any, next: any) => next(),
+}));
+
+// Mock queue jobs (no-op in tests)
+vi.mock('../../../queue/queues/integration.queue.js', () => ({
+  addSyncIntegrationJob: vi.fn().mockResolvedValue(null),
+  addProcessWebhookJob: vi.fn().mockResolvedValue(null),
+}));
+
 vi.mock('../../../middleware/csrf.js', () => ({
   getCsrfTokenHandler: vi.fn(),
   requireCsrfToken: () => (req: any, res: any, next: any) => next(),
