@@ -57,7 +57,7 @@ Please make sure you have read:
 | Background jobs | BullMQ (6 queues) |
 | Cron | node-cron |
 | Validation | Zod 4 |
-| Payments | Stripe + Paddle (provider abstraction) |
+| Payments | Lemon Squeezy (default) + Stripe + Paddle (provider abstraction) |
 | Errors/tracing | Sentry |
 | Tests | Vitest 3 + Supertest + MSW + @faker-js/faker |
 

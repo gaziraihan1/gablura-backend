@@ -5,6 +5,7 @@ import { calendarQueue } from "./queues/calendar.queue.js";
 import { analyticsQueue } from "./queues/analytics.queue.js";
 import { integrationQueue } from "./queues/integration.queue.js";
 import { automationQueue } from "./queues/automation.queue.js";
+import { billingWebhookQueue } from "./queues/billing-webhook.queue.js";
 
 import { createEmailWorker } from "./workers/email.worker.js";
 import { createNotificationWorker } from "./workers/notification.worker.js";
@@ -13,6 +14,7 @@ import { createCalendarWorker } from "./workers/calendar.worker.js";
 import { createAnalyticsWorker } from "./workers/analytics.worker.js";
 import { createIntegrationWorker } from "./workers/integration.worker.js";
 import { createAutomationWorker } from "./workers/automation.worker.js";
+import { createBillingWebhookWorker } from "./workers/billing-webhook.worker.js";
 
 import type { Worker } from "bullmq";
 
@@ -28,8 +30,9 @@ export async function initQueueWorkers() {
   const analyticsWorker = createAnalyticsWorker();
   const integrationWorker = createIntegrationWorker();
   const automationWorker = createAutomationWorker();
+  const billingWebhookWorker = createBillingWebhookWorker();
 
-  workers = [emailWorker, notificationWorker, activityWorker, calendarWorker, analyticsWorker, integrationWorker, automationWorker];
+  workers = [emailWorker, notificationWorker, activityWorker, calendarWorker, analyticsWorker, integrationWorker, automationWorker, billingWebhookWorker];
 
   console.log("[Queue] All queue workers started");
 }
@@ -49,6 +52,7 @@ export async function closeQueueWorkers() {
     analyticsQueue.close(),
     integrationQueue.close(),
     automationQueue.close(),
+    billingWebhookQueue.close(),
   ]);
 
   console.log("[Queue] All queue workers closed");
@@ -99,3 +103,7 @@ export {
 export {
   addAutomationEventJob,
 } from "./queues/automation.queue.js";
+
+export {
+  addBillingWebhookRetryJob,
+} from "./queues/billing-webhook.queue.js";

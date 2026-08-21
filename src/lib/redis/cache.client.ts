@@ -96,6 +96,11 @@ export const CACHE_TTL = {
   EXTERNAL_API_PADDLE_CUSTOMER: parseInt(process.env.CACHE_TTL_EXTERNAL_API_PADDLE_CUSTOMER ?? "300"), // 5 min
   EXTERNAL_API_PADDLE_SUBSCRIPTION: parseInt(process.env.CACHE_TTL_EXTERNAL_API_PADDLE_SUBSCRIPTION ?? "180"), // 3 min
   EXTERNAL_API_PADDLE_PRICE: parseInt(process.env.CACHE_TTL_EXTERNAL_API_PADDLE_PRICE ?? "86400"), // 24 hours (rarely changes)
+
+  // Lemon Squeezy external API caching
+  EXTERNAL_API_LEMONSQUEEZY_CUSTOMER: parseInt(process.env.CACHE_TTL_EXTERNAL_API_LEMONSQUEEZY_CUSTOMER ?? "300"), // 5 min
+  EXTERNAL_API_LEMONSQUEEZY_SUBSCRIPTION: parseInt(process.env.CACHE_TTL_EXTERNAL_API_LEMONSQUEEZY_SUBSCRIPTION ?? "180"), // 3 min
+  EXTERNAL_API_LEMONSQUEEZY_VARIANT: parseInt(process.env.CACHE_TTL_EXTERNAL_API_LEMONSQUEEZY_VARIANT ?? "86400"), // 24 hours (rarely changes)
 } as const;
 
 // ─── Cache Key Generators ─────────────────────────────────────────────────────
@@ -259,6 +264,11 @@ export const CACHE_KEYS = {
   paddleCustomer: (customerId: string) => `api:paddle:customer:${customerId}`,
   paddleSubscription: (subscriptionId: string) => `api:paddle:subscription:${subscriptionId}`,
   paddlePrice: (priceId: string) => `api:paddle:price:${priceId}`,
+
+  // Lemon Squeezy external API caching
+  lemonSqueezyCustomer: (email: string) => `api:lemonsqueezy:customer:${email}`,
+  lemonSqueezySubscription: (subscriptionId: string) => `api:lemonsqueezy:subscription:${subscriptionId}`,
+  lemonSqueezyVariant: (variantId: string) => `api:lemonsqueezy:variant:${variantId}`,
 } as const;
 
 // ─── Generic Cache Helpers ────────────────────────────────────────────────────
@@ -886,6 +896,36 @@ export const ExternalApiCache = {
    */
   async invalidateAllPaddle(): Promise<void> {
     await CacheClient.deletePattern("api:paddle:*");
+  },
+
+  // ─── Lemon Squeezy External API Caching ──────────────────────────────────────
+
+  /**
+   * Invalidate Lemon Squeezy customer cache
+   */
+  async invalidateLemonSqueezyCustomer(email: string): Promise<void> {
+    await CacheClient.delete(CACHE_KEYS.lemonSqueezyCustomer(email));
+  },
+
+  /**
+   * Invalidate Lemon Squeezy subscription cache
+   */
+  async invalidateLemonSqueezySubscription(subscriptionId: string): Promise<void> {
+    await CacheClient.delete(CACHE_KEYS.lemonSqueezySubscription(subscriptionId));
+  },
+
+  /**
+   * Invalidate Lemon Squeezy variant cache
+   */
+  async invalidateLemonSqueezyVariant(variantId: string): Promise<void> {
+    await CacheClient.delete(CACHE_KEYS.lemonSqueezyVariant(variantId));
+  },
+
+  /**
+   * Invalidate all Lemon Squeezy external API caches
+   */
+  async invalidateAllLemonSqueezy(): Promise<void> {
+    await CacheClient.deletePattern("api:lemonsqueezy:*");
   },
 };
 

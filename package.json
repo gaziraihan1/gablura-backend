@@ -41,6 +41,7 @@
   },
   "dependencies": {
     "@google/genai": "^2.16.0",
+    "@lemonsqueezy/lemonsqueezy.js": "^4.0.0",
     "@ngrok/ngrok": "^1.7.0",
     "@paddle/paddle-node-sdk": "^3.8.0",
     "@prisma/client": "^5.22.0",
@@ -101,6 +102,6 @@
     "vitest": "^3.2.4"
   },
   "engines": {
-  "node": "22.x"
-}
+    "node": "22.x"
+  }
 }

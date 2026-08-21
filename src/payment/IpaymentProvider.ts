@@ -3,7 +3,7 @@ import { BillingCycle } from "@prisma/client";
 export interface CreateCheckoutParams {
   workspaceId: string;
   ownerId: string;
-  providerCustomerId: string; // resolved before calling — Stripe customer ID or Paddle customer ID
+  providerCustomerId: string; // resolved before calling — Stripe, Paddle, or Lemon Squeezy customer ID
   planName: string;
   billingCycle: BillingCycle;
   trialDays?: number;
@@ -58,11 +58,11 @@ export type NormalisedEventType =
   | "SUBSCRIPTION_UPDATED"
   | "SUBSCRIPTION_CANCELED"
   | "SUBSCRIPTION_TRIAL_ENDING" // Stripe: customer.subscription.trial_will_end
-  | "SUBSCRIPTION_TRIAL_STARTED" // Paddle: subscription.trialing (trial begins)
-  | "SUBSCRIPTION_ACTIVATED" // Paddle: subscription.activated (trial → active, or reactivated)
-  | "SUBSCRIPTION_PAUSED" // Paddle: subscription.paused
-  | "SUBSCRIPTION_RESUMED" // Paddle: subscription.resumed
-  | "SUBSCRIPTION_PAST_DUE" // Paddle: subscription.past_due (payment failure escalated)
+  | "SUBSCRIPTION_TRIAL_STARTED" // Paddle/LS: subscription trial begins
+  | "SUBSCRIPTION_ACTIVATED" // Paddle/LS: trial → active, or reactivated
+  | "SUBSCRIPTION_PAUSED" // Paddle/LS: subscription paused
+  | "SUBSCRIPTION_RESUMED" // Paddle/LS: subscription resumed
+  | "SUBSCRIPTION_PAST_DUE" // Paddle/LS: payment failure escalated
   | "INVOICE_PAID"
   | "INVOICE_PAYMENT_FAILED"
   | "INVOICE_CREATED"
@@ -72,7 +72,7 @@ export type NormalisedEventType =
 
 export interface NormalisedSubscriptionEvent {
   type: NormalisedEventType;
-  providerEventId: string; // for idempotency (Stripe event.id / Paddle event_id)
+  providerEventId: string; // for idempotency (Stripe event.id / Paddle event_id / LS event ID)
   providerSubscriptionId: string | null; // null when checkout.session.completed fires before subscription exists
   providerCustomerId: string;
   providerPriceId: string;
@@ -120,11 +120,12 @@ export interface NormalisedInvoiceEvent {
  * A refund/chargeback (or its reversal) reported by the payment provider.
  * Paddle reports refunds as adjustments (`adjustment.created` /
  * `adjustment.updated`) against a transaction.
+ * Lemon Squeezy reports refunds as `order_refunded` events.
  */
 export interface NormalisedRefundEvent {
   type: "REFUND_CREATED" | "REFUND_UPDATED";
-  providerEventId: string; // for idempotency (Paddle event_id)
-  providerRefundId: string; // Paddle adjustment ID (adj_xxx)
+  providerEventId: string; // for idempotency (Paddle event_id / LS event ID)
+  providerRefundId: string; // Paddle adjustment ID / LS refund ID
   providerTransactionId: string | null; // transaction that was refunded (txn_xxx)
   providerSubscriptionId: string | null;
   providerCustomerId: string | null;
@@ -154,7 +155,7 @@ export type NormalisedInvoiceStatus =
   | "UNCOLLECTIBLE";
 
 export interface IPaymentProvider {
-  readonly name: string; // 'stripe' | 'paddle' — stored in BillingEvent for debugging
+  readonly name: string; // 'stripe' | 'paddle' | 'lemonsqueezy' — stored in BillingEvent for debugging
 
   createCustomer(params: CreateCustomerParams): Promise<CustomerResult>;
 

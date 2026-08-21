@@ -51,7 +51,7 @@ Designed for the "Day 1 Million" user:
 
 ### 💰 Turnkey Monetization Engine
 
-The billing system is a complete "Business-in-a-Box" integrated with Stripe:
+The billing system is a complete "Business-in-a-Box" integrated with Lemon Squeezy (default) + Stripe + Paddle:
 
 - **Tiered Logic:** Fully implemented Free, Pro, Business, and Enterprise tiers.
 - **Hard-Limit Enforcement:** Automated restriction of members, storage, and projects based on the active plan.
@@ -100,7 +100,7 @@ If you were to build Focura today, you would spend:
 
 - **3 Months** on Auth, Security, and Session Management.
 - **2 Months** on Multi-tenant Workspace and RBAC logic.
-- **2 Months** on Stripe Integration and Usage-limit engines.
+- **2 Months** on Payment Provider Integration (Lemon Squeezy, Stripe, Paddle) and Usage-limit engines.
 - **2 Months** on Redis Caching and SSE Real-time notifications.
 
 **By acquiring Focura, you skip 9+ months of high-risk development.**

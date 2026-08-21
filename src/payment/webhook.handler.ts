@@ -17,6 +17,7 @@ import {
 import { prisma } from "../lib/prisma.js";
 import { BILLING_CACHE } from "../redis/redis.client.js";
 import { WorkspaceCache } from "../lib/redis/cache.client.js";
+import { addBillingWebhookRetryJob } from "../queue/index.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -47,7 +48,9 @@ async function resolveWorkspaceFromSubId(
 
   const sub = await prisma.subscription.findFirst({
     // STRIPE: stripeSubscriptionId holds a Stripe sub ID (sub_xxx)
-    // PADDLE: stripeSubscriptionId holds a Paddle sub ID (sub_xxx) — same column, different value
+    // PADDLE: stripeSubscriptionId holds a Paddle sub ID (sub_xxx)
+    // LEMON SQUEEZY: stripeSubscriptionId holds a LS sub ID (sub_xxx)
+    // Same column, different value per provider.
     where: { stripeSubscriptionId: providerSubId },
     select: { workspaceId: true },
   });
@@ -61,7 +64,9 @@ async function resolveWorkspaceFromCustomerId(
 
   const sub = await prisma.subscription.findFirst({
     // STRIPE: stripeCustomerId holds a Stripe customer ID (cus_xxx)
-    // PADDLE: stripeCustomerId holds a Paddle customer ID (ctm_xxx) — same column, different value
+    // PADDLE: stripeCustomerId holds a Paddle customer ID (ctm_xxx)
+    // LEMON SQUEEZY: stripeCustomerId holds a LS customer ID
+    // Same column, different value per provider.
     where: { stripeCustomerId: customerId },
     select: { workspaceId: true },
     orderBy: { createdAt: "desc" },
@@ -90,7 +95,14 @@ export async function webhookHandler(
       req.headers as Record<string, string | string[] | undefined>,
     );
   } catch (err) {
-    console.error("[Webhook] Verification failed:", err);
+    console.error(JSON.stringify({
+      level: "warn",
+      msg: "Webhook verification failed",
+      provider: provider.name,
+      error: err instanceof Error ? err.message : String(err),
+      ip: req.ip,
+      timestamp: new Date().toISOString(),
+    }));
     res.status(400).json({ error: "Webhook verification failed" });
     return;
   }
@@ -104,6 +116,7 @@ export async function webhookHandler(
   // stripeEventId column stores the provider event ID regardless of provider.
   // SWITCH TO STRIPE: no change needed — Stripe event IDs (evt_xxx) go here.
   // SWITCH TO PADDLE: no change needed — Paddle event IDs (evt_xxx) go here.
+  // SWITCH TO LEMON SQUEEZY: no change needed — LS event IDs go here.
   // TODO (optional): rename column to providerEventId in a future migration.
   const existing = await prisma.billingEvent.findUnique({
 where: { providerEventId: event.providerEventId },
@@ -132,14 +145,58 @@ providerEventId: event.providerEventId,
       where: { id: billingEvent.id },
       data:  { processed: true },
     });
+
+    // Structured log for production observability
+    console.log(JSON.stringify({
+      level: "info",
+      msg: "Webhook processed",
+      provider: getPaymentProvider().name,
+      eventType: event.type,
+      providerEventId: event.providerEventId,
+      workspaceId: event.metadata?.workspaceId,
+      timestamp: new Date().toISOString(),
+    }));
+
     res.json({ received: true });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    console.error(`[Webhook] Processing failed for ${event.type}:`, message);
+    const provider = getPaymentProvider();
+
+    // Structured log for production observability
+    console.error(JSON.stringify({
+      level: "error",
+      msg: "Webhook processing failed",
+      provider: provider.name,
+      eventType: event.type,
+      providerEventId: event.providerEventId,
+      providerSubscriptionId: event.providerSubscriptionId,
+      workspaceId: event.metadata?.workspaceId,
+      error: message,
+      timestamp: new Date().toISOString(),
+    }));
+
     await prisma.billingEvent.update({
       where: { id: billingEvent.id },
       data:  { error: message },
     });
+
+    // Enqueue retry job for background re-processing (non-blocking)
+    addBillingWebhookRetryJob({
+      providerEventId: event.providerEventId,
+      rawBody: JSON.stringify(event.raw),
+      providerName: provider.name,
+      originalError: message,
+      retryCount: 0,
+    }).catch((retryErr) => {
+      console.error(JSON.stringify({
+        level: "error",
+        msg: "Failed to enqueue webhook retry job",
+        providerEventId: event.providerEventId,
+        error: retryErr instanceof Error ? retryErr.message : String(retryErr),
+        timestamp: new Date().toISOString(),
+      }));
+    });
+
     res.status(500).json({ error: "Processing failed" });
   }
 }
@@ -164,7 +221,7 @@ async function processEvent(
       return handleSubscriptionUpserted(event as NormalisedSubscriptionEvent);
     case "SUBSCRIPTION_CANCELED":
       return handleSubscriptionCanceled(event as NormalisedSubscriptionEvent);
-    case "SUBSCRIPTION_TRIAL_ENDING": // Stripe-only: customer.subscription.trial_will_end
+    case "SUBSCRIPTION_TRIAL_ENDING": // Stripe-only event
       return handleTrialEnding(event as NormalisedSubscriptionEvent);
     case "INVOICE_PAID":
       return handleInvoicePaid(event as NormalisedInvoiceEvent);
@@ -197,11 +254,11 @@ async function handleCheckoutCompleted(event: NormalisedSubscriptionEvent) {
 
   if (!workspaceId || !planName) {
     console.error("[Webhook] Checkout completed event missing workspaceId or planName — cannot provision subscription");
-    // Throw so the error is recorded in BillingEvent and Stripe retries
+    // Throw so the error is recorded in BillingEvent for provider retries
     throw new Error(`Checkout completed event missing workspaceId or planName`);
   }
 
-  // If Stripe hasn't created the subscription yet (rare edge case), defer to customer.subscription.created
+  // If the provider hasn't created the subscription yet (rare edge case), defer to subscription.created
   if (!event.providerSubscriptionId) {
     console.log("[Webhook] No subscription ID yet in checkout.session.completed — deferring to customer.subscription.created");
     return;
@@ -211,7 +268,7 @@ async function handleCheckoutCompleted(event: NormalisedSubscriptionEvent) {
     const plan = await prisma.plan.findUnique({ where: { name: planName } });
     if (!plan) {
       console.error("[Webhook] Plan not found in DB:", planName);
-      // Throw so the error is recorded in BillingEvent and Stripe retries
+      // Throw so the error is recorded in BillingEvent for provider retries
       throw new Error(`Plan not found in DB: ${planName}`);
     }
 
@@ -509,7 +566,7 @@ async function upsertInvoice(
 
   if (!workspaceId) {
     console.error("[Webhook] Invoice event missing workspaceId — skipping invoice creation");
-    // Throw so the error is recorded in BillingEvent and Stripe retries.
+    // Throw so the error is recorded in BillingEvent for provider retries.
     // On retry the subscription DB row may already exist and fallback steps 2-3 succeed.
     throw new Error(
       `Invoice event ${event.providerInvoiceId} missing workspaceId — no subscription row yet`,

@@ -13,6 +13,16 @@ vi.mock("../../../payment/providers/paddle/paddle.provider.js", () => ({
   })),
 }));
 
+vi.mock("../../../payment/providers/lemonsqueezy/lemonsqueezy.provider.js", () => ({
+  LemonSqueezyProvider: vi.fn().mockImplementation(() => ({
+    name: "lemonsqueezy",
+  })),
+}));
+
+vi.mock("../../../modules/billing/config/lemonsqueezy.js", () => ({
+  validateLemonSqueezyConfig: vi.fn(),
+}));
+
 import {
   getPaymentProvider,
   setPaymentProvider,
@@ -20,6 +30,8 @@ import {
 } from "../../../payment/provider.registry.js";
 import { StripeProvider } from "../../../payment/providers/stripe/stripe.provider.js";
 import { PaddleProvider } from "../../../payment/providers/paddle/paddle.provider.js";
+import { LemonSqueezyProvider } from "../../../payment/providers/lemonsqueezy/lemonsqueezy.provider.js";
+import { validateLemonSqueezyConfig } from "../../../modules/billing/config/lemonsqueezy.js";
 
 describe("provider.registry", () => {
   beforeEach(() => {
@@ -42,17 +54,25 @@ describe("provider.registry", () => {
       expect(PaddleProvider).toHaveBeenCalled();
     });
 
-    it("defaults to Stripe when PAYMENT_PROVIDER is not set", () => {
+    it("returns LemonSqueezy provider when PAYMENT_PROVIDER is lemonsqueezy", () => {
+      process.env.PAYMENT_PROVIDER = "lemonsqueezy";
+      const provider = getPaymentProvider();
+      expect(provider.name).toBe("lemonsqueezy");
+      expect(LemonSqueezyProvider).toHaveBeenCalled();
+      expect(validateLemonSqueezyConfig).toHaveBeenCalled();
+    });
+
+    it("defaults to LemonSqueezy when PAYMENT_PROVIDER is not set", () => {
       delete process.env.PAYMENT_PROVIDER;
       const provider = getPaymentProvider();
-      expect(provider.name).toBe("stripe");
-      expect(StripeProvider).toHaveBeenCalled();
+      expect(provider.name).toBe("lemonsqueezy");
+      expect(LemonSqueezyProvider).toHaveBeenCalled();
     });
 
     it("throws error for unknown provider", () => {
       process.env.PAYMENT_PROVIDER = "unknown";
       expect(() => getPaymentProvider()).toThrow(
-        '[PaymentRegistry] Unknown PAYMENT_PROVIDER="unknown". Supported: stripe, paddle'
+        '[PaymentRegistry] Unknown PAYMENT_PROVIDER="unknown". Supported: stripe, paddle, lemonsqueezy'
       );
     });
 

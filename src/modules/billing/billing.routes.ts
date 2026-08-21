@@ -8,7 +8,7 @@ const router = Router({ mergeParams: true }); // mergeParams = inherit :workspac
 router.use(authenticate);
 
 // 10 checkout/portal session creations per 5 minutes per IP — enough for
-// normal upgrade flows, not enough to spam Stripe session creation.
+// normal upgrade flows, not enough to spam payment session creation.
 router.post('/create-checkout-session',  rateLimitMiddleware(10, 300), BillingController.createCheckoutSession);
 router.post('/create-portal-session',    rateLimitMiddleware(10, 300), BillingController.createPortalSession);
 router.get ('/subscription',             BillingController.getSubscription);

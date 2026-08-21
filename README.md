@@ -47,7 +47,7 @@ Built with a **modular monolith architecture** — each domain is fully self-con
 | Job Queue | BullMQ | 5.80.2 |
 | Cron Jobs | node-cron | 4.2.1 |
 | File Upload | Cloudinary | 2.8.0 |
-| Payments | Stripe + Paddle | stripe 20.4.1, @paddle/paddle-node-sdk 3.8.0 |
+| Payments | Lemon Squeezy (default) + Stripe + Paddle | @lemonsqueezy/lemonsqueezy.js, stripe 20.4.1, @paddle/paddle-node-sdk 3.8.0 |
 | Password Hashing | Argon2 | 0.44.0 |
 | Validation | Zod | 4.1.13 |
 | Input Sanitization | DOMPurify + escape-html | isomorphic-dompurify 3.12.0 |
@@ -77,7 +77,7 @@ Built with a **modular monolith architecture** — each domain is fully self-con
 - Real-time notifications via SSE + Redis pub/sub
 - Comment threads with @mention notifications
 - Task analytics and statistics (workspace + project level)
-- Billing and subscription management (Stripe + Paddle)
+- Billing and subscription management (Lemon Squeezy + Stripe + Paddle)
 - Third-party integrations (GitHub, Slack, Google Calendar, Trello)
 - Feature request voting system
 - Contact form handling
@@ -243,10 +243,11 @@ src/
 │
 ├── payment/                    # Payment provider abstraction
 │   ├── IpaymentProvider.ts     # Provider-agnostic interface
-│   ├── provider.registry.ts    # Singleton factory (stripe/paddle)
+│   ├── provider.registry.ts    # Singleton factory (lemonsqueezy/stripe/paddle)
 │   ├── webhook.handler.ts      # Idempotent webhook processing
 │   ├── webhook.router.ts       # POST /webhooks/billing
 │   └── providers/
+│       ├── lemonsqueezy/       # Lemon Squeezy SDK implementation (default)
 │       ├── stripe/             # Stripe SDK implementation
 │       ├── paddle/             # Paddle SDK implementation
 │       └── mock/               # Mock provider for testing
@@ -356,7 +357,7 @@ All mutating routes require a valid CSRF token via the `requireCsrfToken()` midd
 3. `requireCsrfToken()` validates timing-safe comparison against Redis
 4. On failure the frontend automatically refreshes the token and retries once
 
-**Exempt routes:** `GET` requests, SSE stream, auth endpoints, public endpoints, Stripe webhook.
+**Exempt routes:** `GET` requests, SSE stream, auth endpoints, public endpoints, billing webhooks.
 
 ### Role-Based Access Control
 
@@ -717,7 +718,7 @@ All mutating authenticated routes additionally require `X-CSRF-Token`.
 | `POST` | `/api/v1/billing/:workspaceId/portal` | ✓ | Create portal session |
 | `POST` | `/api/v1/billing/:workspaceId/upgrade` | ✓ | Upgrade plan |
 | `POST` | `/api/v1/billing/:workspaceId/cancel` | ✓ | Cancel subscription |
-| `POST` | `/webhooks/billing` | — | Stripe/Paddle webhook (raw body) |
+| `POST` | `/webhooks/billing` | — | Lemon Squeezy / Stripe / Paddle webhook (raw body) |
 
 ### Integrations (6 endpoints)
 
@@ -869,12 +870,13 @@ Read-heavy endpoints are cached in Upstash Redis (REST) via `CacheClient` in `li
 
 ```
 IPaymentProvider (interface)
+    ├── LemonSqueezyProvider (providers/lemonsqueezy/) — default
     ├── StripeProvider (providers/stripe/)
     ├── PaddleProvider (providers/paddle/)
     └── MockProvider (providers/mock/) — for testing
 ```
 
-Selected via `PAYMENT_PROVIDER` env var (`stripe` or `paddle`).
+Selected via `PAYMENT_PROVIDER` env var (`lemonsqueezy`, `stripe`, or `paddle`). Default is `lemonsqueezy`.
 
 ### Supported Operations
 - `createCustomer` — Create billing customer
@@ -952,7 +954,7 @@ Redis dedup keys (`notif:sent:<taskId>:<userId>:<type>:<label>`) prevent double-
 
 - **Framework:** Vitest 3.2.4 (node environment, globals enabled)
 - **HTTP Testing:** Supertest 7.2.2
-- **Mocking:** MSW 2.13.3 + vi.mock for Redis, Cloudinary, Stripe, nodemailer
+- **Mocking:** MSW 2.13.3 + vi.mock for Redis, Cloudinary, Stripe, Lemon Squeezy, nodemailer
 - **Factories:** Custom test data factories (555 lines) for User, Workspace, Project, Task, Meeting, Announcement, Label, FeatureRequest, Activity, JobPosting
 - **Setup:** RSA key generation, Prisma schema push, data seeding in globalSetup; per-file DB cleanup with FK-safe ordering
 - **Pool:** `forks` with `singleFork: true` to prevent PG prepared statement conflicts
@@ -1091,6 +1093,15 @@ CLOUDINARY_CLOUD_NAME=
 CLOUDINARY_API_KEY=
 CLOUDINARY_API_SECRET=
 
+# Lemon Squeezy (default payment provider)
+LEMONSQUEEZY_API_KEY=
+LEMONSQUEEZY_STORE_ID=
+LEMONSQUEEZY_WEBHOOK_SECRET=
+LEMONSQUEEZY_VARIANT_PRO_MONTHLY=
+LEMONSQUEEZY_VARIANT_PRO_YEARLY=
+LEMONSQUEEZY_VARIANT_BUSINESS_MONTHLY=
+LEMONSQUEEZY_VARIANT_BUSINESS_YEARLY=
+
 # Stripe
 STRIPE_SECRET_KEY=
 STRIPE_WEBHOOK_SECRET=
@@ -1103,8 +1114,8 @@ STRIPE_PRICE_BUSINESS_YEARLY=
 PADDLE_API_KEY=
 PADDLE_API_SECRET=
 
-# Payment Provider (stripe or paddle)
-PAYMENT_PROVIDER=stripe
+# Payment Provider (lemonsqueezy, stripe, or paddle)
+PAYMENT_PROVIDER=lemonsqueezy
 
 # Integrations
 GITHUB_CLIENT_ID=

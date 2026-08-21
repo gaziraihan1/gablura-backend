@@ -207,22 +207,31 @@ const checkoutParams = {
     //           Stripe `price_...` ID makes Paddle's subscriptions.update fail.
     //           This mirrors PaddleProvider.createCheckoutSession, which also
     //           resolves prices from PADDLE_PRICE_IDS (env).
+    //   Lemon Squeezy: uses variant IDs instead of price IDs. The
+    //           LEMONSQUEEZY_VARIANT_* env vars map plan names to variant IDs.
+    //           Like Paddle, variant IDs must never be mixed with Stripe price IDs.
     const providerName = (
-      process.env.PAYMENT_PROVIDER ?? "stripe"
+      process.env.PAYMENT_PROVIDER ?? "lemonsqueezy"
     ).toLowerCase();
-    const providerPrefix = providerName === "paddle" ? "PADDLE" : "STRIPE";
-    const newPriceId =
-      providerName === "paddle"
-        ? process.env[`PADDLE_PRICE_${newPlanName}_${targetCycle}`]
-        : (targetCycle === "YEARLY"
-            ? newPlan.stripePriceIdYearly
-            : newPlan.stripePriceIdMonthly) ??
-          process.env[`STRIPE_PRICE_${newPlanName}_${targetCycle}`];
+    const providerPrefix = providerName === "paddle" ? "PADDLE" : providerName === "lemonsqueezy" ? "LEMONSQUEEZY" : "STRIPE";
+    let newPriceId: string | undefined;
+    if (providerName === "paddle") {
+      newPriceId = process.env[`PADDLE_PRICE_${newPlanName}_${targetCycle}`];
+    } else if (providerName === "lemonsqueezy") {
+      newPriceId = process.env[`LEMONSQUEEZY_VARIANT_${newPlanName}_${targetCycle}`];
+    } else {
+      newPriceId = (targetCycle === "YEARLY"
+          ? newPlan.stripePriceIdYearly
+          : newPlan.stripePriceIdMonthly) ??
+        process.env[`STRIPE_PRICE_${newPlanName}_${targetCycle}`];
+    }
     if (!newPriceId)
       throw new BadRequestError(
         `No price configured for ${newPlanName} ${targetCycle} (${
           providerName === "paddle"
             ? `set PADDLE_PRICE_${newPlanName}_${targetCycle}`
+            : providerName === "lemonsqueezy"
+            ? `set LEMONSQUEEZY_VARIANT_${newPlanName}_${targetCycle}`
             : `set the Plan row or STRIPE_PRICE_${newPlanName}_${targetCycle}`
         })`,
       );

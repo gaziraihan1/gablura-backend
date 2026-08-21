@@ -46,6 +46,7 @@ import { requireFocuraAdmin } from "./middleware/focuraAdmin.js";
 import apiKeyRouter from "./modules/apikey/apikey.routes.js";
 import { integrationRouter, workspaceIntegrationRouter, integrationWebhookRouter } from "./modules/integration/index.js";
 import { aiRouter } from "./modules/ai/index.js";
+import lemonsqueezySimulatorRouter from "./payment/dev/lemonsqueezy-simulator.js";
 
 const isProd = process.env.NODE_ENV === "production";
 
@@ -64,8 +65,13 @@ const app: Application = express();
 const trustProxyHops = parseInt(process.env.TRUST_PROXY_HOPS ?? "", 10);
 app.set("trust proxy", Number.isFinite(trustProxyHops) ? trustProxyHops : 1);
 
-// ── Stripe webhook (RAW body required) ─────────────────────
+// ── Billing webhook (RAW body required) ─────────────────────
 app.use(webhookRouter);
+
+// ── Dev webhook simulator (Lemon Squeezy) — dev-only ─────────
+if (!isProd) {
+  app.use(lemonsqueezySimulatorRouter);
+}
 
 // ── Body parsing ───────────────────────────────────────────
 app.use(express.json({ limit: "10mb" }));
