@@ -93,6 +93,46 @@ export function createActivityWorker() {
           break;
         }
 
+        case "invalidate-cache-batch": {
+          const { jobs } = job.data as unknown as { jobs: InvalidateCacheJobData[] };
+          const promises: Promise<void>[] = [];
+          for (const data of jobs) {
+            switch (data.type) {
+              case "analytics":
+                if (data.workspaceId) promises.push(AnalyticsCache.invalidateWorkspace(data.workspaceId));
+                break;
+              case "workspace":
+                if (data.workspaceId) promises.push(WorkspaceCache.invalidateWorkspace(data.workspaceId));
+                break;
+              case "task":
+                if (data.taskId) promises.push(TaskCache.invalidateTask(data.taskId));
+                if (data.userId && data.workspaceId) promises.push(TaskCache.invalidateTaskStats(data.userId, data.workspaceId));
+                else if (data.userId) promises.push(TaskCache.invalidateTaskStats(data.userId));
+                break;
+              case "calendar":
+                if (data.userId && data.workspaceId) {
+                  promises.push(CalendarCache.invalidateAggregates(data.userId, data.workspaceId));
+                  promises.push(CalendarCache.invalidateInsights(data.userId, data.workspaceId));
+                } else if (data.userId) {
+                  promises.push(CalendarCache.invalidateAggregates(data.userId));
+                  promises.push(CalendarCache.invalidateInsights(data.userId));
+                }
+                break;
+              case "access-control":
+                if (data.taskId) promises.push(AccessControlCache.invalidateTaskUsers(data.taskId));
+                if (data.workspaceId) promises.push(AccessControlCache.invalidateWorkspaceUsers(data.workspaceId));
+                break;
+              case "activity":
+                if (data.workspaceId) promises.push(ActivityCache.invalidateWorkspaceActivities(data.workspaceId));
+                if (data.userId) promises.push(ActivityCache.invalidateUserActivities(data.userId, data.workspaceId));
+                if (data.taskId) promises.push(ActivityCache.invalidateTaskActivities(data.taskId));
+                break;
+            }
+          }
+          await Promise.allSettled(promises);
+          break;
+        }
+
         case "update-storage-quota": {
           const data = job.data as UpdateStorageQuotaJobData;
           if (data.operation === "increment") {

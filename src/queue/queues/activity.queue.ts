@@ -57,6 +57,26 @@ export async function addInvalidateCacheJob(jobData: InvalidateCacheJobData) {
   });
 }
 
+/**
+ * Batch cache invalidation — fires a single BullMQ job for multiple
+ * invalidation types instead of one job per type. Reduces Redis commands
+ * from N×3-5 to just 3-5 per mutation.
+ *
+ * @example
+ *   addBatchInvalidateCacheJob([
+ *     { type: 'analytics', workspaceId },
+ *     { type: 'workspace', workspaceId },
+ *     { type: 'task', taskId, userId, workspaceId },
+ *   ]);
+ */
+export async function addBatchInvalidateCacheJob(jobs: InvalidateCacheJobData[]) {
+  if (jobs.length === 0) return;
+  if (jobs.length === 1) return addInvalidateCacheJob(jobs[0]);
+  return activityQueue.add("invalidate-cache-batch", { jobs }, {
+    priority: 3,
+  });
+}
+
 export async function addUpdateStorageQuotaJob(jobData: UpdateStorageQuotaJobData) {
   return activityQueue.add("update-storage-quota", jobData, {
     priority: 4,

@@ -81,6 +81,7 @@ export {
 export {
   addLogActivityJob,
   addInvalidateCacheJob,
+  addBatchInvalidateCacheJob,
   addUpdateStorageQuotaJob,
 } from "./queues/activity.queue.js";
 

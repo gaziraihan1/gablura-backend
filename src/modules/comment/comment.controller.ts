@@ -11,7 +11,7 @@ import {
 } from "./comment.validators.js";
 import { notifyMentions, notifyUser } from "../notification/index.js";
 import { stripMentionSyntax, extractMentionedUserIds } from "./mention/mention.utils.js";
-import { addInvalidateCacheJob } from "../../queue/index.js";
+import { addBatchInvalidateCacheJob } from "../../queue/index.js";
 import { emitAutomationEvent } from "../automation/automation.events.js";
 import { asyncHandler, ValidationError } from "../../errors/index.js";
 
@@ -151,8 +151,10 @@ export const addComment = asyncHandler(
         }
 
         // Refresh workspace/user activity feeds and task stats (async, best-effort)
-        addInvalidateCacheJob({ type: 'activity', taskId, userId: req.user!.id, workspaceId }).catch(() => {});
-        addInvalidateCacheJob({ type: 'task', taskId, userId: req.user!.id, workspaceId }).catch(() => {});
+        addBatchInvalidateCacheJob([
+          { type: 'activity', taskId, userId: req.user!.id, workspaceId },
+          { type: 'task', taskId, userId: req.user!.id, workspaceId },
+        ]).catch(() => {});
       },
     );
 
@@ -189,8 +191,10 @@ export const updateComment = asyncHandler(
           newContent: newContent!.substring(0, 50),
         });
 
-        addInvalidateCacheJob({ type: 'activity', taskId, userId: req.user!.id, workspaceId: task.project.workspaceId }).catch(() => {});
-        addInvalidateCacheJob({ type: 'task', taskId, userId: req.user!.id, workspaceId: task.project.workspaceId }).catch(() => {});
+        addBatchInvalidateCacheJob([
+          { type: 'activity', taskId, userId: req.user!.id, workspaceId: task.project.workspaceId },
+          { type: 'task', taskId, userId: req.user!.id, workspaceId: task.project.workspaceId },
+        ]).catch(() => {});
       },
     );
 
@@ -222,8 +226,10 @@ export const deleteComment = asyncHandler(
           commentContent: content!.substring(0, 100),
         });
 
-        addInvalidateCacheJob({ type: 'activity', taskId, userId: req.user!.id, workspaceId: task.project.workspaceId }).catch(() => {});
-        addInvalidateCacheJob({ type: 'task', taskId, userId: req.user!.id, workspaceId: task.project.workspaceId }).catch(() => {});
+        addBatchInvalidateCacheJob([
+          { type: 'activity', taskId, userId: req.user!.id, workspaceId: task.project.workspaceId },
+          { type: 'task', taskId, userId: req.user!.id, workspaceId: task.project.workspaceId },
+        ]).catch(() => {});
       },
     );
 

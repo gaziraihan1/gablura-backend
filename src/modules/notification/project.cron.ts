@@ -175,6 +175,8 @@ async function runProjectReminderCron(): Promise<void> {
   const maxReminderDate = new Date(now + maxReminderDays * 24 * 60 * 60 * 1000);
 
   // Find active projects with due dates approaching
+  // Include project managers + workspace owners/admins in the query
+  // to avoid N+1 DB calls per project.
   const projects = await prisma.project.findMany({
     where: {
       dueDate: {
@@ -190,7 +192,17 @@ async function runProjectReminderCron(): Promise<void> {
       slug: true,
       dueDate: true,
       workspace: {
-        select: { slug: true },
+        select: {
+          slug: true,
+          members: {
+            where: { role: { in: ["OWNER", "ADMIN"] } },
+            select: { userId: true },
+          },
+        },
+      },
+      members: {
+        where: { role: "MANAGER" },
+        select: { userId: true },
       },
     },
     take: 100,
@@ -198,10 +210,15 @@ async function runProjectReminderCron(): Promise<void> {
 
   let sent = 0;
   for (const project of projects) {
-    // Skip if dueDate is null (shouldn't happen due to query, but TypeScript safety)
     if (!project.dueDate) continue;
 
-    const recipients = await getProjectRecipients(project.id);
+    // Build recipients inline — no extra DB call needed
+    const recipientSet = new Set<string>();
+    for (const m of project.members) recipientSet.add(m.userId);
+    if (project.workspace) {
+      for (const m of project.workspace.members) recipientSet.add(m.userId);
+    }
+    const recipients = Array.from(recipientSet);
     if (recipients.length === 0) continue;
 
     const pending = buildProjectPendingNotifs(project, recipients, now);
@@ -235,40 +252,45 @@ async function runProjectAutoArchiveCron(): Promise<void> {
       dueDate: true,
       updatedAt: true,
       workspace: {
-        select: { slug: true },
+        select: {
+          slug: true,
+          members: {
+            where: { role: { in: ["OWNER", "ADMIN"] } },
+            select: { userId: true },
+          },
+        },
+      },
+      members: {
+        select: { userId: true },
       },
     },
     take: 100,
   });
 
+  // Batch: find all project IDs that have recent task activity
+  // (single query instead of N queries)
+  const projectIds = projects.map((p) => p.id);
+  const recentTaskProjectIds = new Set(
+    (
+      await prisma.task.groupBy({
+        by: ["projectId"],
+        where: {
+          projectId: { in: projectIds },
+          updatedAt: { gte: new Date(now - AUTO_ARCHIVE_DAYS * 24 * 60 * 60 * 1000) },
+        },
+        _count: { id: true },
+      })
+    ).map((r) => r.projectId),
+  );
+
+  const cutoffMs = now - AUTO_ARCHIVE_DAYS * 24 * 60 * 60 * 1000;
   let archived = 0;
   for (const project of projects) {
-    // Check for recent activity (tasks updated in last 7 days)
-    const recentTask = await prisma.task.findFirst({
-      where: {
-        projectId: project.id,
-        updatedAt: {
-          gte: new Date(now - AUTO_ARCHIVE_DAYS * 24 * 60 * 60 * 1000),
-        },
-      },
-      select: { id: true },
-    });
+    // Skip if there's been recent task activity
+    if (recentTaskProjectIds.has(project.id)) continue;
 
-    // Skip if there's been recent activity
-    if (recentTask) continue;
-
-    // Also check if project itself was recently updated
-    const projectUpdated = await prisma.project.findFirst({
-      where: {
-        id: project.id,
-        updatedAt: {
-          gte: new Date(now - AUTO_ARCHIVE_DAYS * 24 * 60 * 60 * 1000),
-        },
-      },
-      select: { id: true },
-    });
-
-    if (projectUpdated) continue;
+    // Skip if project itself was recently updated (in-memory, no DB call)
+    if (project.updatedAt.getTime() >= cutoffMs) continue;
 
     // Archive the project
     await prisma.project.update({
@@ -276,8 +298,14 @@ async function runProjectAutoArchiveCron(): Promise<void> {
       data: { status: "ARCHIVED" },
     });
 
-    // Get all stakeholders for notification
-    const stakeholders = await getAllProjectStakeholders(project.id);
+    // Build stakeholders inline — members already fetched in the initial query
+    const stakeholderSet = new Set<string>();
+    for (const m of project.members) stakeholderSet.add(m.userId);
+    if (project.workspace) {
+      for (const m of project.workspace.members) stakeholderSet.add(m.userId);
+    }
+    const stakeholders = Array.from(stakeholderSet);
+
     const actionUrl = project.workspace
       ? `/dashboard/workspaces/${project.workspace.slug}/projects/${project.slug}`
       : `/dashboard/projects/${project.slug}`;

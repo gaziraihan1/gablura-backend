@@ -62,6 +62,11 @@ async function fetchTaskPage(cursor?: string) {
       title:       true,
       dueDate:     true,
       createdById: true,
+      // Include the creator's notification preference directly so we
+      // never need a separate user lookup per task (N+1 elimination).
+      createdBy: {
+        select: { notifications: true },
+      },
       assignees: {
         select: {
           userId: true,
@@ -81,37 +86,32 @@ async function fetchTaskPage(cursor?: string) {
  * Returns a deduplicated list of user IDs who should receive
  * due-date notifications for this task, along with their
  * notification preference status.
+ *
+ * NOTE: Now fully synchronous — the creator's notification preference
+ * is included in the task query (createdBy), so no extra DB call is needed.
+ * Previously this made a prisma.user.findMany per task (N+1).
  */
-async function getRecipients(
+function getRecipients(
   createdById: string,
+  createdByNotifs: boolean,
   assignees: { userId: string; user: { notifications: boolean } }[],
-): Promise<{ userId: string; notifications: boolean }[]> {
-  // Collect all unique user IDs (creator + assignees)
-  const userIds = new Set<string>([createdById]);
+): { userId: string; notifications: boolean }[] {
+  const seen = new Set<string>();
+  const recipients: { userId: string; notifications: boolean }[] = [];
+
+  // Add creator (notification pref from the task query, no extra DB call)
+  recipients.push({ userId: createdById, notifications: createdByNotifs });
+  seen.add(createdById);
+
+  // Add assignees (deduplicated)
   for (const a of assignees) {
-    userIds.add(a.userId);
+    if (!seen.has(a.userId)) {
+      seen.add(a.userId);
+      recipients.push({ userId: a.userId, notifications: a.user.notifications });
+    }
   }
 
-  // Build a map of assignee notification preferences
-  const assigneeMap = new Map<string, boolean>();
-  for (const a of assignees) {
-    assigneeMap.set(a.userId, a.user.notifications);
-  }
-
-  // For the creator, we need to look up their preference
-  // (it's not in the assignees query)
-  const uniqueIds = Array.from(userIds);
-  const users = await prisma.user.findMany({
-    where: { id: { in: uniqueIds } },
-    select: { id: true, notifications: true },
-  });
-
-  const userMap = new Map(users.map((u) => [u.id, u.notifications]));
-
-  return uniqueIds.map((userId) => ({
-    userId,
-    notifications: userMap.get(userId) ?? true,
-  }));
+  return recipients;
 }
 
 // ─── Build pending notifications for one task ─────────────────────────────────
@@ -183,7 +183,11 @@ async function runTaskReminderCron(): Promise<void> {
       // getRecipients). We deliberately do NOT skip tasks without assignees:
       // a creator-only task still needs its due-soon/overdue reminders, and
       // getRecipients always includes the creator.
-      const recipients = await getRecipients(task.createdById, task.assignees);
+      const recipients = getRecipients(
+        task.createdById,
+        task.createdBy.notifications,
+        task.assignees,
+      );
       pending.push(...buildPendingNotifs(task, recipients, now));
     }
 

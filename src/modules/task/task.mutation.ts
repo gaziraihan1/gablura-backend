@@ -13,7 +13,7 @@ import {
 } from './task.quota.service.js';
 import { ProjectAccess }   from '../project/project.access.js';
 import { BadRequestError, ForbiddenError, NotFoundError } from '../../errors/index.js';
-import { addInvalidateCacheJob } from '../../queue/index.js';
+import { addBatchInvalidateCacheJob } from '../../queue/index.js';
 import { TaskCache, AccessControlCache } from '../../lib/redis/cache.client.js';
 
 // ─── Callback types ───────────────────────────────────────────────────────────
@@ -218,13 +218,17 @@ export const TaskMutation = {
     }
 
     if (finalWorkspaceId) {
-      addInvalidateCacheJob({ type: 'analytics', workspaceId: finalWorkspaceId }).catch(() => {});
-      addInvalidateCacheJob({ type: 'workspace', workspaceId: finalWorkspaceId }).catch(() => {});
-      addInvalidateCacheJob({ type: 'task', userId: data.createdById, workspaceId: finalWorkspaceId }).catch(() => {});
-      addInvalidateCacheJob({ type: 'calendar', userId: data.createdById, workspaceId: finalWorkspaceId }).catch(() => {});
+      addBatchInvalidateCacheJob([
+        { type: 'analytics', workspaceId: finalWorkspaceId },
+        { type: 'workspace', workspaceId: finalWorkspaceId },
+        { type: 'task', userId: data.createdById, workspaceId: finalWorkspaceId },
+        { type: 'calendar', userId: data.createdById, workspaceId: finalWorkspaceId },
+      ]).catch(() => {});
     } else {
-      addInvalidateCacheJob({ type: 'task', userId: data.createdById }).catch(() => {});
-      addInvalidateCacheJob({ type: 'calendar', userId: data.createdById }).catch(() => {});
+      addBatchInvalidateCacheJob([
+        { type: 'task', userId: data.createdById },
+        { type: 'calendar', userId: data.createdById },
+      ]).catch(() => {});
     }
 
     if (onCreated) {
@@ -329,19 +333,22 @@ export const TaskMutation = {
     // (e.g. the frontend refetch after this mutation) sees fresh data.
     // The background job still handles stats/list/analytics invalidation.
     await TaskCache.invalidateTask(taskId);
-    await AccessControlCache.invalidateTaskEdit(taskId, userId);
-
-    if (existingTask.workspaceId) {
-      addInvalidateCacheJob({ type: 'analytics', workspaceId: existingTask.workspaceId }).catch(() => {});
-      addInvalidateCacheJob({ type: 'workspace', workspaceId: existingTask.workspaceId }).catch(() => {});
-      addInvalidateCacheJob({ type: 'task', taskId, userId, workspaceId: existingTask.workspaceId }).catch(() => {});
-      addInvalidateCacheJob({ type: 'calendar', userId, workspaceId: existingTask.workspaceId }).catch(() => {});
-      addInvalidateCacheJob({ type: 'access-control', taskId, workspaceId: existingTask.workspaceId }).catch(() => {});
+    await AccessControlCache.invalidateTaskEdit(taskId, userId);    if (existingTask.workspaceId) {
+      addBatchInvalidateCacheJob([
+        { type: 'analytics', workspaceId: existingTask.workspaceId },
+        { type: 'workspace', workspaceId: existingTask.workspaceId },
+        { type: 'task', taskId, userId, workspaceId: existingTask.workspaceId },
+        { type: 'calendar', userId, workspaceId: existingTask.workspaceId },
+        { type: 'access-control', taskId, workspaceId: existingTask.workspaceId },
+      ]).catch(() => {});
     } else {
-      addInvalidateCacheJob({ type: 'task', taskId, userId }).catch(() => {});
-      addInvalidateCacheJob({ type: 'calendar', userId }).catch(() => {});
-      addInvalidateCacheJob({ type: 'access-control', taskId }).catch(() => {});
+      addBatchInvalidateCacheJob([
+        { type: 'task', taskId, userId },
+        { type: 'calendar', userId },
+        { type: 'access-control', taskId },
+      ]).catch(() => {});
     }
+
 
     // Recurrence changes (upsert or stop)
     if (data.recurrence !== undefined) {
@@ -447,11 +454,15 @@ export const TaskMutation = {
     await AccessControlCache.invalidateTaskEdit(taskId, userId);
 
     if (existingTask.workspaceId) {
-      addInvalidateCacheJob({ type: 'analytics', workspaceId: existingTask.workspaceId }).catch(() => {});
-      addInvalidateCacheJob({ type: 'workspace', workspaceId: existingTask.workspaceId }).catch(() => {});
-      addInvalidateCacheJob({ type: 'task', taskId, userId, workspaceId: existingTask.workspaceId }).catch(() => {});
+      addBatchInvalidateCacheJob([
+        { type: 'analytics', workspaceId: existingTask.workspaceId },
+        { type: 'workspace', workspaceId: existingTask.workspaceId },
+        { type: 'task', taskId, userId, workspaceId: existingTask.workspaceId },
+      ]).catch(() => {});
     } else {
-      addInvalidateCacheJob({ type: 'task', taskId, userId }).catch(() => {});
+      addBatchInvalidateCacheJob([
+        { type: 'task', taskId, userId },
+      ]).catch(() => {});
     }
 
     if (onUpdated) {
@@ -475,15 +486,19 @@ export const TaskMutation = {
     await prisma.task.delete({ where: { id: taskId } });
 
     if (workspaceId) {
-      addInvalidateCacheJob({ type: 'analytics', workspaceId }).catch(() => {});
-      addInvalidateCacheJob({ type: 'workspace', workspaceId }).catch(() => {});
-      addInvalidateCacheJob({ type: 'task', taskId, userId, workspaceId }).catch(() => {});
-      addInvalidateCacheJob({ type: 'calendar', userId, workspaceId }).catch(() => {});
-      addInvalidateCacheJob({ type: 'access-control', taskId, workspaceId }).catch(() => {});
+      addBatchInvalidateCacheJob([
+        { type: 'analytics', workspaceId },
+        { type: 'workspace', workspaceId },
+        { type: 'task', taskId, userId, workspaceId },
+        { type: 'calendar', userId, workspaceId },
+        { type: 'access-control', taskId, workspaceId },
+      ]).catch(() => {});
     } else {
-      addInvalidateCacheJob({ type: 'task', taskId, userId }).catch(() => {});
-      addInvalidateCacheJob({ type: 'calendar', userId }).catch(() => {});
-      addInvalidateCacheJob({ type: 'access-control', taskId }).catch(() => {});
+      addBatchInvalidateCacheJob([
+        { type: 'task', taskId, userId },
+        { type: 'calendar', userId },
+        { type: 'access-control', taskId },
+      ]).catch(() => {});
     }
 
     if (onDeleted) {
@@ -524,11 +539,15 @@ export const TaskMutation = {
     });
 
     if (taskInfo?.workspaceId) {
-      addInvalidateCacheJob({ type: 'task', taskId, userId, workspaceId: taskInfo.workspaceId }).catch(() => {});
-      addInvalidateCacheJob({ type: 'calendar', userId, workspaceId: taskInfo.workspaceId }).catch(() => {});
+      addBatchInvalidateCacheJob([
+        { type: 'task', taskId, userId, workspaceId: taskInfo.workspaceId },
+        { type: 'calendar', userId, workspaceId: taskInfo.workspaceId },
+      ]).catch(() => {});
     } else {
-      addInvalidateCacheJob({ type: 'task', taskId, userId }).catch(() => {});
-      addInvalidateCacheJob({ type: 'calendar', userId }).catch(() => {});
+      addBatchInvalidateCacheJob([
+        { type: 'task', taskId, userId },
+        { type: 'calendar', userId },
+      ]).catch(() => {});
     }
 
     if (onUpserted) {
@@ -559,11 +578,15 @@ export const TaskMutation = {
       select: { id: true, title: true, workspaceId: true },
     });
     if (taskInfo?.workspaceId) {
-      addInvalidateCacheJob({ type: 'task', taskId, userId, workspaceId: taskInfo.workspaceId }).catch(() => {});
-      addInvalidateCacheJob({ type: 'calendar', userId, workspaceId: taskInfo.workspaceId }).catch(() => {});
+      addBatchInvalidateCacheJob([
+        { type: 'task', taskId, userId, workspaceId: taskInfo.workspaceId },
+        { type: 'calendar', userId, workspaceId: taskInfo.workspaceId },
+      ]).catch(() => {});
     } else {
-      addInvalidateCacheJob({ type: 'task', taskId, userId }).catch(() => {});
-      addInvalidateCacheJob({ type: 'calendar', userId }).catch(() => {});
+      addBatchInvalidateCacheJob([
+        { type: 'task', taskId, userId },
+        { type: 'calendar', userId },
+      ]).catch(() => {});
     }
 
     if (onDeleted) {

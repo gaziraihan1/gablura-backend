@@ -27,7 +27,7 @@ const {
   mockProcessPendingNotifications,
 } = vi.hoisted(() => {
   const mockPrisma = {
-    task: { findMany: vi.fn(), findFirst: vi.fn() },
+    task: { findMany: vi.fn(), findFirst: vi.fn(), groupBy: vi.fn() },
     user: { findMany: vi.fn(), findUnique: vi.fn() },
     notification: {
       create: vi.fn(),
@@ -352,6 +352,7 @@ describe('notification.cron.ts', () => {
     mockPrisma.task.findMany
       .mockResolvedValueOnce([{
         id: 'task-1', title: 'Test', dueDate, createdById: 'u1',
+        createdBy: { notifications: true },
         assignees: [{ userId: 'u2', user: { notifications: true } }],
       }])
       .mockResolvedValueOnce([]);
@@ -369,15 +370,14 @@ describe('notification.cron.ts', () => {
     const dueDate = new Date(Date.now() + 6 * 60 * 60 * 1000);
     mockPrisma.task.findMany
       .mockResolvedValueOnce([{
-        id: 'task-1', title: 'Creator Only', dueDate, createdById: 'u1', assignees: [],
+        id: 'task-1', title: 'Creator Only', dueDate, createdById: 'u1',
+        createdBy: { notifications: true }, assignees: [],
       }])
       .mockResolvedValueOnce([]);
-    mockPrisma.user.findMany.mockResolvedValue([{ id: 'u1', notifications: true }]);
     const { startTaskReminderCron } = await import('../../modules/notification/notification.cron.js');
     startTaskReminderCron();
     const handler = mockCronSchedule.mock.calls[mockCronSchedule.mock.calls.length - 1][1];
     await handler();
-    expect(mockPrisma.user.findMany).toHaveBeenCalled();
     expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Task reminder cron done'));
   });
 
@@ -385,12 +385,10 @@ describe('notification.cron.ts', () => {
     const dueDate = new Date(Date.now() + 30 * 60 * 1000);
     const tasks = Array.from({ length: 100 }, (_, i) => ({
       id: `task-${i}`, title: `Task ${i}`, dueDate, createdById: 'u1',
+      createdBy: { notifications: true },
       assignees: [{ userId: 'u2', user: { notifications: true } }],
     }));
     mockPrisma.task.findMany.mockResolvedValueOnce(tasks).mockResolvedValueOnce([]);
-    mockPrisma.user.findMany.mockResolvedValue([
-      { id: 'u1', notifications: true }, { id: 'u2', notifications: true },
-    ]);
     const { startTaskReminderCron } = await import('../../modules/notification/notification.cron.js');
     startTaskReminderCron();
     const handler = mockCronSchedule.mock.calls[mockCronSchedule.mock.calls.length - 1][1];
@@ -490,12 +488,10 @@ describe('notification.cron.ts', () => {
     mockPrisma.task.findMany
       .mockResolvedValueOnce([{
         id: 'task-od', title: 'Overdue', dueDate: overdueDate, createdById: 'u1',
+        createdBy: { notifications: true },
         assignees: [{ userId: 'u2', user: { notifications: true } }],
       }])
       .mockResolvedValueOnce([]);
-    mockPrisma.user.findMany.mockResolvedValue([
-      { id: 'u1', notifications: true }, { id: 'u2', notifications: true },
-    ]);
     const { startTaskReminderCron } = await import('../../modules/notification/notification.cron.js');
     startTaskReminderCron();
     const handler = mockCronSchedule.mock.calls[mockCronSchedule.mock.calls.length - 1][1];
@@ -508,12 +504,10 @@ describe('notification.cron.ts', () => {
     mockPrisma.task.findMany
       .mockResolvedValueOnce([{
         id: 'task-1', title: 'Task', dueDate, createdById: 'u1',
+        createdBy: { notifications: false },
         assignees: [{ userId: 'u2', user: { notifications: false } }],
       }])
       .mockResolvedValueOnce([]);
-    mockPrisma.user.findMany.mockResolvedValue([
-      { id: 'u1', notifications: false }, { id: 'u2', notifications: false },
-    ]);
     const { startTaskReminderCron } = await import('../../modules/notification/notification.cron.js');
     startTaskReminderCron();
     const handler = mockCronSchedule.mock.calls[mockCronSchedule.mock.calls.length - 1][1];
@@ -553,12 +547,10 @@ describe('project.cron.ts', () => {
   it('project reminder processes projects with recipients', async () => {
     const dueDate = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
     mockPrisma.project.findMany.mockResolvedValue([{
-      id: 'p1', name: 'Proj', slug: 'proj', dueDate, workspace: { slug: 'ws' },
+      id: 'p1', name: 'Proj', slug: 'proj', dueDate,
+      workspace: { slug: 'ws', members: [{ userId: 'ow' }] },
+      members: [{ userId: 'mgr' }],
     }]);
-    mockPrisma.project.findUnique.mockResolvedValue({
-      id: 'p1', members: [{ userId: 'mgr' }],
-      workspace: { members: [{ userId: 'ow' }] },
-    });
     const { startProjectReminderCron } = await import('../../modules/notification/project.cron.js');
     startProjectReminderCron();
     const handler = mockCronSchedule.mock.calls[mockCronSchedule.mock.calls.length - 1][1];
@@ -570,9 +562,9 @@ describe('project.cron.ts', () => {
     mockPrisma.project.findMany.mockResolvedValue([{
       id: 'p1', name: 'Proj', slug: 'proj',
       dueDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
-      workspace: { slug: 'ws' },
+      workspace: { slug: 'ws', members: [] },
+      members: [],
     }]);
-    mockPrisma.project.findUnique.mockResolvedValue(null);
     const { startProjectReminderCron } = await import('../../modules/notification/project.cron.js');
     startProjectReminderCron();
     const handler = mockCronSchedule.mock.calls[mockCronSchedule.mock.calls.length - 1][1];
@@ -592,11 +584,10 @@ describe('project.cron.ts', () => {
   it('project reminder handles overdue projects', async () => {
     const pastDue = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000);
     mockPrisma.project.findMany.mockResolvedValue([{
-      id: 'p1', name: 'Overdue', slug: 'overdue', dueDate: pastDue, workspace: { slug: 'ws' },
+      id: 'p1', name: 'Overdue', slug: 'overdue', dueDate: pastDue,
+      workspace: { slug: 'ws', members: [] },
+      members: [{ userId: 'mgr' }],
     }]);
-    mockPrisma.project.findUnique.mockResolvedValue({
-      id: 'p1', members: [{ userId: 'mgr' }], workspace: { members: [] },
-    });
     const { startProjectReminderCron } = await import('../../modules/notification/project.cron.js');
     startProjectReminderCron();
     const handler = mockCronSchedule.mock.calls[mockCronSchedule.mock.calls.length - 1][1];
@@ -624,6 +615,7 @@ describe('project.cron.ts', () => {
 
   it('auto-archive runs with no projects', async () => {
     mockPrisma.project.findMany.mockResolvedValue([]);
+    mockPrisma.task.groupBy.mockResolvedValue([]);
     const { startProjectAutoArchiveCron } = await import('../../modules/notification/project.cron.js');
     startProjectAutoArchiveCron();
     const handler = mockCronSchedule.mock.calls[mockCronSchedule.mock.calls.length - 1][1];
@@ -635,14 +627,11 @@ describe('project.cron.ts', () => {
     const oldDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     mockPrisma.project.findMany.mockResolvedValue([{
       id: 'p-old', name: 'Old', slug: 'old', dueDate: oldDate, updatedAt: oldDate,
-      workspace: { slug: 'ws' },
+      workspace: { slug: 'ws', members: [{ userId: 'ow1' }] },
+      members: [{ userId: 'm1' }],
     }]);
-    mockPrisma.task.findFirst.mockResolvedValue(null);
-    mockPrisma.project.findFirst.mockResolvedValue(null);
+    mockPrisma.task.groupBy.mockResolvedValue([]);
     mockPrisma.project.update.mockResolvedValue({});
-    mockPrisma.project.findUnique.mockResolvedValue({
-      id: 'p-old', members: [{ userId: 'm1' }], workspace: { members: [{ userId: 'ow1' }] },
-    });
     const { startProjectAutoArchiveCron } = await import('../../modules/notification/project.cron.js');
     startProjectAutoArchiveCron();
     const handler = mockCronSchedule.mock.calls[mockCronSchedule.mock.calls.length - 1][1];
@@ -658,9 +647,10 @@ describe('project.cron.ts', () => {
       id: 'p-act', name: 'Active', slug: 'active',
       dueDate: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000),
       updatedAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
-      workspace: { slug: 'ws' },
+      workspace: { slug: 'ws', members: [] },
+      members: [],
     }]);
-    mockPrisma.task.findFirst.mockResolvedValue({ id: 'recent-task' });
+    mockPrisma.task.groupBy.mockResolvedValue([{ projectId: 'p-act', _count: { id: 1 } }]);
     const { startProjectAutoArchiveCron } = await import('../../modules/notification/project.cron.js');
     startProjectAutoArchiveCron();
     const handler = mockCronSchedule.mock.calls[mockCronSchedule.mock.calls.length - 1][1];
@@ -672,11 +662,11 @@ describe('project.cron.ts', () => {
     mockPrisma.project.findMany.mockResolvedValue([{
       id: 'p-upd', name: 'Updated', slug: 'upd',
       dueDate: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000),
-      updatedAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
-      workspace: { slug: 'ws' },
+      updatedAt: new Date(), // recently updated
+      workspace: { slug: 'ws', members: [] },
+      members: [],
     }]);
-    mockPrisma.task.findFirst.mockResolvedValue(null);
-    mockPrisma.project.findFirst.mockResolvedValue({ id: 'p-upd' });
+    mockPrisma.task.groupBy.mockResolvedValue([]);
     const { startProjectAutoArchiveCron } = await import('../../modules/notification/project.cron.js');
     startProjectAutoArchiveCron();
     const handler = mockCronSchedule.mock.calls[mockCronSchedule.mock.calls.length - 1][1];
@@ -688,13 +678,10 @@ describe('project.cron.ts', () => {
     const oldDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     mockPrisma.project.findMany.mockResolvedValue([{
       id: 'p-nows', name: 'No WS', slug: 'nows', dueDate: oldDate, updatedAt: oldDate, workspace: null,
+      members: [{ userId: 'm1' }],
     }]);
-    mockPrisma.task.findFirst.mockResolvedValue(null);
-    mockPrisma.project.findFirst.mockResolvedValue(null);
+    mockPrisma.task.groupBy.mockResolvedValue([]);
     mockPrisma.project.update.mockResolvedValue({});
-    mockPrisma.project.findUnique.mockResolvedValue({
-      id: 'p-nows', members: [{ userId: 'm1' }], workspace: null,
-    });
     const { startProjectAutoArchiveCron } = await import('../../modules/notification/project.cron.js');
     startProjectAutoArchiveCron();
     const handler = mockCronSchedule.mock.calls[mockCronSchedule.mock.calls.length - 1][1];
@@ -715,14 +702,11 @@ describe('project.cron.ts', () => {
     const oldDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     mockPrisma.project.findMany.mockResolvedValue([{
       id: 'p-nom', name: 'No Mbrs', slug: 'nom', dueDate: oldDate, updatedAt: oldDate,
-      workspace: { slug: 'ws' },
+      workspace: { slug: 'ws', members: [{ userId: 'ow1' }] },
+      members: [],
     }]);
-    mockPrisma.task.findFirst.mockResolvedValue(null);
-    mockPrisma.project.findFirst.mockResolvedValue(null);
+    mockPrisma.task.groupBy.mockResolvedValue([]);
     mockPrisma.project.update.mockResolvedValue({});
-    mockPrisma.project.findUnique.mockResolvedValue({
-      id: 'p-nom', members: [], workspace: { members: [{ userId: 'ow1' }] },
-    });
     const { startProjectAutoArchiveCron } = await import('../../modules/notification/project.cron.js');
     startProjectAutoArchiveCron();
     const handler = mockCronSchedule.mock.calls[mockCronSchedule.mock.calls.length - 1][1];
