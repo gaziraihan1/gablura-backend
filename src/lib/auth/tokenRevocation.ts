@@ -58,7 +58,7 @@ export async function revokeAllRefreshTokens(userId: string): Promise<void> {
   try {
     const redis = getRedisClient();
     const idxKey = refreshIndexKey(userId);
-    let keys = await redis.smembers(idxKey);
+    const keys = await redis.smembers(idxKey);
 
     if (keys.length === 0) {
       // Fallback: SCAN (not KEYS) to avoid blocking Redis on large keyspaces
