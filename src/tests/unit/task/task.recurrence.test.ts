@@ -3,7 +3,7 @@ import { TaskMutation } from '../../../modules/task/task.mutation.js';
 import { TaskAccess } from '../../../modules/task/task.access.js';
 import { ProjectAccess } from '../../../modules/project/project.access.js';
 import { prisma } from '../../../lib/prisma.js';
-import { addInvalidateCacheJob } from '../../../queue/index.js';
+import { addBatchInvalidateCacheJob } from '../../../queue/index.js';
 import { ForbiddenError, NotFoundError } from '../../../errors/index.js';
 
 vi.mock('../../../lib/prisma.js', () => ({
@@ -23,7 +23,7 @@ vi.mock('../../../modules/project/project.access.js', () => ({
 }));
 
 vi.mock('../../../queue/index.js', () => ({
-  addInvalidateCacheJob: vi.fn(() => Promise.resolve()),
+  addBatchInvalidateCacheJob: vi.fn(() => Promise.resolve()),
 }));
 
 describe('TaskMutation recurrence methods', () => {
@@ -62,7 +62,9 @@ describe('TaskMutation recurrence methods', () => {
       expect(onUpserted).toHaveBeenCalledWith(
         expect.objectContaining({ task: expect.objectContaining({ id: 't1' }) }),
       );
-      const jobs = vi.mocked(addInvalidateCacheJob).mock.calls.map((c) => c[0]);
+      const batchCalls = vi.mocked(addBatchInvalidateCacheJob).mock.calls;
+      expect(batchCalls).toHaveLength(1);
+      const jobs = batchCalls[0][0];
       expect(jobs).toContainEqual(expect.objectContaining({ type: 'task', taskId: 't1', workspaceId: 'ws-1' }));
     });
 
@@ -71,6 +73,7 @@ describe('TaskMutation recurrence methods', () => {
         canEdit: true,
         task: { id: 't1', projectId: null },
       } as any);
+      vi.mocked(ProjectAccess.assertProjectNotArchived).mockResolvedValue(undefined as any);
       vi.mocked(prisma.task.findUnique).mockResolvedValue({
         id: 't1', title: 'Standup', workspaceId: null, dueDate: null,
       } as any);

@@ -1,6 +1,6 @@
 import cron from 'node-cron';
 import { prisma } from '../../lib/prisma.js';
-import { addInvalidateCacheJob } from '../../queue/index.js';
+import { addInvalidateCacheJob, addBatchInvalidateCacheJob } from '../../queue/index.js';
 import {
   resolveUserPlan,
   resolveWorkspacePlan,
@@ -254,15 +254,20 @@ export async function runTaskRecurrenceCron(): Promise<void> {
     page += 1;
   }
 
+  // Batch cache invalidation: one job per workspace/user instead of one per type
   for (const workspaceId of workspaceIds) {
-    addInvalidateCacheJob({ type: 'analytics', workspaceId }).catch(() => {});
-    addInvalidateCacheJob({ type: 'workspace', workspaceId }).catch(() => {});
-    addInvalidateCacheJob({ type: 'task', workspaceId }).catch(() => {});
-    addInvalidateCacheJob({ type: 'calendar', workspaceId }).catch(() => {});
+    addBatchInvalidateCacheJob([
+      { type: 'analytics', workspaceId },
+      { type: 'workspace', workspaceId },
+      { type: 'task', workspaceId },
+      { type: 'calendar', workspaceId },
+    ]).catch(() => {});
   }
   for (const userId of personalUserIds) {
-    addInvalidateCacheJob({ type: 'task', userId }).catch(() => {});
-    addInvalidateCacheJob({ type: 'calendar', userId }).catch(() => {});
+    addBatchInvalidateCacheJob([
+      { type: 'task', userId },
+      { type: 'calendar', userId },
+    ]).catch(() => {});
   }
 
   console.log(`Recurring task cron: generated ${generated} instances in ${Date.now() - start}ms`);

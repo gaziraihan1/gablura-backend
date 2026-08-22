@@ -48,32 +48,31 @@ const MEETING_DEDUP_PREFIX = `${DEDUP_PREFIX}meeting:`;
  * Private → attendees (unique) + creator; Public → all workspace members.
  * Returns userIds whose notifications preference is enabled.
  */
-async function getMeetingRecipients(meeting: {
-  id: string;
-  visibility: string;
-  createdById: string;
-  workspaceId: string;
-  attendees: { userId: string }[];
-}): Promise<string[]> {
+/**
+ * Synchronous recipient resolution for PRIVATE meetings.
+ * Uses pre-fetched attendee+creator notification prefs (no DB calls).
+ */
+function getPrivateRecipients(
+  attendees: { userId: string; user: { notifications: boolean } }[],
+  createdBy: { notifications: boolean },
+  createdById: string,
+): string[] {
   const userIds = new Set<string>();
-
-  if (meeting.visibility === "PRIVATE") {
-    for (const a of meeting.attendees) userIds.add(a.userId);
-    userIds.add(meeting.createdById);
-  } else {
-    const members = await prisma.workspaceMember.findMany({
-      where: { workspaceId: meeting.workspaceId },
-      select: { userId: true },
-    });
-    for (const m of members) userIds.add(m.userId);
+  for (const a of attendees) {
+    if (a.user.notifications) userIds.add(a.userId);
   }
+  if (createdBy.notifications) userIds.add(createdById);
+  return Array.from(userIds);
+}
 
-  const users = await prisma.user.findMany({
-    where: { id: { in: Array.from(userIds) } },
-    select: { id: true, notifications: true },
-  });
-
-  return users.filter((u) => u.notifications).map((u) => u.id);
+/**
+ * Synchronous recipient resolution for PUBLIC meetings.
+ * Uses pre-fetched workspace member notification prefs (no DB calls).
+ */
+function getPublicRecipients(
+  members: { userId: string; user: { notifications: boolean } }[],
+): string[] {
+  return members.filter((m) => m.user.notifications).map((m) => m.userId);
 }
 
 // ─── Build pending notifications ──────────────────────────────────────────────
@@ -127,15 +126,54 @@ async function runMeetingReminderCron(): Promise<void> {
       createdById: true,
       workspaceId: true,
       startTime: true,
-      attendees: { select: { userId: true } },
+      createdBy: { select: { notifications: true } },
+      attendees: {
+        select: {
+          userId: true,
+          user: { select: { notifications: true } },
+        },
+      },
       workspace: { select: { slug: true } },
     },
     take: 100,
   });
 
+  // Batch-fetch workspace members for PUBLIC meetings (1 query for all)
+  const publicWorkspaceIds = [...new Set(
+    meetings.filter((m) => m.visibility === "PUBLIC").map((m) => m.workspaceId),
+  )];
+  const workspaceMembersMap = new Map<string, { userId: string; user: { notifications: boolean } }[]>();
+  if (publicWorkspaceIds.length > 0) {
+    const membersByWorkspace = await prisma.workspaceMember.findMany({
+      where: { workspaceId: { in: publicWorkspaceIds } },
+      select: {
+        workspaceId: true,
+        userId: true,
+        user: { select: { notifications: true } },
+      },
+    });
+    for (const m of membersByWorkspace) {
+      if (!m.workspaceId) continue;
+      const list = workspaceMembersMap.get(m.workspaceId) ?? [];
+      list.push({ userId: m.userId, user: m.user });
+      workspaceMembersMap.set(m.workspaceId, list);
+    }
+  }
+
   let sent = 0;
   for (const meeting of meetings) {
-    const recipients = await getMeetingRecipients(meeting);
+    let recipients: string[];
+    if (meeting.visibility === "PRIVATE") {
+      recipients = getPrivateRecipients(
+        meeting.attendees,
+        meeting.createdBy,
+        meeting.createdById,
+      );
+    } else {
+      recipients = getPublicRecipients(
+        meeting.workspaceId ? (workspaceMembersMap.get(meeting.workspaceId) ?? []) : [],
+      );
+    }
     if (recipients.length === 0) continue;
 
     const pending = buildMeetingPendingNotifs(meeting, recipients, now);

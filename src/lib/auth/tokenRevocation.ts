@@ -61,7 +61,14 @@ export async function revokeAllRefreshTokens(userId: string): Promise<void> {
     let keys = await redis.smembers(idxKey);
 
     if (keys.length === 0) {
-      keys = await redis.keys(`focura:refresh:${userId}:*`);
+      // Fallback: SCAN (not KEYS) to avoid blocking Redis on large keyspaces
+      let cursor = '0';
+      const pattern = `focura:refresh:${userId}:*`;
+      do {
+        const [nextCursor, found] = await redis.scan(cursor, 'MATCH', pattern, 'COUNT', 100);
+        cursor = nextCursor;
+        keys.push(...found);
+      } while (cursor !== '0');
     }
 
     if (keys.length > 0) await redis.del(...keys);

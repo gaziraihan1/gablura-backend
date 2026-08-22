@@ -411,11 +411,10 @@ describe('notification.cron.ts', () => {
     mockPrisma.meeting.findMany.mockResolvedValue([{
       id: 'm1', title: 'Sync', visibility: 'PRIVATE', createdById: 'u1',
       workspaceId: 'w1', startTime: start,
-      attendees: [{ userId: 'u2' }], workspace: { slug: 'ws' },
+      createdBy: { notifications: true },
+      attendees: [{ userId: 'u2', user: { notifications: true } }],
+      workspace: { slug: 'ws' },
     }]);
-    mockPrisma.user.findMany.mockResolvedValue([
-      { id: 'u1', notifications: true }, { id: 'u2', notifications: true },
-    ]);
     // Make the shared cron-dispatch mock actually enqueue (it normally returns
     // 0 to keep other cron tests hermetic).
     mockProcessPendingNotifications.mockImplementation(async (list: any[]) => {

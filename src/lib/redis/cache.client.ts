@@ -494,8 +494,10 @@ export const StorageCache = {
    */
   async invalidateWorkspace(workspaceId: string): Promise<void> {
     // Pattern-based wipe covers overview, info, contributions, largest-files
-    await CacheClient.deletePattern(`storage:*:${workspaceId}*`);
-    await CacheClient.deletePattern(`storage:*:${workspaceId}:*`);
+    await Promise.all([
+      CacheClient.deletePattern(`storage:*:${workspaceId}*`),
+      CacheClient.deletePattern(`storage:*:${workspaceId}:*`),
+    ]);
   },
 
   /**
@@ -622,7 +624,6 @@ export const ActivityCache = {
    * Invalidate user activity lists
    */
   async invalidateUserActivities(userId: string, workspaceId?: string): Promise<void> {
-    console.log(`Invalidating activity cache for user ${userId} in workspace ${workspaceId ?? 'all'}`);
     await CacheClient.deletePattern(`activity:user:${userId}:*`);
   },
 
@@ -648,7 +649,6 @@ export const CalendarCache = {
    * Invalidate calendar aggregates for a user/workspace date range
    */
   async invalidateAggregates(userId: string, workspaceId?: string): Promise<void> {
-    console.log(`Invalidating calendar aggregates for user ${userId} in workspace ${workspaceId ?? 'all'}`);
     await CacheClient.deletePattern(`calendar:aggregates:${userId}:*`);
   },
 
@@ -656,7 +656,6 @@ export const CalendarCache = {
    * Invalidate calendar insights for a user/workspace date range
    */
   async invalidateInsights(userId: string, workspaceId?: string): Promise<void> {
-    console.log(`Invalidating calendar insights for user ${userId} in workspace ${workspaceId ?? 'all'}`);
     await CacheClient.deletePattern(`calendar:insights:${userId}:*`);
   },
 
@@ -664,7 +663,6 @@ export const CalendarCache = {
    * Invalidate system events for a user/workspace date range
    */
   async invalidateSystemEvents(userId: string, workspaceId?: string): Promise<void> {
-    console.log(`Invalidating calendar system events for user ${userId} in workspace ${workspaceId ?? 'all'}`);
     await CacheClient.deletePattern(`calendar:system-events:${userId}:*`);
   },
 
@@ -672,7 +670,6 @@ export const CalendarCache = {
    * Invalidate goal checkpoints for a user/workspace date range
    */
   async invalidateGoalCheckpoints(userId: string, workspaceId?: string): Promise<void> {
-    console.log(`Invalidating calendar goal checkpoints for user ${userId} in workspace ${workspaceId ?? 'all'}`);
     await CacheClient.deletePattern(`calendar:goal-checkpoints:${userId}:*`);
   },
 

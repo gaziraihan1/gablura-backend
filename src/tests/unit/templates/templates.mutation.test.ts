@@ -28,6 +28,7 @@ vi.mock('../../../modules/task/task.quota.service.js', () => ({
 
 vi.mock('../../../queue/index.js', () => ({
   addInvalidateCacheJob: vi.fn().mockResolvedValue(undefined),
+  addBatchInvalidateCacheJob: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('../../../lib/redis/cache.client.js', () => ({

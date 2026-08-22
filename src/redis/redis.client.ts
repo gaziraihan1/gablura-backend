@@ -179,10 +179,17 @@ export const BILLING_CACHE = {
     try {
       const redis = getRedisClient();
       const pattern = 'billing:limits:*';
-      const keys = await redis.keys(pattern);
-      if (keys.length > 0) {
-        await redis.del(...keys);
-        console.log(`[BillingCache] Invalidated ${keys.length} plan limit caches`);
+      // Use SCAN instead of KEYS to avoid blocking Redis
+      let cursor = '0';
+      const keysToDelete: string[] = [];
+      do {
+        const [nextCursor, found] = await redis.scan(cursor, 'MATCH', pattern, 'COUNT', 100);
+        cursor = nextCursor;
+        keysToDelete.push(...found);
+      } while (cursor !== '0');
+      if (keysToDelete.length > 0) {
+        await redis.del(...keysToDelete);
+        console.log(`[BillingCache] Invalidated ${keysToDelete.length} plan limit caches`);
       }
     } catch (error) {
       console.error('[BillingCache] Error invalidating all plan limits:', error);

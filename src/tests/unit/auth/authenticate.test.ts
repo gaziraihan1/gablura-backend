@@ -43,7 +43,7 @@ vi.mock("../../../lib/auth/auditLog.js", () => ({
 vi.mock("../../../lib/redis/cache.client.js", () => ({
   CacheClient: {
     get: vi.fn(),
-    set: vi.fn(),
+    set: vi.fn().mockResolvedValue(undefined),
     delete: vi.fn(async () => {}),
   },
   CACHE_KEYS: {

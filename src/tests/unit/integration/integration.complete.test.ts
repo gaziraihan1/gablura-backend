@@ -77,6 +77,7 @@ vi.mock('../../../lib/prisma.js', () => ({
       findMany: vi.fn().mockResolvedValue([]),
       create: vi.fn().mockResolvedValue(mockTask),
       update: vi.fn().mockResolvedValue(mockTask),
+      updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       count: vi.fn().mockResolvedValue(5),
     },
     taskAssignee: {
@@ -349,9 +350,9 @@ describe('Integration Module - Complete Tests', () => {
         },
       });
 
-      expect(prisma.task.update).toHaveBeenCalledWith(
+      expect(prisma.task.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { id: 'task-1' },
+          where: { id: { in: ['task-1'] } },
           data: expect.objectContaining({ status: 'COMPLETED' }),
         })
       );

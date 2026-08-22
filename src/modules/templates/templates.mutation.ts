@@ -13,7 +13,7 @@ import { NotFoundError, PlanLimitError, ValidationError } from '../../errors/ind
 import { SlugService } from '../../services/slug.service.js';
 import { resolveWorkspacePlan } from '../task/task.quota.service.js';
 import { PLAN_LIMITS } from '../workspaceUsage/workspaceUsage.types.js';
-import { addInvalidateCacheJob } from '../../queue/index.js';
+import { addBatchInvalidateCacheJob } from '../../queue/index.js';
 import {
   ProjectCache,
   WorkspaceCache,
@@ -265,8 +265,10 @@ export const TemplateMutation = {
       WorkspaceCache.invalidateWorkspace(input.workspaceId, workspace.slug),
       AnalyticsCache.invalidateWorkspace(input.workspaceId),
     ]).catch(() => {});
-    addInvalidateCacheJob({ type: 'workspace', workspaceId: input.workspaceId }).catch(() => {});
-    addInvalidateCacheJob({ type: 'analytics', workspaceId: input.workspaceId }).catch(() => {});
+    addBatchInvalidateCacheJob([
+      { type: 'workspace', workspaceId: input.workspaceId },
+      { type: 'analytics', workspaceId: input.workspaceId },
+    ]).catch(() => {});
 
     return { projectSlug, workspaceSlug: workspace.slug };
   },

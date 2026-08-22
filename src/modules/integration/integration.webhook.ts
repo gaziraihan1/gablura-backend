@@ -1370,7 +1370,7 @@ async function processGithubWebhook(
 
       console.log(`Found ${linkedTasks.length} linked tasks`);
 
-      for (const task of linkedTasks) {
+      if (linkedTasks.length > 0) {
         const updateData: Record<string, unknown> = {
           githubPrUrl: prUrl,
           githubPrNumber: prNumber,
@@ -1378,17 +1378,14 @@ async function processGithubWebhook(
           githubRepo: repoFullName,
           githubPrChecks: { totalChecks: 0, passingChecks: 0 },
         };
-
         if (branchName) updateData.githubBranchName = branchName;
         if (branchUrl) updateData.githubBranchUrl = branchUrl;
         if (prStatus === 'merged') updateData.status = 'COMPLETED';
 
-        await prisma.task.update({
-          where: { id: task.id },
+        await prisma.task.updateMany({
+          where: { id: { in: linkedTasks.map((t) => t.id) } },
           data: updateData,
         });
-
-        console.log(`Updated task ${task.id} with PR #${prNumber} status: ${prStatus}`);
       }
     }
 
@@ -1411,7 +1408,7 @@ async function processGithubWebhook(
         ? `https://github.com/${ghPayload.repository.full_name}/commit/${commitSha}`
         : undefined;
 
-      for (const task of linkedTasks) {
+      if (linkedTasks.length > 0) {
         const updateData: Record<string, unknown> = { githubBranchUrl: branchUrl };
         if (commitSha) updateData.githubCommitSha = commitSha;
         if (commitUrl) updateData.githubCommitUrl = commitUrl;
@@ -1419,9 +1416,10 @@ async function processGithubWebhook(
           updateData.githubCommitMessage = latestCommit.message;
           updateData.githubCommitAuthor = latestCommit.author?.name;
         }
-
-        await prisma.task.update({ where: { id: task.id }, data: updateData });
-        console.log(`Updated task ${task.id} with branch URL and commit data`);
+        await prisma.task.updateMany({
+          where: { id: { in: linkedTasks.map((t) => t.id) } },
+          data: updateData,
+        });
       }
     }
 
@@ -1440,9 +1438,9 @@ async function processGithubWebhook(
         take: 100,
       });
 
-      for (const task of linkedTasks) {
-        await prisma.task.update({
-          where: { id: task.id },
+      if (linkedTasks.length > 0) {
+        await prisma.task.updateMany({
+          where: { id: { in: linkedTasks.map((t) => t.id) } },
           data: {
             githubWorkflowStatus: workflowStatus,
             githubWorkflowName: workflowRun.name,
@@ -1450,7 +1448,6 @@ async function processGithubWebhook(
             githubWorkflowRunId: String(workflowRun.id),
           },
         });
-        console.log(`Updated task ${task.id} with workflow status: ${workflowStatus}`);
       }
     }
 
@@ -1463,16 +1460,15 @@ async function processGithubWebhook(
         take: 100,
       });
 
-      for (const task of linkedTasks) {
-        await prisma.task.update({
-          where: { id: task.id },
+      if (linkedTasks.length > 0) {
+        await prisma.task.updateMany({
+          where: { id: { in: linkedTasks.map((t) => t.id) } },
           data: {
             githubReleaseName: release.name,
             githubReleaseUrl: release.html_url,
             githubReleaseTagName: release.tag_name,
           },
         });
-        console.log(`Updated task ${task.id} with release: ${release.name}`);
       }
     }
 
@@ -1483,12 +1479,11 @@ async function processGithubWebhook(
         where: { workspaceId: ghWorkspaceId, githubMilestoneTitle: milestone.title },
       });
 
-      for (const task of linkedTasks) {
-        await prisma.task.update({
-          where: { id: task.id },
+      if (linkedTasks.length > 0) {
+        await prisma.task.updateMany({
+          where: { id: { in: linkedTasks.map((t) => t.id) } },
           data: { githubMilestoneState: milestone.state },
         });
-        console.log(`Updated task ${task.id} with milestone state: ${milestone.state}`);
       }
     }
 
@@ -1536,9 +1531,9 @@ async function processGithubWebhook(
             },
           });
 
-          for (const task of linkedTasks) {
-            await prisma.task.update({
-              where: { id: task.id },
+          if (linkedTasks.length > 0) {
+            await prisma.task.updateMany({
+              where: { id: { in: linkedTasks.map((t) => t.id) } },
               data: { githubIssueState: issueState },
             });
           }

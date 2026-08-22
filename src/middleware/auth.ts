@@ -281,61 +281,44 @@ export const authenticate = async (
     // 4. Token type check
     if (decoded.type !== "access") {
       return next(new InvalidTokenError("INVALID_TOKEN_TYPE"));
-    }
- 
-    // 5. Revocation check (Redis)
-    if (decoded.jti) {
-      const isRevoked = await isAccessTokenRevoked(decoded.jti);
-      if (isRevoked) {
-        return next(new TokenRevokedError());
-      }
-    }
- 
-    // 5.5. Session revocation check (max-sessions eviction tombstone)
-    if (decoded.sessionId) {
-      const sessionWasRevoked = await isSessionRevoked(decoded.sessionId);
-      if (sessionWasRevoked) {
-        return next(new TokenRevokedError());
-      }
-    }
+    }    // 5+5.5. Run token and session revocation checks in parallel (2 Redis GETs → 1 round trip)
+    const [isRevoked, sessionWasRevoked] = await Promise.all([
+      decoded.jti ? isAccessTokenRevoked(decoded.jti) : Promise.resolve(false),
+      decoded.sessionId ? isSessionRevoked(decoded.sessionId) : Promise.resolve(false),
+    ]);
+    if (isRevoked) return next(new TokenRevokedError());
+    if (sessionWasRevoked) return next(new TokenRevokedError());
 
-    // 6. Session binding validation (Redis)
-    const bindingError = await enforceSessionBinding(req, decoded);
-    if (bindingError) return next(bindingError);
- 
-    // 7. DB user lookup with caching
+    // 6+7. Run session binding and user profile lookup in parallel (saves 1 Redis round trip)
     const userProfileKey = CACHE_KEYS.userProfile(decoded.sub);
-    const cachedUser = await CacheClient.get<{
-      id: string;
-      email: string;
-      name: string | null;
-      role: string;
-      emailVerified: Date | null;
-      bannedAt: Date | null;
-      banReason: string | null;
-    }>(userProfileKey);
+    const [bindingError, cachedUser] = await Promise.all([
+      enforceSessionBinding(req, decoded),
+      CacheClient.get<{
+        id: string;
+        email: string;
+        name: string | null;
+        role: string;
+        emailVerified: Date | null;
+        bannedAt: Date | null;
+        banReason: string | null;
+      }>(userProfileKey),
+    ]);
+    if (bindingError) return next(bindingError);
 
     let user;
-    
     if (cachedUser) {
       user = cachedUser;
     } else {
       user = await prisma.user.findUnique({
         where: { id: decoded.sub },
         select: {
-          id: true,
-          email: true,
-          name: true,
-          role: true,
-          emailVerified: true,
-          bannedAt: true,
-          banReason: true,
+          id: true, email: true, name: true, role: true,
+          emailVerified: true, bannedAt: true, banReason: true,
         },
       });
-
       if (user) {
-        // Cache the user profile for future requests
-        await CacheClient.set(userProfileKey, user, CACHE_TTL.USER_PROFILE);
+        // Cache the user profile for future requests (fire-and-forget)
+        CacheClient.set(userProfileKey, user, CACHE_TTL.USER_PROFILE).catch(() => {});
       }
     }
 
@@ -354,7 +337,7 @@ export const authenticate = async (
     // 7.5. Cache successful authentication result
     if (decoded.jti) {
       const authResultKey = CACHE_KEYS.authResult(decoded.jti);
-      await CacheClient.set(authResultKey, { userId: decoded.sub, valid: true }, CACHE_TTL.AUTH_RESULT);
+      CacheClient.set(authResultKey, { userId: decoded.sub, valid: true }, CACHE_TTL.AUTH_RESULT).catch(() => {});
     }
  
     // 8. Attach user to request

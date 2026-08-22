@@ -15,6 +15,7 @@ const { mockRedis, getRedisClientMock } = vi.hoisted(() => {
     smembers: vi.fn(),
     eval: vi.fn(),
     keys: vi.fn(),
+    scan: vi.fn(),
     pipeline: vi.fn(),
   };
   return { mockRedis, getRedisClientMock: vi.fn(() => mockRedis) };
@@ -1449,27 +1450,25 @@ describe("tokenRevocation", () => {
       expect(mockRedis.keys).not.toHaveBeenCalled();
     });
 
-    it("falls back to keys() scan when index is empty", async () => {
+    it("falls back to SCAN when index is empty", async () => {
       mockRedis.smembers.mockResolvedValueOnce([]);
-      mockRedis.keys.mockResolvedValueOnce([
-        "focura:refresh:user1:k1",
-        "focura:refresh:user1:k2",
-      ]);
+      mockRedis.scan
+        .mockResolvedValueOnce(['0', ["focura:refresh:user1:k1", "focura:refresh:user1:k2"]]);
       mockRedis.del.mockResolvedValueOnce(2);
       mockRedis.del.mockResolvedValueOnce(1);
 
       await revokeAllRefreshTokens("user1");
 
-      expect(mockRedis.keys).toHaveBeenCalledWith("focura:refresh:user1:*");
+      expect(mockRedis.scan).toHaveBeenCalledWith('0', 'MATCH', 'focura:refresh:user1:*', 'COUNT', 100);
       expect(mockRedis.del).toHaveBeenCalledWith(
         "focura:refresh:user1:k1",
         "focura:refresh:user1:k2"
       );
     });
 
-    it("does not call del on token keys when both index and keys() return empty", async () => {
+    it("does not call del on token keys when both index and SCAN return empty", async () => {
       mockRedis.smembers.mockResolvedValueOnce([]);
-      mockRedis.keys.mockResolvedValueOnce([]);
+      mockRedis.scan.mockResolvedValueOnce(['0', []]);
       mockRedis.del.mockResolvedValueOnce(1);
 
       await revokeAllRefreshTokens("user1");

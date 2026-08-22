@@ -154,16 +154,20 @@ export const FeatureRepository = {
       },
     });
     
-    await CacheClient.deletePattern(`feature:list:*`);
-    await CacheClient.delete(`feature:id:${id}:*`); // Note: This is a simplification; actually needs to invalidate for all users or use pattern
+    await Promise.all([
+      CacheClient.deletePattern(`feature:list:*`),
+      CacheClient.deletePattern(`feature:id:${id}:*`),
+    ]);
     
     return mapFeature(raw, null);
   },
 
   async delete(id: string): Promise<void> {
     await prisma.featureRequest.delete({ where: { id } });
-    await CacheClient.deletePattern(`feature:list:*`);
-    await CacheClient.deletePattern(`feature:id:${id}:*`);
+    await Promise.all([
+      CacheClient.deletePattern(`feature:list:*`),
+      CacheClient.deletePattern(`feature:id:${id}:*`),
+    ]);
   },
 
   // ── Vote: upsert (change vote type) or delete (retract) ──────────────────
@@ -180,8 +184,10 @@ export const FeatureRepository = {
       await prisma.featureVote.create({
         data: { userId, featureRequestId, type },
       });
-      await CacheClient.deletePattern(`feature:list:*`);
-      await CacheClient.deletePattern(`feature:id:${featureRequestId}:*`);
+      await Promise.all([
+        CacheClient.deletePattern(`feature:list:*`),
+        CacheClient.deletePattern(`feature:id:${featureRequestId}:*`),
+      ]);
       return 'created';
     }
 
@@ -193,8 +199,10 @@ export const FeatureRepository = {
       where: { userId_featureRequestId: { userId, featureRequestId } },
       data: { type },
     });
-    await CacheClient.deletePattern(`feature:list:*`);
-    await CacheClient.deletePattern(`feature:id:${featureRequestId}:*`);
+    await Promise.all([
+      CacheClient.deletePattern(`feature:list:*`),
+      CacheClient.deletePattern(`feature:id:${featureRequestId}:*`),
+    ]);
     return 'updated';
   },
   async removeVote(featureRequestId: string, userId: string): Promise<void> {
@@ -207,7 +215,9 @@ export const FeatureRepository = {
     await prisma.featureVote.delete({
       where: { userId_featureRequestId: { userId, featureRequestId } },
     });
-    await CacheClient.deletePattern(`feature:list:*`);
-    await CacheClient.deletePattern(`feature:id:${featureRequestId}:*`);
+    await Promise.all([
+      CacheClient.deletePattern(`feature:list:*`),
+      CacheClient.deletePattern(`feature:id:${featureRequestId}:*`),
+    ]);
   }
 };

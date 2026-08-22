@@ -17,6 +17,7 @@ vi.mock('../../../lib/prisma.js', () => ({
 
 vi.mock('../../../queue/index.js', () => ({
   addInvalidateCacheJob: vi.fn(() => Promise.resolve()),
+  addBatchInvalidateCacheJob: vi.fn(() => Promise.resolve()),
 }));
 
 vi.mock('../../../modules/task/task.quota.service.js', () => ({
@@ -30,7 +31,7 @@ vi.mock('../../../modules/task/task.quota.service.js', () => ({
 
 import cron from 'node-cron';
 import { prisma } from '../../../lib/prisma.js';
-import { addInvalidateCacheJob } from '../../../queue/index.js';
+import { addBatchInvalidateCacheJob } from '../../../queue/index.js';
 import { initTaskRecurrenceCrons, computeNextDue } from '../../../modules/task/taskRecurrence.cron.js';
 import {
   resolveUserPlan,
@@ -224,10 +225,10 @@ describe('taskRecurrence.cron', () => {
       const callback = vi.mocked(cron.schedule).mock.calls[0][1] as () => Promise<void>;
       await callback();
 
-      const jobs = vi.mocked(addInvalidateCacheJob).mock.calls.map((c) => c[0]);
-      expect(jobs).toContainEqual(expect.objectContaining({ type: 'analytics', workspaceId: 'ws-1' }));
-      expect(jobs).toContainEqual(expect.objectContaining({ type: 'task', workspaceId: 'ws-1' }));
-      expect(jobs).toContainEqual(expect.objectContaining({ type: 'task', userId: 'u-9' }));
+      const allJobs = vi.mocked(addBatchInvalidateCacheJob).mock.calls.flatMap((c) => c[0]);
+      expect(allJobs).toContainEqual(expect.objectContaining({ type: 'analytics', workspaceId: 'ws-1' }));
+      expect(allJobs).toContainEqual(expect.objectContaining({ type: 'task', workspaceId: 'ws-1' }));
+      expect(allJobs).toContainEqual(expect.objectContaining({ type: 'task', userId: 'u-9' }));
     });
 
     it('queries only recurrences that have not ended', async () => {
