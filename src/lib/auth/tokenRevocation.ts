@@ -94,8 +94,9 @@ export async function rotateRefreshToken(
   // → fail-open and issue new tokens). Previously both cases returned false,
   // causing a false TOKEN_REPLAY_DETECTED401 that logged users out after
   // 15 minutes whenever Upstash hit its request limit.
-  const result = await redis.eval(
-    `
+  try {
+    const result = await redis.eval(
+      `
     if redis.call("EXISTS", KEYS[1]) == 1 then
       redis.call("DEL", KEYS[1])
       redis.call("SETEX", KEYS[2], ARGV[1], ARGV[2])
@@ -106,15 +107,23 @@ export async function rotateRefreshToken(
       return 0
     end
     `,
-    3,
-    oldKey,
-    newKey,
-    indexKey,
-    expiresInSeconds.toString(),
-    JSON.stringify({ jti: newJti, createdAt: Date.now() }),
-  );
+      3,
+      oldKey,
+      newKey,
+      indexKey,
+      expiresInSeconds.toString(),
+      JSON.stringify({ jti: newJti, createdAt: Date.now() }),
+    );
 
-  return result === 1;
+    return result === 1;
+  } catch (error: any) {
+    // Add context to Redis errors for better debugging
+    if (error?.name === 'MaxRetriesPerRequestError') {
+      console.error('[TokenRevocation] Redis max retries reached during token rotation:', error);
+      throw new Error('Redis service temporarily unavailable');
+    }
+    throw error; // Re-throw other errors to be handled by caller
+  }
 }
 
 export async function storeSseToken(jti: string, userId: string): Promise<void> {
@@ -125,11 +134,20 @@ export async function storeSseToken(jti: string, userId: string): Promise<void> 
   // know the token was never persisted. Previously this swallowed errors and
   // returned the SSE token to the client anyway — when Redis was down the
   // token would always fail at stream-connect time.
-  await getRedisClient().setex(
-    `focura:sse:${jti}`,
-    parseExpiry(SSE_TOKEN_EXPIRY) / 1000,
-    userId,
-  );
+  try {
+    await getRedisClient().setex(
+      `focura:sse:${jti}`,
+      parseExpiry(SSE_TOKEN_EXPIRY) / 1000,
+      userId,
+    );
+  } catch (error: any) {
+    // Add context to Redis errors for better debugging
+    if (error?.name === 'MaxRetriesPerRequestError') {
+      console.error('[TokenRevocation] Redis max retries reached during SSE token storage:', error);
+      throw new Error('Redis service temporarily unavailable');
+    }
+    throw error; // Re-throw other errors to be handled by caller
+  }
 }
 
 export async function consumeSseToken(jti: string): Promise<string | null> {
@@ -144,14 +162,23 @@ export async function consumeSseToken(jti: string): Promise<string | null> {
   // can distinguish "token not found" (401) from "Redis unavailable" (503).
   // Swallowing the error here caused a misleading TOKEN_REUSED 401 when the
   // real problem was Upstash rate-limit exhaustion.
-  const userId = await redis.eval(
-    `local v = redis.call("GET", KEYS[1])
-     if v then redis.call("DEL", KEYS[1]) end
-     return v`,
-    1,
-    key,
-  );
-  return typeof userId === "string" ? userId : null;
+  try {
+    const userId = await redis.eval(
+      `local v = redis.call("GET", KEYS[1])
+       if v then redis.call("DEL", KEYS[1]) end
+       return v`,
+      1,
+      key,
+    );
+    return typeof userId === "string" ? userId : null;
+  } catch (error: any) {
+    // Add context to Redis errors for better debugging
+    if (error?.name === 'MaxRetriesPerRequestError') {
+      console.error('[TokenRevocation] Redis max retries reached during SSE token consumption:', error);
+      throw new Error('Redis service temporarily unavailable');
+    }
+    throw error; // Re-throw other errors to be handled by caller
+  }
 }
 
 export async function markSessionRevoked(sessionId: string): Promise<void> {

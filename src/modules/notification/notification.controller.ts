@@ -43,7 +43,11 @@ export const getSseToken = async (req: AuthRequest, res: Response) => {
   } catch (error: any) {
     console.error("Get SSE token error:", error);
     // Distinguish Redis failures (503) from unexpected errors (500)
-    const isRedisError = error?.name === 'ReplyError' || error?.code === 'ECONNREFUSED' || error?.message?.includes('max requests');
+    const isRedisError = error?.name === 'ReplyError' || 
+                        error?.name === 'MaxRetriesPerRequestError' ||
+                        error?.code === 'ECONNREFUSED' || 
+                        error?.message?.includes('max requests') ||
+                        error?.message?.includes('max retries');
     res.status(isRedisError ? 503 : 500).json({
       success: false,
       message: isRedisError ? 'Service temporarily unavailable. Please try again.' : 'Failed to issue SSE token',

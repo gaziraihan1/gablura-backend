@@ -294,11 +294,20 @@ export async function notificationStreamHandler(
   let boundUserId: string | null;
   try {
     boundUserId = await consumeSseToken(payload.jti);
-  } catch (err) {
+  } catch (err: any) {
     // Redis is unreachable or rate-limited (e.g. Upstash daily quota).
     // Return 503 so the frontend knows to retry later instead of treating
     // this as an auth failure and logging the user out.
     console.error("[SSE] Redis unavailable during token consumption:", err);
+    // Check for specific max retries error
+    if (err?.name === 'MaxRetriesPerRequestError' || err?.message?.includes('Redis service temporarily unavailable')) {
+      res.status(503).json({
+        success: false,
+        message: "Service temporarily unavailable. Please try again.",
+        code: "REDIS_MAX_RETRIES",
+      });
+      return;
+    }
     res.status(503).json({
       success: false,
       message: "Service temporarily unavailable. Please try again.",

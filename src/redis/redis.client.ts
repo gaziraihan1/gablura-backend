@@ -6,16 +6,30 @@ export function getRedisClient(): Redis {
   if (client) return client;
 
   client = new Redis(process.env.REDIS_URL ?? "redis://localhost:6379", {
-    maxRetriesPerRequest: 3,
-    retryStrategy: (times: number) => Math.min(times * 100, 3000),
+    maxRetriesPerRequest: parseInt(process.env.REDIS_MAX_RETRIES ?? "5"),
+    retryStrategy: (times: number) => {
+      const delay = Math.min(times * 100, 3000);
+      // In production, use longer delays for better resilience
+      if (process.env.NODE_ENV === "production") {
+        return Math.min(times * 200, 5000);
+      }
+      return delay;
+    },
     enableReadyCheck: true,
     lazyConnect: false,
     tls: process.env.REDIS_URL?.startsWith("rediss://") ? {} : undefined,
   });
 
-  client.on("error", (err: Error) => console.error("[Redis] error:", err));
+  client.on("error", (err: Error) => {
+    console.error("[Redis] error:", err);
+    // Log additional context for specific error types
+    if (err.name === 'MaxRetriesPerRequestError') {
+      console.error('[Redis] Max retries per request reached - consider increasing REDIS_MAX_RETRIES or checking Redis service health');
+    }
+  });
   client.on("ready", () => console.log("[Redis] connected"));
   client.on("close", () => console.warn("[Redis] connection closed"));
+  client.on("reconnecting", (delay: number) => console.log(`[Redis] reconnecting in ${delay}ms`));
 
   return client;
 }
