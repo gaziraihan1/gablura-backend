@@ -54,6 +54,44 @@ const REQUEST_TIMEOUT_MS = clampInt(
   15_000,
 );
 
+const MAX_RETRIES = 2;
+const BASE_BACKOFF_MS = 500;
+
+/** Sleep for the given milliseconds. */
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Determines whether an error is transient and worth retrying.
+ * - Provider 500/502/503 → yes (server outage, may recover)
+ * - Network errors (ECONNRESET, socket hang up, etc.) → yes
+ * - Timeout (AiServiceUnavailableError from withTimeout) → yes
+ * - 429 rate limit → no (client handles via retryAfter)
+ * - Empty/blocked response → no (won't resolve with retry)
+ */
+function isTransientError(error: unknown): boolean {
+  // Rate limits and invalid responses are not transient — don't retry.
+  if (error instanceof AiProviderRateLimitError) return false;
+  if (error instanceof AiInvalidResponseError) return false;
+
+  // Timeout errors come through as AiServiceUnavailableError.
+  if (error instanceof AiServiceUnavailableError) return true;
+
+  // Provider HTTP errors — check for 500/502/503 status codes.
+  const record = error as Record<string, unknown>;
+  const code = Number(record.code ?? record.statusCode ?? record.status);
+  if (code >= 500 && code <= 503) return true;
+
+  // Network / connection errors (ECONNRESET, ENOTFOUND, socket hang up, etc.).
+  const message = error instanceof Error ? error.message : String(error);
+  if (/ECONNRESET|ECONNREFUSED|ENOTFOUND|ETIMEDOUT|socket hang up|network/i.test(message)) {
+    return true;
+  }
+
+  return false;
+}
+
 /** Whether a Gemini API key is configured. Used to fail fast before prompting. */
 export function isAiConfigured(): boolean {
   return Boolean(process.env.GEMINI_API_KEY);
@@ -124,8 +162,13 @@ interface GeminiResponse {
 /**
  * Complete a prompt and return the raw text payload (JSON by contract).
  *
+ * Retries transient provider failures (500/502/503, network errors, timeouts)
+ * up to `MAX_RETRIES` times with exponential backoff. Does NOT retry rate
+ * limits (429) or invalid/empty responses — those fail immediately.
+ *
  * @throws {AiServiceUnavailableError} — not configured / timeout / provider failure
- * @throws {AiInvalidResponseError} — empty or safety-blocked response
+ * @throws {AiProviderRateLimitError} — provider-side 429 (no retry)
+ * @throws {AiInvalidResponseError} — empty or safety-blocked response (no retry)
  */
 export async function aiComplete(
   prompt: string,
@@ -134,49 +177,82 @@ export async function aiComplete(
   const client = getClient();
   const model = MODELS[opts.model ?? "lite"];
 
-  let response: GeminiResponse;
-  try {
-    response = (await withTimeout(
-      client.models.generateContent({
-        model,
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        config: {
-          systemInstruction: opts.system,
-          maxOutputTokens: opts.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS,
-          temperature: opts.temperature ?? 0.4,
-          responseMimeType: "application/json",
-        },
-      }),
-      REQUEST_TIMEOUT_MS,
-      "The AI service took too long to respond. Please try again.",
-    )) as GeminiResponse;
-  } catch (error) {
-    if (error instanceof AiServiceUnavailableError) throw error;
+  let lastError: unknown;
 
-    // Google-side rate limiting / quota exhaustion (HTTP 429) is transient —
-    // surface it as 429 so the client can tell the user to retry shortly,
-    // instead of masking it as a generic 503 provider outage.
-    if (isProviderRateLimit(error)) {
-      const detail = error instanceof Error ? error.message : String(error);
-      console.error("[AiClient] Gemini rate limit / quota hit:", detail);
-      throw new AiProviderRateLimitError(60, detail);
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    if (attempt > 0) {
+      const delay = BASE_BACKOFF_MS * Math.pow(2, attempt - 1);
+      console.warn(
+        `[AiClient] Retrying Gemini request (attempt ${attempt + 1}/${MAX_RETRIES + 1}) after ${delay}ms`,
+      );
+      await sleep(delay);
     }
 
-    console.error("[AiClient] Gemini request failed:", error);
-    throw new AiServiceUnavailableError(
-      "The AI service is temporarily unavailable. Please try again.",
-    );
+    let response: GeminiResponse;
+    try {
+      response = (await withTimeout(
+        client.models.generateContent({
+          model,
+          contents: [{ role: "user", parts: [{ text: prompt }] }],
+          config: {
+            systemInstruction: opts.system,
+            maxOutputTokens: opts.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS,
+            temperature: opts.temperature ?? 0.4,
+            responseMimeType: "application/json",
+          },
+        }),
+        REQUEST_TIMEOUT_MS,
+        "The AI service took too long to respond. Please try again.",
+      )) as GeminiResponse;
+    } catch (error) {
+      lastError = error;
+
+      // Already-structured AppErrors — fail immediately, no retry.
+      if (error instanceof AiProviderRateLimitError) throw error;
+      if (error instanceof AiInvalidResponseError) throw error;
+
+      // Google-side rate limiting / quota exhaustion (HTTP 429) — detect
+      // before the retry decision so it surfaces as 429, not 503.
+      if (isProviderRateLimit(error)) {
+        const detail = error instanceof Error ? error.message : String(error);
+        console.error("[AiClient] Gemini rate limit / quota hit:", detail);
+        throw new AiProviderRateLimitError(60, detail);
+      }
+
+      // Transient error — retry if attempts remain, otherwise throw.
+      if (isTransientError(error)) {
+        if (attempt < MAX_RETRIES) continue;
+        console.error("[AiClient] Gemini request failed after retries:", error);
+        throw new AiServiceUnavailableError(
+          "The AI service is temporarily unavailable. Please try again.",
+        );
+      }
+
+      // Unknown error — treat as non-transient, fail immediately.
+      console.error("[AiClient] Gemini request failed:", error);
+      throw new AiServiceUnavailableError(
+        "The AI service is temporarily unavailable. Please try again.",
+      );
+    }
+
+    // Success — extract and return.
+    const text = extractText(response);
+    return {
+      text,
+      model,
+      usage: {
+        inputTokens: response.usageMetadata?.promptTokenCount ?? 0,
+        outputTokens: response.usageMetadata?.candidatesTokenCount ?? 0,
+      },
+    };
   }
 
-  const text = extractText(response);
-  return {
-    text,
-    model,
-    usage: {
-      inputTokens: response.usageMetadata?.promptTokenCount ?? 0,
-      outputTokens: response.usageMetadata?.candidatesTokenCount ?? 0,
-    },
-  };
+  // Should never reach here, but TypeScript requires it.
+  throw lastError instanceof Error
+    ? new AiServiceUnavailableError(lastError.message)
+    : new AiServiceUnavailableError(
+        "The AI service is temporarily unavailable. Please try again.",
+      );
 }
 
 /**
