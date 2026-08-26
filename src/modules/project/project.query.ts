@@ -30,8 +30,12 @@ export const ProjectQuery = {
       orderBy: { updatedAt: 'desc' },
     });
 
+    // NOTE: Project.workspaceId/workspaceSlug are nullable, and the relation is a
+    // compound FK on (workspaceId, workspaceSlug) — rows created before the
+    // 20260613051929 migration have workspaceSlug = NULL, so Prisma's include
+    // resolves `workspace` to null for them. Never dereference it unguarded.
     const nonOwnerWorkspaceIds = projects
-      .filter((p) => p.workspace?.ownerId !== userId)
+      .filter((p) => p.workspace && p.workspace.ownerId !== userId)
       .map((p) => p.workspace!.id);
 
     const adminMemberships = nonOwnerWorkspaceIds.length > 0

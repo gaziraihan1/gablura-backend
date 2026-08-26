@@ -85,6 +85,25 @@ describe("ProjectQuery", () => {
       const result = await ProjectQuery.getUserProjects("u1") as any[];
       expect(result[0].isAdmin).toBe(true);
     });
+
+    // Regression: Project.workspaceId is nullable and the compound FK
+    // (workspaceId, workspaceSlug) means legacy rows resolve `workspace` to
+    // null. This must not throw (production 500 on GET /projects/user/all).
+    it("should not crash when a project has no workspace (null relation)", async () => {
+      vi.mocked(CacheClient.get).mockResolvedValue(null);
+      vi.mocked(prisma.project.findMany).mockResolvedValue([
+        { id: "p-orphan", name: "Orphan Project", workspaceId: null, workspaceSlug: null, workspace: null, members: [{ userId: "u1" }], _count: { tasks: 0 } },
+        { id: "p2", name: "Other's Project", workspace: { id: "ws2", ownerId: "u2", name: "WS2", slug: "ws2" }, members: [], _count: { tasks: 0 } },
+      ] as any);
+      vi.mocked(prisma.workspaceMember.findMany).mockResolvedValue([]);
+
+      const result = await ProjectQuery.getUserProjects("u1") as any[];
+
+      expect(result).toHaveLength(2);
+      expect(result[0].id).toBe("p-orphan");
+      expect(result[0].isAdmin).toBe(false); // null workspace → not owner/admin
+      expect(CacheClient.set).toHaveBeenCalled();
+    });
   });
 
   describe("getProjectsByWorkspace", () => {
