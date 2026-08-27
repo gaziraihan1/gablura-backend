@@ -1,7 +1,12 @@
 import { describe, it, expect, beforeEach, vi, beforeAll } from 'vitest';
 import request from 'supertest';
-import { z } from 'zod';
 import { validateContract, APIResponseSchema } from '../contracts/contract.util.js';
+import {
+  projectListResponseSchema,
+  workspaceProjectListResponseSchema,
+  projectDetailSchema,
+  mutatedProjectSchema,
+} from '../../lib/contracts/project.contract.js';
 import { prisma } from '../../lib/prisma.js';
 
 vi.mock('../../middleware/auth.js', () => ({
@@ -36,37 +41,8 @@ vi.mock('../../../modules/billing/index.js', () => ({
 }));
 
 // --- Contract Schemas ---
-
-const ProjectSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  slug: z.string(),
-  description: z.string().nullable(),
-  color: z.string().nullable(),
-  icon: z.string().nullable().optional(),
-  status: z.string(),
-  priority: z.string(),
-  startDate: z.string().nullable().optional(),
-  dueDate: z.string().nullable(),
-  workspaceId: z.string().nullable().optional(),
-  createdAt: z.string().optional(),
-  updatedAt: z.string().optional(),
-});
-
-// const ProjectStatsSchema = z.object({
-//   totalTasks: z.number(),
-//   completedTasks: z.number(),
-//   inProgressTasks: z.number(),
-//   overdueTasks: z.number(),
-//   totalMembers: z.number(),
-//   projectDays: z.number(),
-//   topPerformer: z.object({
-//     id: z.string(),
-//     name: z.string().nullable(),
-//     email: z.string(),
-//     image: z.string().nullable(),
-//   }).nullable(),
-// });
+// Canonical wire contracts live in src/lib/contracts/project.contract.ts and
+// are imported below — this file only ENFORCES them against live responses.
 
 // --- Tests ---
 
@@ -143,12 +119,10 @@ describe('Project API Contract Tests', () => {
 
       expect(response.status).toBe(200);
       validateContract(APIResponseSchema, response.body);
-      
-      const data = response.body.data;
-      expect(Array.isArray(data)).toBe(true);
-      if (data.length > 0) {
-        validateContract(ProjectSchema, data[0]);
-      }
+
+      // Canonical wire contract — enforced for EVERY item in the list.
+      // Source of truth: src/lib/contracts/project.contract.ts
+      validateContract(projectListResponseSchema, response.body);
     });
 
     it('GET /projects/workspace/:workspaceId should match the contract', async () => {
@@ -157,12 +131,7 @@ describe('Project API Contract Tests', () => {
 
       expect(response.status).toBe(200);
       validateContract(APIResponseSchema, response.body);
-      
-      const data = response.body.data;
-      expect(Array.isArray(data)).toBe(true);
-      if (data.length > 0) {
-        validateContract(ProjectSchema, data[0]);
-      }
+      validateContract(workspaceProjectListResponseSchema, response.body);
     });
 
     it('GET /projects/slug/:slug should match the contract', async () => {
@@ -171,7 +140,7 @@ describe('Project API Contract Tests', () => {
 
       expect(response.status).toBe(200);
       validateContract(APIResponseSchema, response.body);
-      validateContract(ProjectSchema, response.body.data);
+      validateContract(projectDetailSchema, response.body.data);
     });
 
     it('GET /projects/:projectId should match the contract', async () => {
@@ -180,7 +149,7 @@ describe('Project API Contract Tests', () => {
 
       expect(response.status).toBe(200);
       validateContract(APIResponseSchema, response.body);
-      validateContract(ProjectSchema, response.body.data);
+      validateContract(projectDetailSchema, response.body.data);
     });
   });
 
@@ -216,7 +185,7 @@ describe('Project API Contract Tests', () => {
 
       expect(response.status).toBe(201);
       validateContract(APIResponseSchema, response.body);
-      validateContract(ProjectSchema, response.body.data);
+      validateContract(mutatedProjectSchema, response.body.data);
     });
   });
 });

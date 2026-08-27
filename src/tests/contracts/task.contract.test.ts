@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi, beforeAll } from 'vitest';
 import request from 'supertest';
 import { z } from 'zod';
 import { validateContract, APIResponseSchema } from './contract.util.js';
+import { taskListResponseSchema, taskStatsSchema as canonicalTaskStatsSchema } from '../../lib/contracts/task.contract.js';
 import { prisma } from '../../lib/prisma.js';
 
 vi.mock('../../middleware/auth.js', () => ({
@@ -151,12 +152,10 @@ describe('Task API Contract Tests', () => {
       const response = await request(app).get('/api/v1/tasks');
       expect(response.status).toBe(200);
       validateContract(APIResponseSchema, response.body);
-      
-      const data = response.body.data;
-      expect(Array.isArray(data)).toBe(true);
-      if (data.length > 0) {
-        validateContract(TaskSchema, data[0]);
-      }
+
+      // Canonical wire contract — enforced for EVERY item in the list.
+      // Source of truth: src/lib/contracts/task.contract.ts
+      validateContract(taskListResponseSchema, response.body);
     });
 
     it('GET /tasks/:id should match the contract', async () => {
@@ -171,6 +170,8 @@ describe('Task API Contract Tests', () => {
       expect(response.status).toBe(200);
       validateContract(APIResponseSchema, response.body);
       validateContract(TaskStatsSchema, response.body.data);
+      // Canonical contract (source: lib/contracts/task.contract.ts)
+      validateContract(canonicalTaskStatsSchema, response.body.data);
     });
 
     it('GET /tasks/quota/personal should match the contract', async () => {

@@ -212,6 +212,25 @@ src/modules/<domain>/
 
 Long-running work goes through BullMQ: define the job type + `add*Job` helper in `src/queue/queues/*.queue.ts`, implement the handler in `src/queue/workers/*.worker.ts`. Workers are registered in `src/queue/index.ts`.
 
+### Changing what an API returns (wire contracts)
+
+The request/response shapes for the core resources live in `src/lib/contracts/*.contract.ts` (Zod schemas) and are **enforced** by the contract tests in `src/tests/contracts/`. The frontend consumes a generated copy under `types/api-contracts/`.
+
+1. Update the schema in `src/lib/contracts/<domain>.contract.ts` FIRST
+2. Update the query/mutation to produce that shape (use the normalizers in `src/lib/contracts/normalize.ts`)
+3. Run `npm run sync:contracts` and commit the regenerated frontend files
+4. Contract tests fail CI if backend and frontend drift apart
+
+### Migration checklist (schema changes)
+
+⚠️ Read this before writing any migration — a missing backfill once caused a production outage (see `20260826120000_backfill_project_workspace_slug` for the repair pattern).
+
+- [ ] Any `ADD COLUMN` whose value is derivable from existing data MUST ship its `UPDATE ... FROM ...` backfill **in the same migration file** — never "I'll backfill later"
+- [ ] New FKs / compound FKs: remember Postgres `MATCH SIMPLE` semantics — rows with NULL in any FK column skip the constraint AND `ON DELETE CASCADE`. Prefer single-column FKs on immutable IDs over compound keys on mutable values (e.g., slugs)
+- [ ] Never make a relation nullable unless consumers handle `null` explicitly (check the wire contract + frontend)
+- [ ] Test the migration against a copy of realistic data, not just an empty DB
+- [ ] Run `npx prisma migrate dev --create-only`, review the SQL, then apply
+
 ---
 
 ## 🧪 Testing Your Changes

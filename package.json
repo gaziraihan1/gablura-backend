@@ -37,6 +37,9 @@
     "test:performance:database": "tsx performance/database-tests.ts",
     "test:performance:service": "tsx performance/service-tests.ts",
     "test:performance:load": "tsx performance/load-tests.ts",
+    "check:integrity": "tsx src/scripts/check-workspace-slug-integrity.ts",
+    "sync:contracts": "tsx src/scripts/sync-frontend-contracts.ts",
+    "sync:contracts:check": "tsx src/scripts/sync-frontend-contracts.ts --check",
     "test:performance:check": "tsx performance/check-server.ts"
   },
   "dependencies": {

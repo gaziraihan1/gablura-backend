@@ -137,6 +137,12 @@ jobs:
         run: npm run test:coverage
 
       # ─────────────────────────────────────────────
+      # DATA INTEGRITY (compound FK workspaceSlug backfill gate)
+      # ─────────────────────────────────────────────
+      - name: Check workspace slug integrity
+        run: npm run check:integrity
+
+      # ─────────────────────────────────────────────
       # PERFORMANCE TESTS
       # ─────────────────────────────────────────────
       - name: Run performance tests

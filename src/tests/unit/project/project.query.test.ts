@@ -60,7 +60,17 @@ describe("ProjectQuery", () => {
       const cached = [{ id: "p1", name: "Cached Project" }];
       vi.mocked(CacheClient.get).mockResolvedValue(cached);
       const result = await ProjectQuery.getUserProjects("u1");
-      expect(result).toEqual(cached);
+      // Cache hits are ALSO normalized — guarantees the wire shape even for
+      // entries written before an upgrade (e.g. missing workspace/members).
+      expect(result).toEqual([
+        {
+          id: "p1",
+          name: "Cached Project",
+          workspace: null,
+          members: [],
+          isAdmin: false,
+        },
+      ]);
       expect(prisma.project.findMany).not.toHaveBeenCalled();
     });
 
@@ -121,7 +131,15 @@ describe("ProjectQuery", () => {
       vi.mocked(CacheClient.get).mockResolvedValue(cached);
       (ProjectAccess.assertWorkspaceAccess as any).mockResolvedValue({ id: "ws1" });
       const result = await ProjectQuery.getProjectsByWorkspace("u1", "ws1");
-      expect(result).toEqual(cached);
+      // Cache hits are ALSO normalized — collections/counts are guaranteed.
+      expect(result).toEqual([
+        {
+          id: "p1",
+          name: "Cached",
+          members: [],
+          _count: { tasks: 0, members: 0 },
+        },
+      ]);
       expect(prisma.project.findMany).not.toHaveBeenCalled();
     });
   });

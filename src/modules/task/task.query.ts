@@ -4,6 +4,7 @@ import { taskFullInclude, taskDetailInclude } from './task.selects.js';
 import { TaskFilters }   from './task.filters.js';
 import { getTimeStatus } from './task.utils.js';
 import { CacheClient, CACHE_KEYS, CACHE_TTL } from '../../lib/redis/cache.client.js';
+import { normalizeTaskListItem } from '../../lib/contracts/normalize.js';
 import { NotFoundError } from '../../errors/index.js';
 import { TaskStatus } from '@prisma/client';
 
@@ -79,7 +80,13 @@ export const TaskQuery = {
 
     const now = new Date();
     return {
-      data: tasks.map((task) => ({ ...task, timeTracking: getTimeStatus(task, now) })),
+      data: tasks.map((task) => ({
+        ...task,
+        // Guarantee `project` present-or-null with a present-or-null `workspace`
+        // summary — see lib/contracts/task.contract.ts for why this matters.
+        project: normalizeTaskListItem(task).project,
+        timeTracking: getTimeStatus(task, now),
+      })),
       pagination: {
         page,
         pageSize,

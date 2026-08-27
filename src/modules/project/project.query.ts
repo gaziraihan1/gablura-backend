@@ -8,12 +8,16 @@ import {
 import { ProjectAccess }          from './project.access.js';
 import { calculateProjectStats }  from './project.stats.js';
 import { CacheClient, CACHE_KEYS, CACHE_TTL } from '../../lib/redis/cache.client.js';
+import {
+  normalizeProjectList,
+  normalizeWorkspaceProjectListItem,
+} from '../../lib/contracts/normalize.js';
 
 export const ProjectQuery = {
   async getUserProjects(userId: string) {
     const cacheKey = CACHE_KEYS.projectList(userId);
     const cached = await CacheClient.get(cacheKey);
-    if (cached) return cached;
+    if (cached) return normalizeProjectList(cached as Parameters<typeof normalizeProjectList>[0]);
 
     const projects = await prisma.project.findMany({
       where: {
@@ -32,8 +36,8 @@ export const ProjectQuery = {
 
     // NOTE: Project.workspaceId/workspaceSlug are nullable, and the relation is a
     // compound FK on (workspaceId, workspaceSlug) — rows created before the
-    // 20260613051929 migration have workspaceSlug = NULL, so Prisma's include
-    // resolves `workspace` to null for them. Never dereference it unguarded.
+    // 20260826120000 backfill migration have workspaceSlug = NULL, so Prisma's
+    // include resolves `workspace` to null for them. Never dereference it unguarded.
     const nonOwnerWorkspaceIds = projects
       .filter((p) => p.workspace && p.workspace.ownerId !== userId)
       .map((p) => p.workspace!.id);
@@ -58,8 +62,9 @@ export const ProjectQuery = {
         adminWorkspaceIds.has(project.workspace?.id ?? ''),
     }));
 
-    await CacheClient.set(cacheKey, result, CACHE_TTL.PROJECT_LIST);
-    return result;
+    const normalized = normalizeProjectList(result);
+    await CacheClient.set(cacheKey, normalized, CACHE_TTL.PROJECT_LIST);
+    return normalized;
   },
 
   async getProjectsByWorkspace(userId: string, workspaceId: string) {
@@ -67,7 +72,11 @@ export const ProjectQuery = {
 
     const cacheKey = CACHE_KEYS.projectWorkspaceList(workspaceId);
     const cached = await CacheClient.get(cacheKey);
-    if (cached) return cached;
+    if (cached) {
+      return (cached as ReturnType<typeof normalizeWorkspaceProjectListItem>[]).map(
+        normalizeWorkspaceProjectListItem,
+      );
+    }
 
     const projects = await prisma.project.findMany({
       where:   { workspaceId },
@@ -75,8 +84,9 @@ export const ProjectQuery = {
       orderBy: { createdAt: 'desc' },
     });
 
-    await CacheClient.set(cacheKey, projects, CACHE_TTL.PROJECT_LIST);
-    return projects;
+    const normalized = projects.map(normalizeWorkspaceProjectListItem);
+    await CacheClient.set(cacheKey, normalized, CACHE_TTL.PROJECT_LIST);
+    return normalized;
   },
 
   async getProjectDetails(userId: string, projectId: string) {
