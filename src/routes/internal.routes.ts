@@ -19,6 +19,15 @@ import { verifyTOTPToken } from "../lib/totp.js";
 import { rateLimitMiddleware } from "../middleware/rateLimiter.js";
 import { getRedisClient } from "../redis/redis.client.js";
 import { asyncHandler } from "../errors/index.js";
+import { validate } from "../middleware/validate.js";
+import {
+  failedAttemptSchema,
+  clearAttemptsSchema,
+  auditEventSchema,
+  revokeSessionsSchema,
+  internal2FAVerifySchema,
+  internal2FACheckSchema,
+} from "../lib/validation/internal.validation.js";
 
 const router = Router();
 
@@ -31,14 +40,7 @@ const router = Router();
 // They are intentionally NOT part of the user-facing API.
 // ═══════════════════════════════════════════════════════════════════════════
 
-// Audit events the Next.js server may emit. Everything else is rejected so a
-// compromised Next.js server cannot forge arbitrary audit entries.
-const INTERNAL_AUDIT_EVENTS: readonly string[] = [
-  "LOGIN_SUCCESS",
-  "LOGIN_FAILED",
-  "LOGIN_BLOCKED",
-  "ACCOUNT_LOCKED",
-];
+// Audit event whitelist is enforced by auditEventSchema (internal.validation.ts)
 
 /**
  * Verify a short-lived HMAC proof. The Next.js server signs the request body
@@ -84,9 +86,8 @@ function requireInternalProof(req: Request, res: Response, next: NextFunction) {
 
 router.use(requireInternalProof);
 
-router.post("/failed-attempt", asyncHandler(async (req, res) => {
-  const { email } = req.body ?? {};
-  if (!email) return res.status(400).json({ success: false, message: "Email is required" });
+router.post("/failed-attempt", validate(failedAttemptSchema, "body"), asyncHandler(async (req, res) => {
+  const { email } = req.body;
   // ACCOUNT_LOCKED is a critical transition event — emit it only when this
   // attempt actually creates the lock, not on every repeat hit while locked.
   const wasLocked = (await isAccountLocked(email)).locked;
@@ -97,20 +98,16 @@ router.post("/failed-attempt", asyncHandler(async (req, res) => {
   return res.json({ success: true, ...result });
 }));
 
-router.post("/clear-attempts", asyncHandler(async (req, res) => {
-  const { email } = req.body ?? {};
-  if (!email) return res.status(400).json({ success: false, message: "Email is required" });
+router.post("/clear-attempts", validate(clearAttemptsSchema, "body"), asyncHandler(async (req, res) => {
+  const { email } = req.body;
   await clearFailedAttempts(email);
   return res.json({ success: true });
 }));
 
 // Login audit events from the Next.js credentials/OAuth flow. Fire-and-forget:
 // the caller must never be blocked or failed by audit persistence.
-router.post("/audit", asyncHandler(async (req, res) => {
-  const { event, userId, email, ip, userAgent, reason, meta } = req.body ?? {};
-  if (!event || !INTERNAL_AUDIT_EVENTS.includes(event)) {
-    return res.status(400).json({ success: false, message: "Unsupported audit event" });
-  }
+router.post("/audit", validate(auditEventSchema, "body"), asyncHandler(async (req, res) => {
+  const { event, userId, email, ip, userAgent, reason, meta } = req.body;
   auditLog(event as AuditEventType, { userId, email, ip, userAgent, reason, meta });
   return res.json({ success: true });
 }));
@@ -118,9 +115,8 @@ router.post("/audit", asyncHandler(async (req, res) => {
 // Revoke EVERY session for a user (used after a password reset). Best-effort:
 // the password has already been rotated by the caller, so Redis failures must
 // never make the reset appear to fail.
-router.post("/revoke-sessions", asyncHandler(async (req, res) => {
-  const { email } = req.body ?? {};
-  if (!email) return res.status(400).json({ success: false, message: "Email is required" });
+router.post("/revoke-sessions", validate(revokeSessionsSchema, "body"), asyncHandler(async (req, res) => {
+  const { email } = req.body;
   const user = await prisma.user.findUnique({
     where: { email },
     select: { id: true },
@@ -150,16 +146,9 @@ router.post(
   "/2fa-verify",
   // Per-user throttle — an attacker rotating IPs still hits the same bucket.
   rateLimitMiddleware(10, 60, (req) => (req.body as { userId?: string })?.userId),
+  validate(internal2FAVerifySchema, "body"),
   asyncHandler(async (req, res) => {
-    const { userId, totpCode } = req.body ?? {};
-    if (
-      typeof userId !== "string" ||
-      !userId ||
-      typeof totpCode !== "string" ||
-      !totpCode.trim()
-    ) {
-      return res.status(400).json({ success: false, error: "userId and totpCode are required" });
-    }
+    const { userId, totpCode } = req.body;
     const user = await prisma.user.findUnique({
       where: { id: userId },
       select: { email: true, twoFactorEnabled: true, twoFactorSecret: true },
@@ -186,11 +175,8 @@ router.post(
   }),
 );
 
-router.post("/2fa-check", asyncHandler(async (req, res) => {
-  const { userId } = req.body ?? {};
-  if (typeof userId !== "string" || !userId) {
-    return res.status(400).json({ success: false, verified: false });
-  }
+router.post("/2fa-check", validate(internal2FACheckSchema, "body"), asyncHandler(async (req, res) => {
+  const { userId } = req.body;
   let verified = false;
   try {
     verified = (await getRedisClient().exists(`focura:2fa:verified:${userId}`)) === 1;

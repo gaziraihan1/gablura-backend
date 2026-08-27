@@ -37,6 +37,8 @@ import {
   UnauthorizedError,
   TokenExpiredError,
 } from "../errors/index.js";
+import { validate } from "../middleware/validate.js";
+import { exchangeSchema, refreshSchema, logoutSchema } from "../lib/validation/auth.validation.js";
 
 const router = Router();
 // ... (rest of the file)
@@ -92,18 +94,10 @@ router.post(
   // Per-IP throttle (defense in depth — the frontend already limits logins by
   // IP+email). Fail-open: a Redis outage must never block the token exchange.
   rateLimitMiddleware(60, 60, undefined, { failOpen: true }),
+  validate(exchangeSchema, "body"),
   asyncHandler(async (req, res) => {
     const ip = getClientIp(req);
-    
-    if (!req.body) {
-      throw new BadRequestError("Request body is required", "MISSING_BODY");
-    }
-
     const { userId, email, role, sessionId, timestamp, signature } = req.body;
-
-    if (!userId || !email || !role || !sessionId || !timestamp || !signature) {
-      throw new BadRequestError("Missing required fields", "MISSING_FIELDS");
-    }
 
     // Proof age check
     const age = Date.now() - Number(timestamp);
@@ -237,18 +231,10 @@ router.post(
   // so legit bursts are common. Fail-open keeps refreshes working if Redis
   // is down (the auth stack degrades gracefully, not with 429s).
   rateLimitMiddleware(120, 60, undefined, { failOpen: true }),
+  validate(refreshSchema, "body"),
   asyncHandler(async (req, res) => {
     const ip = getClientIp(req);
-    
-    if (!req.body) {
-      throw new BadRequestError("Request body is required", "MISSING_BODY");
-    }
-
     const { refreshToken } = req.body;
-
-    if (!refreshToken) {
-      throw new BadRequestError("Refresh token required", "MISSING_REFRESH_TOKEN");
-    }
 
     // Verify the refresh token — let JWT errors bubble to the catch below
     let decoded: ReturnType<typeof verifyToken>;
@@ -402,9 +388,10 @@ router.post(
   "/logout",
   // Cheap to enforce, harmless when Redis is down (fail-open).
   rateLimitMiddleware(60, 60, undefined, { failOpen: true }),
+  validate(logoutSchema, "body"),
   async (req, res) => {
   const ip = getClientIp(req);
-  const { logoutAll = false } = req.body ?? {};
+  const { logoutAll } = req.body;
 
   let userId: string | undefined;
   let tokenJti: string | undefined;
