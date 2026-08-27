@@ -33,7 +33,7 @@ const TARGET_DIR = join(
 const CONTRACT_FILES = ["project.contract.ts", "task.contract.ts"];
 const CHECK_MODE = process.argv.includes("--check");
 
-let drift: string[] = [];
+const drift: string[] = [];
 
 for (const file of CONTRACT_FILES) {
   const source = readFileSync(join(SOURCE_DIR, file), "utf-8");
