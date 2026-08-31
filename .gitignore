@@ -1,7 +1,8 @@
 
 /src/generated/prisma
+.env.bak
 .env
-.env*
+.env.test
 node_modules
 dist/
 coverage/

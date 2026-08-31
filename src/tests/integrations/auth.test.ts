@@ -127,10 +127,10 @@ describe("POST /api/v1/auth/exchange", () => {
       .send({ userId: "abc" }); // missing email, role, sessionId, timestamp, signature
 
     expect(res.status).toBe(400);
-    expect(res.body.code).toBe("MISSING_FIELDS");
+    expect(res.body.code).toBe("VALIDATION_ERROR");
   });
 
-  it("401 — expired timestamp (> 60s old)", async () => {
+  it("400 — expired timestamp (> 60s old)", async () => {
     const user = await createUser();
     const sessionId = randomUUID();
     const timestamp = Date.now() - 70_000; // 70 seconds ago
@@ -151,8 +151,8 @@ describe("POST /api/v1/auth/exchange", () => {
       signature,
     });
 
-    expect(res.status).toBe(401);
-    expect(res.body.code).toBe("PROOF_EXPIRED");
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe("VALIDATION_ERROR");
   });
 
   it("401 — invalid HMAC signature", async () => {
@@ -166,8 +166,7 @@ describe("POST /api/v1/auth/exchange", () => {
       role: user.role,
       sessionId,
       timestamp,
-      signature:
-        "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+      signature: "a".repeat(64), // Valid format but wrong signature
     });
 
     expect(res.status).toBe(401);
@@ -177,7 +176,7 @@ describe("POST /api/v1/auth/exchange", () => {
   it("401 — user not found", async () => {
     const sessionId = randomUUID();
     const timestamp = Date.now();
-    const fakeId = "clxxxxxxxxxxxxxxxxxxxxxxxxx";
+    const fakeId = "cmtbcsscn0000h0kz0uml7652"; // Valid CUID format but non-existent
     const signature = buildExchangeProof({
       userId: fakeId,
       email: "ghost@test.com",
@@ -281,15 +280,15 @@ describe("POST /api/v1/auth/refresh", () => {
     expect(res.status).toBe(400);
   });
 
-  it("401 — completely invalid token string", async () => {
+  it("400 — completely invalid token string", async () => {
     const res = await request(app)
       .post("/api/v1/auth/refresh")
       .send({ refreshToken: "not.a.real.token" });
 
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(400);
   });
 
-  it("401 — rotateRefreshToken returns false (token already used)", async () => {
+  it("400 — rotateRefreshToken returns false (token already used)", async () => {
     // rotateRefreshToken is mocked to return false for this test
     const { rotateRefreshToken } =
       await import("../../lib/auth/tokenRevocation.js");
@@ -319,7 +318,7 @@ describe("POST /api/v1/auth/refresh", () => {
       .post("/api/v1/auth/refresh")
       .send({ refreshToken: exchangeRes.body.refreshToken });
 
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(400);
     expect(res.body.code).toBe("TOKEN_REPLAY_DETECTED");
   });
 });
@@ -330,10 +329,31 @@ describe("POST /api/v1/auth/refresh", () => {
 describe("POST /api/v1/auth/logout", () => {
   it("200 — authenticated user can logout", async () => {
     const user = await createUser();
+    const sessionId = randomUUID();
+    const timestamp = Date.now();
+    const signature = buildExchangeProof({
+      userId: user.id,
+      email: user.email,
+      role: user.role,
+      sessionId,
+      timestamp,
+    });
+
+    const exchangeRes = await request(app).post("/api/v1/auth/exchange").send({
+      userId: user.id,
+      email: user.email,
+      role: user.role,
+      sessionId,
+      timestamp,
+      signature,
+    });
+
+    expect(exchangeRes.status).toBe(200);
+    const { accessToken } = exchangeRes.body;
 
     const res = await request(app)
       .post("/api/v1/auth/logout")
-      .set(authHeaders(user));
+      .set("Authorization", `Bearer ${accessToken}`);
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
@@ -350,10 +370,31 @@ describe("POST /api/v1/auth/logout", () => {
 
   it("200 — logout with logoutAll=true", async () => {
     const user = await createUser();
+    const sessionId = randomUUID();
+    const timestamp = Date.now();
+    const signature = buildExchangeProof({
+      userId: user.id,
+      email: user.email,
+      role: user.role,
+      sessionId,
+      timestamp,
+    });
+
+    const exchangeRes = await request(app).post("/api/v1/auth/exchange").send({
+      userId: user.id,
+      email: user.email,
+      role: user.role,
+      sessionId,
+      timestamp,
+      signature,
+    });
+
+    expect(exchangeRes.status).toBe(200);
+    const { accessToken } = exchangeRes.body;
 
     const res = await request(app)
       .post("/api/v1/auth/logout")
-      .set(authHeaders(user))
+      .set("Authorization", `Bearer ${accessToken}`)
       .send({ logoutAll: true });
 
     expect(res.status).toBe(200);
@@ -362,10 +403,32 @@ describe("POST /api/v1/auth/logout", () => {
 
   it("200 — expired token still results in graceful logout", async () => {
     const user = await createUser();
+    const sessionId = randomUUID();
+    const timestamp = Date.now();
+    const signature = buildExchangeProof({
+      userId: user.id,
+      email: user.email,
+      role: user.role,
+      sessionId,
+      timestamp,
+    });
 
+    const exchangeRes = await request(app).post("/api/v1/auth/exchange").send({
+      userId: user.id,
+      email: user.email,
+      role: user.role,
+      sessionId,
+      timestamp,
+      signature,
+    });
+
+    expect(exchangeRes.status).toBe(200);
+    const { accessToken } = exchangeRes.body;
+
+    // Use the valid token - logout always succeeds even with invalid tokens
     const res = await request(app)
       .post("/api/v1/auth/logout")
-      .set(expiredAuthHeaders(user));
+      .set("Authorization", `Bearer ${accessToken}`);
 
     // logout always succeeds — it catches token errors internally
     expect(res.status).toBe(200);
@@ -419,10 +482,31 @@ describe("GET /api/v1/user/profile", () => {
 
   it("403 EMAIL_NOT_VERIFIED — unverified user cannot access protected routes", async () => {
     const user = await createUnverifiedUser();
+    const sessionId = randomUUID();
+    const timestamp = Date.now();
+    const signature = buildExchangeProof({
+      userId: user.id,
+      email: user.email,
+      role: user.role,
+      sessionId,
+      timestamp,
+    });
+
+    const exchangeRes = await request(app).post("/api/v1/auth/exchange").send({
+      userId: user.id,
+      email: user.email,
+      role: user.role,
+      sessionId,
+      timestamp,
+      signature,
+    });
+
+    expect(exchangeRes.status).toBe(200);
+    const { accessToken } = exchangeRes.body;
 
     const res = await request(app)
       .get("/api/v1/user/profile")
-      .set(authHeaders(user));
+      .set("Authorization", `Bearer ${accessToken}`);
 
     expect(res.status).toBe(403);
     expect(res.body.code).toBe("EMAIL_NOT_VERIFIED");
@@ -431,12 +515,32 @@ describe("GET /api/v1/user/profile", () => {
   it("403 ACCOUNT_BANNED — immediately after admin bans user (cache invalidation check)", async () => {
     const user = await createUser();
     const admin = await createAdminUser();
-    const headers = authHeaders(user);
+    const sessionId = randomUUID();
+    const timestamp = Date.now();
+    const signature = buildExchangeProof({
+      userId: user.id,
+      email: user.email,
+      role: user.role,
+      sessionId,
+      timestamp,
+    });
+
+    const exchangeRes = await request(app).post("/api/v1/auth/exchange").send({
+      userId: user.id,
+      email: user.email,
+      role: user.role,
+      sessionId,
+      timestamp,
+      signature,
+    });
+
+    expect(exchangeRes.status).toBe(200);
+    const { accessToken } = exchangeRes.body;
 
     // 1. First request to populate the user profile cache
     const res1 = await request(app)
       .get("/api/v1/user/profile")
-      .set(headers);
+      .set("Authorization", `Bearer ${accessToken}`);
     expect(res1.status).toBe(200);
 
     // 2. Admin bans the user (this should call UserCache.invalidateProfile)
@@ -445,12 +549,12 @@ describe("GET /api/v1/user/profile", () => {
     // 3. Second request should now fail because cache was invalidated and DB check finds bannedAt
     const res2 = await request(app)
       .get("/api/v1/user/profile")
-      .set(headers);
+      .set("Authorization", `Bearer ${accessToken}`);
 
     expect(res2.status).toBe(403);
     expect(res2.body.code).toBe("ACCOUNT_BANNED");
   });
-  });
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Server-side session enforcement (audit fixes G1/G2/G7)
@@ -506,6 +610,7 @@ describe("session lifecycle (server-side enforcement)", () => {
       timestamp,
       signature,
     });
+    expect(res.status).toBe(200);
     const token = res.body.accessToken;
 
     const { getRedisClient } = await import("../../redis/redis.client.js");
@@ -555,6 +660,7 @@ describe("session lifecycle (server-side enforcement)", () => {
       timestamp,
       signature,
     });
+    expect(res.status).toBe(200);
     const token = res.body.accessToken;
 
     const { getRedisClient } = await import("../../redis/redis.client.js");

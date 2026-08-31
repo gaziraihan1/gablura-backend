@@ -58,12 +58,15 @@ export async function setup() {
   process.env.SENTRY_DSN = '';
   process.env.SENTRY_ENVIRONMENT = 'test';
 
-  // ── 4. Push schema to test DB ──────────────────────────────────────────────
+  // ── 4. Set test secret for HMAC signatures ───────────────────────────────────
+  process.env.NEXTAUTH_SECRET = 'test-secret-key-for-auth-tests';
+
+  // ── 5. Push schema to test DB ──────────────────────────────────────────────
   const testDb = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL;
   if (!testDb) {
     throw new Error(
       '❌ No database URL found.\n' +
-      'Add TEST_DATABASE_URL to .env.test'
+      'Add TEST_DATABASE_URL to .env.test or DATABASE_URL to .env'
     );
   }
 

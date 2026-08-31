@@ -21,6 +21,7 @@ import {
   JobLocationType,
   JobType,
   JobExperience,
+  UserRole,
 } from '@prisma/client';
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -447,7 +448,7 @@ export async function createFeatureRequest(
 // Activity
 // ─────────────────────────────────────────────────────────────
 
-import { ActivityType, AnnouncementVisibility, EntityType, JobDepartment, JobStatus, Priority, TaskStatus, UserRole, WorkspaceRole } from '@prisma/client';
+import { ActivityType, AnnouncementVisibility, EntityType, JobDepartment, JobStatus, Priority, TaskStatus, WorkspaceRole } from '@prisma/client';
 
 export interface CreateActivityOptions {
   action?: ActivityType;

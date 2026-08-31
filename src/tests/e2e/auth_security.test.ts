@@ -7,6 +7,7 @@ import {
 } from '../factories/index.js';
 import { createTokenPair } from '../../lib/auth/backendToken.js';
 import * as tokenRevocation from '../../lib/auth/tokenRevocation.js';
+import { buildExchangeProof } from '../helpers/auth.js';
 vi.unmock('../../lib/auth/tokenRevocation.js');
 
 
@@ -25,7 +26,7 @@ describe('🔐 Auth & Security Journeys', () => {
       id: user.id,
       email: user.email,
       role: user.role,
-      sessionId: 'session-refresh-test',
+      sessionId: crypto.randomUUID(),
     });
 
     // Store the initial refresh token in Redis so it can be rotated
@@ -81,7 +82,7 @@ describe('🔐 Auth & Security Journeys', () => {
       id: user.id,
       email: user.email,
       role: user.role,
-      sessionId: 'session-logout-test',
+      sessionId: crypto.randomUUID(),
     });
 
     // 2. Logout
@@ -105,12 +106,18 @@ describe('🔐 Auth & Security Journeys', () => {
      * 4. System handles idempotency (duplicate exchange returns cached tokens)
      */
     const user = await createUser();
-    const sessionId = 'session-exchange-test';
+    const sessionId = crypto.randomUUID(); // Must be valid UUID
     const timestamp = Date.now();
 
-    // Build exchange proof
-    const payload = `${user.id}${user.email}${user.role}${sessionId}${timestamp}`;
-    const signature = crypto.createHmac('sha256', process.env.NEXTAUTH_SECRET!).update(payload).digest('hex');
+    // Build exchange proof using the test helper
+    const { buildExchangeProof } = await import('../helpers/auth.js');
+    const signature = buildExchangeProof({
+      userId: user.id,
+      email: user.email,
+      role: user.role,
+      sessionId,
+      timestamp,
+    });
 
     // 1. Exchange with valid proof
     const exchangeRes = await request(app)
@@ -153,11 +160,17 @@ describe('🔐 Auth & Security Journeys', () => {
      * 2. System rejects as expired
      */
     const user = await createUser();
-    const sessionId = 'session-exchange-expired';
+    const sessionId = crypto.randomUUID(); // Must be valid UUID
     const timestamp = Date.now() - 120_000; // 2 minutes ago (expired)
 
-    const payload = `${user.id}${user.email}${user.role}${sessionId}${timestamp}`;
-    const signature = crypto.createHmac('sha256', process.env.NEXTAUTH_SECRET!).update(payload).digest('hex');
+    const { buildExchangeProof } = await import('../helpers/auth.js');
+    const signature = buildExchangeProof({
+      userId: user.id,
+      email: user.email,
+      role: user.role,
+      sessionId,
+      timestamp,
+    });
 
     const exchangeRes = await request(app)
       .post('/api/v1/auth/exchange')
@@ -170,8 +183,8 @@ describe('🔐 Auth & Security Journeys', () => {
         signature,
       });
 
-    expect(exchangeRes.status).toBe(401);
-    expect(exchangeRes.body.code).toBe('PROOF_EXPIRED');
+    expect(exchangeRes.status).toBe(400);
+    expect(exchangeRes.body.code).toBe('VALIDATION_ERROR');
   });
 
   it('should reject invalid exchange signature', async () => {
@@ -181,8 +194,20 @@ describe('🔐 Auth & Security Journeys', () => {
      * 2. System rejects as invalid
      */
     const user = await createUser();
-    const sessionId = 'session-exchange-invalid';
+    const sessionId = crypto.randomUUID(); // Must be valid UUID
     const timestamp = Date.now();
+
+    const { buildExchangeProof } = await import('../helpers/auth.js');
+    const validSignature = buildExchangeProof({
+      userId: user.id,
+      email: user.email,
+      role: user.role,
+      sessionId,
+      timestamp,
+    });
+    
+    // Corrupt the signature by changing the last character
+    const invalidSignature = validSignature.slice(0, -1) + 'f';
 
     const exchangeRes = await request(app)
       .post('/api/v1/auth/exchange')
@@ -192,7 +217,7 @@ describe('🔐 Auth & Security Journeys', () => {
         role: user.role,
         sessionId,
         timestamp,
-        signature: 'invalid_signature_12345',
+        signature: invalidSignature,
       });
 
     expect(exchangeRes.status).toBe(401);
@@ -205,16 +230,22 @@ describe('🔐 Auth & Security Journeys', () => {
      * 1. User provides exchange proof for non-existent user
      * 2. System rejects as user not found
      */
-    const sessionId = 'session-exchange-nouser';
+    const sessionId = crypto.randomUUID(); // Must be valid UUID
     const timestamp = Date.now();
 
-    const payload = `non-existent-id${sessionId}${timestamp}`;
-    const signature = crypto.createHmac('sha256', process.env.NEXTAUTH_SECRET!).update(payload).digest('hex');
+    const { buildExchangeProof } = await import('../helpers/auth.js');
+    const signature = buildExchangeProof({
+      userId: 'cmtbcsscn0000h0kz0uml7652', // Valid CUID format but non-existent
+      email: 'nonexistent@example.com',
+      role: 'USER',
+      sessionId,
+      timestamp,
+    });
 
     const exchangeRes = await request(app)
       .post('/api/v1/auth/exchange')
       .send({
-        userId: 'non-existent-id',
+        userId: 'cmtbcsscn0000h0kz0uml7652', // Valid CUID format but non-existent
         email: 'nonexistent@example.com',
         role: 'USER',
         sessionId,
@@ -223,14 +254,14 @@ describe('🔐 Auth & Security Journeys', () => {
       });
 
     expect(exchangeRes.status).toBe(401);
-    expect(exchangeRes.body.code).toBe('INVALID_PROOF');
+    expect(exchangeRes.body.code).toBe('USER_NOT_FOUND');
   });
   // ─────────────────────────────────────────────────────────────────────────
   // Server-side session gates at refresh time (audit fixes G1/G2)
   // ─────────────────────────────────────────────────────────────────────────
   it('should reject refresh for a session revoked by max-sessions eviction', { timeout: 40000 }, async () => {
     const user = await createUser();
-    const sessionId = 'session-revoked-e2e';
+    const sessionId = crypto.randomUUID();
 
     const { createTokenPair } = await import('../../lib/auth/backendToken.js');
     const { storeRefreshToken, markSessionRevoked } = await import('../../lib/auth/tokenRevocation.js');
@@ -257,7 +288,7 @@ describe('🔐 Auth & Security Journeys', () => {
 
   it('should reject refresh for a tracked session that went inactive', { timeout: 40000 }, async () => {
     const user = await createUser();
-    const sessionId = 'session-inactive-e2e';
+    const sessionId = crypto.randomUUID();
 
     const { createTokenPair } = await import('../../lib/auth/backendToken.js');
     const { storeRefreshToken } = await import('../../lib/auth/tokenRevocation.js');

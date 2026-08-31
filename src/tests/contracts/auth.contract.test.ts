@@ -4,10 +4,11 @@ import { z } from 'zod';
 import { validateContract } from './contract.util.js';
 import { prisma } from '../../lib/prisma.js';
 import { buildExchangeProof } from '../helpers/auth.js';
+import { randomUUID } from 'crypto';
 
 describe('Auth API Contract Tests', () => {
   let app: any;
-  const testUserId = 'test-user-id';
+  const testUserId = 'cmtbcsscn0000h0kz0uml7651'; // Valid CUID
   const testEmail = 'auth-test@example.com';
 
   beforeAll(async () => {
@@ -42,7 +43,7 @@ describe('Auth API Contract Tests', () => {
     it('POST /auth/exchange should return tokens on valid proof', async () => {
       await setupTestUser();
 
-      const sessionId = 'test-session-id';
+      const sessionId = randomUUID();
       const timestamp = Date.now();
       const signature = buildExchangeProof({
         userId: testUserId,
@@ -75,9 +76,9 @@ describe('Auth API Contract Tests', () => {
           userId: testUserId,
           email: testEmail,
           role: 'USER',
-          sessionId: 'test-session-id',
+          sessionId: randomUUID(),
           timestamp: Date.now(),
-          signature: 'invalid-signature',
+          signature: 'a'.repeat(64), // Valid format but wrong signature
         });
 
       expect(response.status).toBe(401);
@@ -90,7 +91,7 @@ describe('Auth API Contract Tests', () => {
       await setupTestUser();
 
       const timestamp = Date.now();
-      const sessionId = 'refresh-session-id';
+      const sessionId = randomUUID();
       const signature = buildExchangeProof({
         userId: testUserId,
         email: testEmail,
@@ -124,7 +125,7 @@ describe('Auth API Contract Tests', () => {
     it('POST /auth/refresh should return 401 on invalid refresh token', async () => {
       const response = await request(app)
         .post('/api/v1/auth/refresh')
-        .send({ refreshToken: 'invalid-token' });
+        .send({ refreshToken: 'eyJ.invalid.token' });
 
       expect(response.status).toBe(401);
       expect(response.body.success).toBe(false);
