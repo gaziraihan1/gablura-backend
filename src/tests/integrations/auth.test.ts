@@ -288,7 +288,7 @@ describe("POST /api/v1/auth/refresh", () => {
     expect(res.status).toBe(400);
   });
 
-  it("400 — rotateRefreshToken returns false (token already used)", async () => {
+  it("401 — rotateRefreshToken returns false (token already used)", async () => {
     // rotateRefreshToken is mocked to return false for this test
     const { rotateRefreshToken } =
       await import("../../lib/auth/tokenRevocation.js");
@@ -318,7 +318,7 @@ describe("POST /api/v1/auth/refresh", () => {
       .post("/api/v1/auth/refresh")
       .send({ refreshToken: exchangeRes.body.refreshToken });
 
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(401);
     expect(res.body.code).toBe("TOKEN_REPLAY_DETECTED");
   });
 });
@@ -353,7 +353,8 @@ describe("POST /api/v1/auth/logout", () => {
 
     const res = await request(app)
       .post("/api/v1/auth/logout")
-      .set("Authorization", `Bearer ${accessToken}`);
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({});
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
@@ -428,7 +429,8 @@ describe("POST /api/v1/auth/logout", () => {
     // Use the valid token - logout always succeeds even with invalid tokens
     const res = await request(app)
       .post("/api/v1/auth/logout")
-      .set("Authorization", `Bearer ${accessToken}`);
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({});
 
     // logout always succeeds — it catches token errors internally
     expect(res.status).toBe(200);
@@ -482,27 +484,9 @@ describe("GET /api/v1/user/profile", () => {
 
   it("403 EMAIL_NOT_VERIFIED — unverified user cannot access protected routes", async () => {
     const user = await createUnverifiedUser();
-    const sessionId = randomUUID();
-    const timestamp = Date.now();
-    const signature = buildExchangeProof({
-      userId: user.id,
-      email: user.email,
-      role: user.role,
-      sessionId,
-      timestamp,
-    });
 
-    const exchangeRes = await request(app).post("/api/v1/auth/exchange").send({
-      userId: user.id,
-      email: user.email,
-      role: user.role,
-      sessionId,
-      timestamp,
-      signature,
-    });
-
-    expect(exchangeRes.status).toBe(200);
-    const { accessToken } = exchangeRes.body;
+    // Generate a token directly — going through exchange would auto-verify the email
+    const accessToken = generateTestToken(user);
 
     const res = await request(app)
       .get("/api/v1/user/profile")

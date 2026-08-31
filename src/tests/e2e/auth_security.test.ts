@@ -206,8 +206,8 @@ describe('🔐 Auth & Security Journeys', () => {
       timestamp,
     });
     
-    // Corrupt the signature by changing the last character
-    const invalidSignature = validSignature.slice(0, -1) + 'f';
+    // Corrupt the signature by flipping the first character
+    const invalidSignature = (validSignature[0] === 'a' ? 'b' : 'a') + validSignature.slice(1);
 
     const exchangeRes = await request(app)
       .post('/api/v1/auth/exchange')

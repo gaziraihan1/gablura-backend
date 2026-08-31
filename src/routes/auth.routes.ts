@@ -141,8 +141,8 @@ router.post(
       throw new UnauthorizedError("User not found", "USER_NOT_FOUND");
     }
 
-    // Email trust check
-    const isEmailTrusted = !!user.emailVerified || user.email === email;
+    // Email trust check (case-insensitive — emails are canonically lowercase)
+    const isEmailTrusted = !!user.emailVerified || user.email.toLowerCase() === email;
     if (!isEmailTrusted) {
       auditLog("EXCHANGE_FAILED", { userId, email, ip, reason: "Email not verified" });
       throw new UnauthorizedError("Email not verified", "EMAIL_NOT_VERIFIED");

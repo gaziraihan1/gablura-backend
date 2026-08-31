@@ -112,7 +112,7 @@ export function invalidAuthHeaders(): { Authorization: string } {
 export function buildExchangeProof(params: {
   userId: string; email: string; role: string; sessionId: string; timestamp: number;
 }): string {
-  const payload = `${params.userId}${params.email}${params.role}${params.sessionId}${params.timestamp}`;
+  const payload = `${params.userId}${params.email.toLowerCase()}${params.role}${params.sessionId}${params.timestamp}`;
   const secret = process.env.NEXTAUTH_SECRET || 'test-secret-key-for-auth-tests';
   return crypto.createHmac('sha256', secret).update(payload).digest('hex');
 }
