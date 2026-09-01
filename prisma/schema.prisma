@@ -273,6 +273,7 @@ model User {
   connectedIntegrations   Integration[]            @relation("IntegrationConnectedBy")
   ProjectView             ProjectView[]
   aiUsageLogs             AiUsageLog[]
+  ratings                 Rating[]
 
   @@index([stripeCustomerId])
 }
@@ -1716,6 +1717,23 @@ enum JobStatus {
   OPEN
   PAUSED
   CLOSED
+}
+
+// ─── App Rating ─────────────────────────────────────────────────────────────
+// One rating per user for the application itself. Visible to everyone,
+// mutations require authentication.
+model Rating {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  stars     Int
+  comment   String?  @db.Text
+  edited    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([createdAt])
+  @@index([stars])
 }
 
 // ─── AI usage log (Phase 4 hardening) ─────────────────────────────────────────

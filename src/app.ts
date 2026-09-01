@@ -46,6 +46,7 @@ import { requireFocuraAdmin } from "./middleware/focuraAdmin.js";
 import apiKeyRouter from "./modules/apikey/apikey.routes.js";
 import { integrationRouter, workspaceIntegrationRouter, integrationWebhookRouter } from "./modules/integration/index.js";
 import { aiRouter } from "./modules/ai/index.js";
+import { ratingRouter } from "./modules/rating/index.js";
 import lemonsqueezySimulatorRouter from "./payment/dev/lemonsqueezy-simulator.js";
 
 const isProd = process.env.NODE_ENV === "production";
@@ -172,6 +173,7 @@ app.get("/api/v1/auth/activity", authenticate, sessionTimeout, (_req, res) =>
 // Notification router applies authenticate + sessionTimeout internally
 // (the SSE /stream endpoint uses its own token-based auth)
 app.use("/api/v1/notifications", notificationRouter);
+app.use("/api/v1/ratings", ratingRouter);
 app.use("/api/v1/contact", contactRouter);
 app.use("/api/v1/jobs", jobRouter);
 app.use("/api/v1/templates", templatesRouter);
