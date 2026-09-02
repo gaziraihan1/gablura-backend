@@ -1,0 +1,5591 @@
+openapi: 3.1.0
+info:
+  title: Focura API
+  description: |
+    # Focura — Team Productivity & Focus SaaS Platform
+
+    A production-grade REST API powering Focura, a comprehensive team productivity platform with task management, focus sessions, AI-powered insights, calendar optimization, burnout prevention, and multi-provider billing.
+
+    ## Architecture
+    - **Runtime:** Node.js 22.x (ESM)
+    - **Framework:** Express 5.1 with TypeScript 5.9 (strict)
+    - **Database:** PostgreSQL 16 via Prisma 5.22 ORM
+    - **Cache/Queue:** Redis 7 + BullMQ 5.80 (8 background workers)
+    - **Auth:** RS256 JWT with session binding, device fingerprinting, and hijack detection
+    - **AI:** Google Gemini integration for task autocomplete, goal breakdown, daily planning, meeting summaries, and weekly insights
+    - **Payments:** Stripe, Paddle, and LemonSqueezy (multi-provider)
+    - **Integrations:** GitHub, Slack, Google Calendar, Trello
+
+    ## Features
+    - **Task Management:** CRUD, subtasks, comments, attachments, labels, dependencies, recurring tasks, time tracking
+    - **Kanban Board:** Drag-and-drop, WIP limits, focus mode
+    - **Calendar & Wellness:** Daily aggregates, energy logging, burnout detection, capacity planning, wellness recommendations
+    - **Focus Sessions:** Pomodoro, Deep Work, Short/Long Break, Custom timers
+    - **AI Features:** Task autocomplete, goal breakdown, comment assist, daily plan, meeting summaries, weekly insights
+    - **Project Management:** Sections, sprints, milestones, views (Kanban/List/Calendar/Timeline), favorites
+    - **Workspace Management:** Multi-workspace, roles (Owner/Admin/Member/Guest), invitations, usage tracking
+    - **Billing:** 3 payment providers, subscription management, invoicing, usage-based limits
+    - **Integrations:** GitHub (PR/issue/branch/commit linking), Slack, Google Calendar, Trello
+    - **Notifications:** Server-Sent Events (SSE) streaming, 21 notification types
+    - **Admin Panel:** User management, workspace oversight, billing, activity logs, resource management
+    - **Automation Rules:** Trigger-based workflows (status change, task creation, due date, assignee, label, mention)
+    - **File Management:** Cloudinary integration, bulk operations, storage analytics
+    - **API Keys:** Programmatic access with granular permissions
+
+    ## Rate Limiting
+    All authenticated endpoints are rate-limited per-user with tier-based limits:
+    | Tier | Window | Limit |
+    |------|--------|-------|
+    | Free | 60s | 60 requests |
+    | Pro | 60s | 120 requests |
+    | Business | 60s | 300 requests |
+
+    Rate limit headers: `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`
+
+    ## Error Handling
+    All errors follow: `{"success": false, "message": "...", "code": "ERROR_CODE"}`
+    Common codes: `TOKEN_EXPIRED`, `TOKEN_INVALID`, `CSRF_VALIDATION_FAILED`, `RATE_LIMIT_EXCEEDED`, `AI_MONTHLY_QUOTA_EXCEEDED`, `INSUFFICIENT_STORAGE`
+
+    ## Pagination
+    List endpoints support: `?page=1&pageSize=20&sortBy=createdAt&sortOrder=desc`
+    Response envelope: `{"success": true, "data": [...], "pagination": {"page": 1, "pageSize": 20, "total": 150, "totalPages": 8}}`
+  version: 1.0.0
+  contact:
+    name: Focura Support
+    email: support@focura.io
+    url: https://focura.io
+  license:
+    name: Proprietary
+    url: https://focura.io/license
+
+servers:
+  - url: https://api.focura.io
+    description: Production
+  - url: http://localhost:3001
+    description: Local development
+
+security:
+  - BearerAuth: []
+
+tags:
+  - name: Health
+    description: Health checks and debugging
+  - name: Auth
+    description: Token exchange, refresh, and logout
+  - name: User
+    description: Profile, password, 2FA, sessions
+  - name: Workspace
+    description: Multi-workspace management, members, invitations
+  - name: Project
+    description: Project CRUD, sections, sprints, milestones, views, favorites
+  - name: Task
+    description: Task CRUD, status, recurrence, GitHub/Slack linking
+  - name: Subtask
+    description: Subtask management under tasks
+  - name: Comment
+    description: Task comments with @mentions
+  - name: Label
+    description: Task labeling and categorization
+  - name: DailyTask
+    description: Daily task planning and tracking
+  - name: FocusSession
+    description: Pomodoro, deep work, and break timers
+  - name: TimeEntry
+    description: Time tracking with categories
+  - name: Calendar
+    description: Calendar aggregates, energy, burnout, goals, capacity
+  - name: Analytics
+    description: Workspace and project analytics
+  - name: AI
+    description: AI-powered features (Google Gemini)
+  - name: Automation
+    description: Trigger-based automation rules
+  - name: Notification
+    description: SSE streaming and notification management
+  - name: Storage
+    description: File storage management and quotas
+  - name: Upload
+    description: File upload to Cloudinary
+  - name: Billing
+    description: Subscription, checkout, invoices
+  - name: Integration
+    description: GitHub, Slack, Google Calendar, Trello
+  - name: Meeting
+    description: Meeting scheduling and management
+  - name: Announcement
+    description: Workspace and project announcements
+  - name: Feature
+    description: Feature requests and voting
+  - name: Template
+    description: Project templates
+  - name: Rating
+    description: App ratings
+  - name: Contact
+    description: Contact form submissions
+  - name: Job
+    description: Job postings
+  - name: Resource
+    description: Popular resources and product updates
+  - name: Admin
+    description: Admin panel operations
+  - name: APIKey
+    description: API key management
+  - name: Webhook
+    description: Payment and integration webhooks
+
+paths:
+  /health:
+    get:
+      tags: [Health]
+      summary: Health check
+      security: []
+      operationId: healthCheck
+      responses:
+        '200':
+          description: Server is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  uptime:
+                    type: number
+                  timestamp:
+                    type: string
+                    format: date-time
+
+  /health/db-pool:
+    get:
+      tags: [Health]
+      summary: Database pool health
+      security: []
+      operationId: dbPoolHealth
+      responses:
+        '200':
+          description: Pool stats
+
+  /api/v1/auth/exchange:
+    post:
+      tags: [Auth]
+      summary: Exchange NextAuth session for JWT
+      security: []
+      operationId: exchangeToken
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExchangeRequest'
+      responses:
+        '200':
+          description: Tokens issued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /api/v1/auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Refresh access token
+      security: []
+      operationId: refreshToken
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+      responses:
+        '200':
+          description: New tokens
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/auth/logout:
+    post:
+      tags: [Auth]
+      summary: Logout
+      operationId: logout
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                logoutAll:
+                  type: boolean
+                  default: false
+      responses:
+        '200':
+          description: Logged out
+
+  /api/v1/csrf-token:
+    get:
+      tags: [Auth]
+      summary: Get CSRF token
+      operationId: getCsrfToken
+      responses:
+        '200':
+          description: CSRF token
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+
+  /api/v1/user/profile:
+    get:
+      tags: [User]
+      summary: Get current user profile
+      operationId: getUserProfile
+      responses:
+        '200':
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+    put:
+      tags: [User]
+      summary: Update profile
+      operationId: updateUserProfile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProfileRequest'
+      responses:
+        '200':
+          description: Updated profile
+
+  /api/v1/user/password:
+    put:
+      tags: [User]
+      summary: Change password
+      operationId: changePassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangePasswordRequest'
+      responses:
+        '200':
+          description: Password changed
+
+  /api/v1/user/export-data:
+    post:
+      tags: [User]
+      summary: Export user data (GDPR)
+      operationId: exportUserData
+      responses:
+        '200':
+          description: Export initiated
+
+  /api/v1/user/account:
+    delete:
+      tags: [User]
+      summary: Delete account
+      operationId: deleteUserAccount
+      responses:
+        '200':
+          description: Account deleted
+
+  /api/v1/user/security:
+    get:
+      tags: [User]
+      summary: Get security info
+      operationId: getUserSecurity
+      responses:
+        '200':
+          description: Security info
+
+  /api/v1/user/2fa/setup:
+    post:
+      tags: [User]
+      summary: Setup 2FA
+      operationId: setup2FA
+      responses:
+        '200':
+          description: 2FA setup data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  secret:
+                    type: string
+                  qrCode:
+                    type: string
+                  backupCodes:
+                    type: array
+                    items:
+                      type: string
+
+  /api/v1/user/2fa/verify:
+    post:
+      tags: [User]
+      summary: Verify 2FA code
+      operationId: verify2FA
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token:
+                  type: string
+                  pattern: '^\d{6}$'
+      responses:
+        '200':
+          description: 2FA enabled
+
+  /api/v1/user/2fa/disable:
+    post:
+      tags: [User]
+      summary: Disable 2FA
+      operationId: disable2FA
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password:
+                  type: string
+      responses:
+        '200':
+          description: 2FA disabled
+
+  /api/v1/user/sessions:
+    get:
+      tags: [User]
+      summary: List active sessions
+      operationId: getUserSessions
+      responses:
+        '200':
+          description: Active sessions
+    delete:
+      tags: [User]
+      summary: Revoke all sessions
+      operationId: revokeAllSessions
+      responses:
+        '200':
+          description: All sessions revoked
+
+  /api/v1/user/sessions/{sessionId}:
+    delete:
+      tags: [User]
+      summary: Revoke specific session
+      operationId: revokeSession
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      responses:
+        '200':
+          description: Session revoked
+
+  /api/v1/user/workspace-members:
+    get:
+      tags: [User]
+      summary: Get workspace members
+      operationId: getWorkspaceMembers
+      responses:
+        '200':
+          description: Members list
+
+  /api/v1/workspaces:
+    get:
+      tags: [Workspace]
+      summary: List user's workspaces
+      operationId: listWorkspaces
+      responses:
+        '200':
+          description: Workspaces
+    post:
+      tags: [Workspace]
+      summary: Create workspace
+      operationId: createWorkspace
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateWorkspaceRequest'
+      responses:
+        '201':
+          description: Created
+
+  /api/v1/workspaces/public:
+    get:
+      tags: [Workspace]
+      summary: Browse public workspaces
+      operationId: listPublicWorkspaces
+      responses:
+        '200':
+          description: Public workspaces
+
+  /api/v1/workspaces/invitations/{token}:
+    get:
+      tags: [Workspace]
+      summary: Get invitation details
+      security: []
+      operationId: getInvitation
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Invitation details
+
+  /api/v1/workspaces/invitations/{token}/accept:
+    post:
+      tags: [Workspace]
+      summary: Accept invitation
+      operationId: acceptInvitation
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Accepted
+
+  /api/v1/workspaces/{slug}:
+    get:
+      tags: [Workspace]
+      summary: Get workspace by slug
+      operationId: getWorkspace
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceSlug'
+      responses:
+        '200':
+          description: Workspace
+
+  /api/v1/workspaces/{id}:
+    put:
+      tags: [Workspace]
+      summary: Update workspace
+      operationId: updateWorkspace
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateWorkspaceRequest'
+      responses:
+        '200':
+          description: Updated
+    delete:
+      tags: [Workspace]
+      summary: Delete workspace
+      operationId: deleteWorkspace
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+      responses:
+        '200':
+          description: Deleted
+
+  /api/v1/workspaces/{slug}/overview:
+    get:
+      tags: [Workspace]
+      summary: Workspace overview
+      operationId: getWorkspaceOverview
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Overview
+
+  /api/v1/workspaces/{workspaceSlug}/tasks:
+    get:
+      tags: [Workspace]
+      summary: List workspace tasks
+      operationId: listWorkspaceTasks
+      parameters:
+        - name: workspaceSlug
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Tasks
+
+  /api/v1/workspaces/{id}/members:
+    get:
+      tags: [Workspace]
+      summary: List workspace members
+      operationId: listWorkspaceMembers
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+      responses:
+        '200':
+          description: Members
+
+  /api/v1/workspaces/{id}/invite:
+    post:
+      tags: [Workspace]
+      summary: Invite member
+      operationId: inviteMember
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InviteMemberRequest'
+      responses:
+        '200':
+          description: Invitation sent
+
+  /api/v1/workspaces/{id}/members/{memberId}:
+    delete:
+      tags: [Workspace]
+      summary: Remove member
+      operationId: removeMember
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+        - name: memberId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Removed
+
+  /api/v1/workspaces/{id}/members/{memberId}/role:
+    put:
+      tags: [Workspace]
+      summary: Update member role
+      operationId: updateMemberRole
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+        - name: memberId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              properties:
+                role:
+                  $ref: '#/components/schemas/WorkspaceRole'
+      responses:
+        '200':
+          description: Role updated
+
+  /api/v1/workspaces/{id}/stats:
+    get:
+      tags: [Workspace]
+      summary: Workspace statistics
+      operationId: getWorkspaceStats
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+      responses:
+        '200':
+          description: Stats
+
+  /api/v1/workspaces/{workspaceId}/storage:
+    get:
+      tags: [Workspace]
+      summary: Storage usage
+      operationId: getWorkspaceStorage
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Storage info
+
+  /api/v1/workspaces/{id}/leave:
+    post:
+      tags: [Workspace]
+      summary: Leave workspace
+      operationId: leaveWorkspace
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+      responses:
+        '200':
+          description: Left
+
+  /api/v1/projects:
+    get:
+      tags: [Project]
+      summary: List user's projects
+      operationId: listProjects
+      responses:
+        '200':
+          description: Projects
+    post:
+      tags: [Project]
+      summary: Create project
+      operationId: createProject
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProjectRequest'
+      responses:
+        '201':
+          description: Created
+
+  /api/v1/projects/user/all:
+    get:
+      tags: [Project]
+      summary: List all user projects
+      operationId: listAllUserProjects
+      responses:
+        '200':
+          description: All projects
+
+  /api/v1/projects/workspace/{workspaceId}:
+    get:
+      tags: [Project]
+      summary: List workspace projects
+      operationId: listWorkspaceProjects
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Projects
+
+  /api/v1/projects/slug/{slug}:
+    get:
+      tags: [Project]
+      summary: Get project by slug
+      operationId: getProjectBySlug
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Project
+
+  /api/v1/projects/{projectId}:
+    get:
+      tags: [Project]
+      summary: Get project
+      operationId: getProject
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      responses:
+        '200':
+          description: Project
+    patch:
+      tags: [Project]
+      summary: Update project
+      operationId: updateProject
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProjectRequest'
+      responses:
+        '200':
+          description: Updated
+    delete:
+      tags: [Project]
+      summary: Delete project
+      operationId: deleteProject
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      responses:
+        '200':
+          description: Deleted
+
+  /api/v1/projects/{projectId}/members:
+    post:
+      tags: [Project]
+      summary: Add project member
+      operationId: addProjectMember
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddProjectMemberRequest'
+      responses:
+        '200':
+          description: Added
+
+  /api/v1/projects/{projectId}/members/{memberId}:
+    patch:
+      tags: [Project]
+      summary: Update member role
+      operationId: updateProjectMemberRole
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: memberId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              properties:
+                role:
+                  $ref: '#/components/schemas/ProjectRole'
+      responses:
+        '200':
+          description: Updated
+    delete:
+      tags: [Project]
+      summary: Remove member
+      operationId: removeProjectMember
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: memberId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Removed
+
+  /api/v1/projects/{projectId}/sections:
+    get:
+      tags: [Project]
+      summary: List sections
+      operationId: listSections
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      responses:
+        '200':
+          description: Sections
+    post:
+      tags: [Project]
+      summary: Create section
+      operationId: createSection
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSectionRequest'
+      responses:
+        '201':
+          description: Created
+
+  /api/v1/projects/{projectId}/sections/reorder:
+    put:
+      tags: [Project]
+      summary: Reorder sections
+      operationId: reorderSections
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                sectionIds:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        '200':
+          description: Reordered
+
+  /api/v1/projects/{projectId}/sections/{sectionId}:
+    patch:
+      tags: [Project]
+      summary: Update section
+      operationId: updateSection
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: sectionId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSectionRequest'
+      responses:
+        '200':
+          description: Updated
+    delete:
+      tags: [Project]
+      summary: Delete section
+      operationId: deleteSection
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: sectionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Deleted
+
+  /api/v1/projects/{projectId}/sprints:
+    get:
+      tags: [Project]
+      summary: List sprints
+      operationId: listSprints
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      responses:
+        '200':
+          description: Sprints
+    post:
+      tags: [Project]
+      summary: Create sprint
+      operationId: createSprint
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSprintRequest'
+      responses:
+        '201':
+          description: Created
+
+  /api/v1/projects/{projectId}/sprints/active:
+    get:
+      tags: [Project]
+      summary: Get active sprint
+      operationId: getActiveSprint
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      responses:
+        '200':
+          description: Active sprint
+
+  /api/v1/projects/{projectId}/sprints/{sprintId}:
+    get:
+      tags: [Project]
+      summary: Get sprint
+      operationId: getSprint
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: sprintId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Sprint
+    patch:
+      tags: [Project]
+      summary: Update sprint
+      operationId: updateSprint
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: sprintId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSprintRequest'
+      responses:
+        '200':
+          description: Updated
+    delete:
+      tags: [Project]
+      summary: Delete sprint
+      operationId: deleteSprint
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: sprintId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Deleted
+
+  /api/v1/projects/{projectId}/sprints/{sprintId}/complete:
+    post:
+      tags: [Project]
+      summary: Complete sprint
+      operationId: completeSprint
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: sprintId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Completed
+
+  /api/v1/projects/{projectId}/milestones:
+    get:
+      tags: [Project]
+      summary: List milestones
+      operationId: listMilestones
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      responses:
+        '200':
+          description: Milestones
+    post:
+      tags: [Project]
+      summary: Create milestone
+      operationId: createMilestone
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateMilestoneRequest'
+      responses:
+        '201':
+          description: Created
+
+  /api/v1/projects/{projectId}/milestones/{milestoneId}:
+    get:
+      tags: [Project]
+      summary: Get milestone
+      operationId: getMilestone
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: milestoneId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Milestone
+    patch:
+      tags: [Project]
+      summary: Update milestone
+      operationId: updateMilestone
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: milestoneId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateMilestoneRequest'
+      responses:
+        '200':
+          description: Updated
+    delete:
+      tags: [Project]
+      summary: Delete milestone
+      operationId: deleteMilestone
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: milestoneId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Deleted
+
+  /api/v1/projects/{projectId}/milestones/{milestoneId}/progress:
+    put:
+      tags: [Project]
+      summary: Update milestone progress
+      operationId: updateMilestoneProgress
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: milestoneId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Updated
+
+  /api/v1/projects/{projectId}/views:
+    get:
+      tags: [Project]
+      summary: List views
+      operationId: listViews
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      responses:
+        '200':
+          description: Views
+    post:
+      tags: [Project]
+      summary: Create view
+      operationId: createView
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateViewRequest'
+      responses:
+        '201':
+          description: Created
+
+  /api/v1/projects/{projectId}/views/{viewId}:
+    patch:
+      tags: [Project]
+      summary: Update view
+      operationId: updateView
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: viewId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateViewRequest'
+      responses:
+        '200':
+          description: Updated
+    delete:
+      tags: [Project]
+      summary: Delete view
+      operationId: deleteView
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: viewId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Deleted
+
+  /api/v1/projects/favorites/mine:
+    get:
+      tags: [Project]
+      summary: Get my favorites
+      operationId: getMyFavorites
+      responses:
+        '200':
+          description: Favorites
+
+  /api/v1/projects/{projectId}/favorite/toggle:
+    post:
+      tags: [Project]
+      summary: Toggle favorite
+      operationId: toggleFavorite
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      responses:
+        '200':
+          description: Toggled
+
+  /api/v1/tasks:
+    get:
+      tags: [Task]
+      summary: List tasks
+      operationId: listTasks
+      parameters:
+        - name: type
+          in: query
+          schema:
+            type: string
+        - name: workspaceId
+          in: query
+          schema:
+            type: string
+        - name: projectId
+          in: query
+          schema:
+            type: string
+        - name: sectionId
+          in: query
+          schema:
+            type: string
+        - name: sprintId
+          in: query
+          schema:
+            type: string
+        - name: milestoneId
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/TaskStatus'
+        - name: priority
+          in: query
+          schema:
+            $ref: '#/components/schemas/Priority'
+        - name: labelIds
+          in: query
+          description: Comma-separated label IDs
+          schema:
+            type: string
+        - name: assigneeId
+          in: query
+          schema:
+            type: string
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: intent
+          in: query
+          schema:
+            $ref: '#/components/schemas/TaskIntent'
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            default: 10
+            maximum: 100
+        - name: sortBy
+          in: query
+          schema:
+            type: string
+            enum: [dueDate, priority, status, createdAt, title]
+        - name: sortOrder
+          in: query
+          schema:
+            type: string
+            enum: [asc, desc]
+      responses:
+        '200':
+          description: Tasks
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskListResponse'
+    post:
+      tags: [Task]
+      summary: Create task
+      operationId: createTask
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTaskRequest'
+      responses:
+        '201':
+          description: Created
+
+  /api/v1/tasks/quota/personal:
+    get:
+      tags: [Task]
+      summary: Personal task quota
+      operationId: getPersonalTaskQuota
+      responses:
+        '200':
+          description: Quota
+
+  /api/v1/tasks/quota/workspace/{workspaceId}:
+    get:
+      tags: [Task]
+      summary: Workspace task quota
+      operationId: getWorkspaceTaskQuota
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Quota
+
+  /api/v1/tasks/stats:
+    get:
+      tags: [Task]
+      summary: Task statistics
+      operationId: getTaskStats
+      parameters:
+        - name: workspaceId
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Stats
+
+  /api/v1/tasks/{id}:
+    get:
+      tags: [Task]
+      summary: Get task
+      operationId: getTask
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+      responses:
+        '200':
+          description: Task
+    put:
+      tags: [Task]
+      summary: Update task
+      operationId: updateTask
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTaskRequest'
+      responses:
+        '200':
+          description: Updated
+    delete:
+      tags: [Task]
+      summary: Delete task
+      operationId: deleteTask
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+      responses:
+        '200':
+          description: Deleted
+
+  /api/v1/tasks/{id}/overview:
+    get:
+      tags: [Task]
+      summary: Task overview (full detail)
+      operationId: getTaskOverview
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+      responses:
+        '200':
+          description: Overview
+
+  /api/v1/tasks/{id}/status:
+    patch:
+      tags: [Task]
+      summary: Update task status
+      operationId: updateTaskStatus
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  $ref: '#/components/schemas/TaskStatus'
+      responses:
+        '200':
+          description: Updated
+
+  /api/v1/tasks/{id}/recurrence:
+    post:
+      tags: [Task]
+      summary: Set recurrence
+      operationId: setTaskRecurrence
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecurrenceSchema'
+      responses:
+        '200':
+          description: Set
+    delete:
+      tags: [Task]
+      summary: Remove recurrence
+      operationId: removeTaskRecurrence
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+      responses:
+        '200':
+          description: Removed
+
+  /api/v1/tasks/{id}/github-link:
+    put:
+      tags: [Task]
+      summary: Link GitHub entity
+      operationId: linkGitHub
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+      responses:
+        '200':
+          description: Linked
+
+  /api/v1/tasks/{id}/github-unlink:
+    put:
+      tags: [Task]
+      summary: Unlink GitHub
+      operationId: unlinkGitHub
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+      responses:
+        '200':
+          description: Unlinked
+
+  /api/v1/tasks/{id}/slack-link:
+    put:
+      tags: [Task]
+      summary: Link Slack message
+      operationId: linkSlack
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+      responses:
+        '200':
+          description: Linked
+
+  /api/v1/tasks/{id}/slack-unlink:
+    put:
+      tags: [Task]
+      summary: Unlink Slack
+      operationId: unlinkSlack
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+      responses:
+        '200':
+          description: Unlinked
+
+  /api/v1/tasks/{taskId}/attachments:
+    get:
+      tags: [Task]
+      summary: List attachments
+      operationId: listAttachments
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+      responses:
+        '200':
+          description: Attachments
+    post:
+      tags: [Task]
+      summary: Upload attachment
+      operationId: uploadAttachment
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          description: Uploaded
+
+  /api/v1/tasks/{taskId}/attachments/{attachmentId}:
+    delete:
+      tags: [Task]
+      summary: Delete attachment
+      operationId: deleteAttachment
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+        - name: attachmentId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Deleted
+
+  /api/v1/tasks/{taskId}/subtasks:
+    get:
+      tags: [Subtask]
+      summary: List subtasks
+      operationId: listSubtasks
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+      responses:
+        '200':
+          description: Subtasks
+    post:
+      tags: [Subtask]
+      summary: Create subtask
+      operationId: createSubtask
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSubtaskRequest'
+      responses:
+        '201':
+          description: Created
+
+  /api/v1/tasks/{taskId}/subtasks/stats:
+    get:
+      tags: [Subtask]
+      summary: Subtask stats
+      operationId: getSubtaskStats
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+      responses:
+        '200':
+          description: Stats
+
+  /api/v1/tasks/{taskId}/subtasks/{subtaskId}:
+    get:
+      tags: [Subtask]
+      summary: Get subtask
+      operationId: getSubtask
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+        - name: subtaskId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Subtask
+    put:
+      tags: [Subtask]
+      summary: Update subtask
+      operationId: updateSubtask
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+        - name: subtaskId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSubtaskRequest'
+      responses:
+        '200':
+          description: Updated
+    delete:
+      tags: [Subtask]
+      summary: Delete subtask
+      operationId: deleteSubtask
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+        - name: subtaskId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Deleted
+
+  /api/v1/tasks/{taskId}/subtasks/{subtaskId}/status:
+    patch:
+      tags: [Subtask]
+      summary: Update subtask status
+      operationId: updateSubtaskStatus
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+        - name: subtaskId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  type: string
+                  enum: [TODO, IN_PROGRESS, COMPLETED, CANCELLED]
+      responses:
+        '200':
+          description: Updated
+
+  /api/v1/tasks/{taskId}/comments:
+    get:
+      tags: [Comment]
+      summary: List comments
+      operationId: listComments
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+      responses:
+        '200':
+          description: Comments
+    post:
+      tags: [Comment]
+      summary: Add comment
+      operationId: createComment
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCommentRequest'
+      responses:
+        '201':
+          description: Created
+
+  /api/v1/tasks/{taskId}/comments/{commentId}:
+    put:
+      tags: [Comment]
+      summary: Edit comment
+      operationId: updateComment
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+        - name: commentId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCommentRequest'
+      responses:
+        '200':
+          description: Updated
+    delete:
+      tags: [Comment]
+      summary: Delete comment
+      operationId: deleteComment
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+        - name: commentId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Deleted
+
+  /api/v1/labels:
+    get:
+      tags: [Label]
+      summary: List labels
+      operationId: listLabels
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+        - name: workspaceId
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Labels
+    post:
+      tags: [Label]
+      summary: Create label
+      operationId: createLabel
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateLabelRequest'
+      responses:
+        '201':
+          description: Created
+
+  /api/v1/labels/popular:
+    get:
+      tags: [Label]
+      summary: Popular labels
+      operationId: getPopularLabels
+      responses:
+        '200':
+          description: Popular labels
+
+  /api/v1/labels/{id}:
+    get:
+      tags: [Label]
+      summary: Get label
+      operationId: getLabel
+      parameters:
+        - $ref: '#/components/parameters/LabelId'
+      responses:
+        '200':
+          description: Label
+    patch:
+      tags: [Label]
+      summary: Update label
+      operationId: updateLabel
+      parameters:
+        - $ref: '#/components/parameters/LabelId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateLabelRequest'
+      responses:
+        '200':
+          description: Updated
+    delete:
+      tags: [Label]
+      summary: Delete label
+      operationId: deleteLabel
+      parameters:
+        - $ref: '#/components/parameters/LabelId'
+      responses:
+        '200':
+          description: Deleted
+
+  /api/v1/labels/{id}/tasks:
+    get:
+      tags: [Label]
+      summary: Tasks with label
+      operationId: getLabelTasks
+      parameters:
+        - $ref: '#/components/parameters/LabelId'
+      responses:
+        '200':
+          description: Tasks
+
+  /api/v1/labels/{labelId}/tasks/{taskId}:
+    post:
+      tags: [Label]
+      summary: Add label to task
+      operationId: addLabelToTask
+      parameters:
+        - name: labelId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: taskId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Added
+    delete:
+      tags: [Label]
+      summary: Remove label from task
+      operationId: removeLabelFromTask
+      parameters:
+        - name: labelId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: taskId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Removed
+
+  /api/v1/daily-tasks:
+    get:
+      tags: [DailyTask]
+      summary: Get daily tasks
+      operationId: getDailyTasks
+      parameters:
+        - name: date
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Daily tasks
+    post:
+      tags: [DailyTask]
+      summary: Add daily task
+      operationId: addDailyTask
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddDailyTaskRequest'
+      responses:
+        '200':
+          description: Added
+
+  /api/v1/daily-tasks/stats:
+    get:
+      tags: [DailyTask]
+      summary: Daily task stats
+      operationId: getDailyTaskStats
+      responses:
+        '200':
+          description: Stats
+
+  /api/v1/daily-tasks/clear-expired:
+    post:
+      tags: [DailyTask]
+      summary: Clear expired daily tasks
+      operationId: clearExpiredDailyTasks
+      responses:
+        '200':
+          description: Cleared
+
+  /api/v1/daily-tasks/{taskId}:
+    delete:
+      tags: [DailyTask]
+      summary: Remove daily task
+      operationId: removeDailyTask
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Removed
+
+  /api/v1/focus-sessions/start:
+    post:
+      tags: [FocusSession]
+      summary: Start focus session
+      operationId: startFocusSession
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StartSessionRequest'
+      responses:
+        '201':
+          description: Started
+
+  /api/v1/focus-sessions/active:
+    get:
+      tags: [FocusSession]
+      summary: Get active session
+      operationId: getActiveSession
+      responses:
+        '200':
+          description: Active session
+
+  /api/v1/focus-sessions/history:
+    get:
+      tags: [FocusSession]
+      summary: Session history
+      operationId: getSessionHistory
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 30
+            maximum: 100
+      responses:
+        '200':
+          description: History
+
+  /api/v1/focus-sessions/stats:
+    get:
+      tags: [FocusSession]
+      summary: Session statistics
+      operationId: getSessionStats
+      responses:
+        '200':
+          description: Stats
+
+  /api/v1/focus-sessions/daily-summary:
+    get:
+      tags: [FocusSession]
+      summary: Daily summary
+      operationId: getDailySummary
+      responses:
+        '200':
+          description: Summary
+
+  /api/v1/focus-sessions/{id}/complete:
+    post:
+      tags: [FocusSession]
+      summary: Complete session
+      operationId: completeSession
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Completed
+
+  /api/v1/focus-sessions/{id}/cancel:
+    post:
+      tags: [FocusSession]
+      summary: Cancel session
+      operationId: cancelSession
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Cancelled
+
+  /api/v1/time-entries:
+    post:
+      tags: [TimeEntry]
+      summary: Create time entry
+      operationId: createTimeEntry
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTimeEntryRequest'
+      responses:
+        '201':
+          description: Created
+
+  /api/v1/time-entries/my:
+    get:
+      tags: [TimeEntry]
+      summary: My time entries
+      operationId: getMyTimeEntries
+      parameters:
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: Entries
+
+  /api/v1/time-entries/task/{taskId}:
+    get:
+      tags: [TimeEntry]
+      summary: Task time entries
+      operationId: getTaskTimeEntries
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Entries
+
+  /api/v1/time-entries/workspace/{workspaceId}:
+    get:
+      tags: [TimeEntry]
+      summary: Workspace time entries
+      operationId: getWorkspaceTimeEntries
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Entries
+
+  /api/v1/time-entries/{id}:
+    patch:
+      tags: [TimeEntry]
+      summary: Update time entry
+      operationId: updateTimeEntry
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTimeEntryRequest'
+      responses:
+        '200':
+          description: Updated
+    delete:
+      tags: [TimeEntry]
+      summary: Delete time entry
+      operationId: deleteTimeEntry
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Deleted
+
+  /api/v1/calendar/aggregates:
+    get:
+      tags: [Calendar]
+      summary: Daily aggregates
+      operationId: getCalendarAggregates
+      parameters:
+        - name: startDate
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: endDate
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Aggregates
+
+  /api/v1/calendar/insights:
+    get:
+      tags: [Calendar]
+      summary: Calendar insights
+      operationId: getCalendarInsights
+      parameters:
+        - name: startDate
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: endDate
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Insights
+
+  /api/v1/calendar/energy:
+    get:
+      tags: [Calendar]
+      summary: Get energy levels
+      operationId: getEnergyLevels
+      responses:
+        '200':
+          description: Energy data
+    post:
+      tags: [Calendar]
+      summary: Log energy level
+      operationId: logEnergy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LogEnergyRequest'
+      responses:
+        '200':
+          description: Logged
+
+  /api/v1/calendar/energy/history:
+    get:
+      tags: [Calendar]
+      summary: Energy history
+      operationId: getEnergyHistory
+      parameters:
+        - name: startDate
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: endDate
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: History
+
+  /api/v1/calendar/energy/export:
+    get:
+      tags: [Calendar]
+      summary: Export energy data
+      operationId: exportEnergy
+      parameters:
+        - name: startDate
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: endDate
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Export
+
+  /api/v1/calendar/burnout-trends:
+    get:
+      tags: [Calendar]
+      summary: Burnout trends
+      operationId: getBurnoutTrends
+      responses:
+        '200':
+          description: Trends
+
+  /api/v1/calendar/recommendations:
+    get:
+      tags: [Calendar]
+      summary: Wellness recommendations
+      operationId: getRecommendations
+      responses:
+        '200':
+          description: Recommendations
+
+  /api/v1/calendar/recommendations/{id}/dismiss:
+    patch:
+      tags: [Calendar]
+      summary: Dismiss recommendation
+      operationId: dismissRecommendation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Dismissed
+
+  /api/v1/calendar/recommendations/dismiss-all:
+    post:
+      tags: [Calendar]
+      summary: Dismiss all recommendations
+      operationId: dismissAllRecommendations
+      responses:
+        '200':
+          description: Dismissed
+
+  /api/v1/calendar/goals:
+    get:
+      tags: [Calendar]
+      summary: List goals
+      operationId: listGoals
+      parameters:
+        - name: startDate
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: endDate
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Goals
+    post:
+      tags: [Calendar]
+      summary: Create goal
+      operationId: createGoal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateGoalRequest'
+      responses:
+        '201':
+          description: Created
+
+  /api/v1/calendar/capacity:
+    get:
+      tags: [Calendar]
+      summary: Get capacity
+      operationId: getCapacity
+      responses:
+        '200':
+          description: Capacity
+    put:
+      tags: [Calendar]
+      summary: Update capacity
+      operationId: updateCapacity
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCapacityRequest'
+      responses:
+        '200':
+          description: Updated
+
+  /api/v1/calendar/schedule:
+    get:
+      tags: [Calendar]
+      summary: Get work schedule
+      operationId: getSchedule
+      responses:
+        '200':
+          description: Schedule
+    put:
+      tags: [Calendar]
+      summary: Update work schedule
+      operationId: updateSchedule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateScheduleRequest'
+      responses:
+        '200':
+          description: Updated
+
+  /api/v1/calendar/recalculate:
+    post:
+      tags: [Calendar]
+      summary: Recalculate aggregates
+      operationId: recalculate
+      responses:
+        '200':
+          description: Recalculated
+
+  /api/v1/calendar/initialize:
+    post:
+      tags: [Calendar]
+      summary: Initialize calendar
+      operationId: initializeCalendar
+      responses:
+        '200':
+          description: Initialized
+
+  /api/v1/analytics/{workspaceId}/overview:
+    get:
+      tags: [Analytics]
+      summary: Workspace overview
+      operationId: getWorkspaceAnalyticsOverview
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Overview
+
+  /api/v1/analytics/{workspaceId}/tasks/trends:
+    get:
+      tags: [Analytics]
+      summary: Task trends
+      operationId: getTaskTrends
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Trends
+
+  /api/v1/analytics/{workspaceId}/projects/health:
+    get:
+      tags: [Analytics]
+      summary: Project health
+      operationId: getProjectHealth
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Health
+
+  /api/v1/analytics/{workspaceId}/members/contribution:
+    get:
+      tags: [Analytics]
+      summary: Member contributions
+      operationId: getMemberContributions
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Contributions
+
+  /api/v1/analytics/{workspaceId}/time/summary:
+    get:
+      tags: [Analytics]
+      summary: Time summary
+      operationId: getTimeSummary
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Summary
+
+  /api/v1/analytics/{workspaceId}/time/report:
+    get:
+      tags: [Analytics]
+      summary: Time report
+      operationId: getTimeReport
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Report
+
+  /api/v1/analytics/{workspaceId}/activity/trends:
+    get:
+      tags: [Analytics]
+      summary: Activity trends
+      operationId: getActivityTrends
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Trends
+
+  /api/v1/analytics/{workspaceId}/workload:
+    get:
+      tags: [Analytics]
+      summary: Workload distribution
+      operationId: getWorkload
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Workload
+
+  /api/v1/analytics/{workspaceId}/projects/{projectId}/overview:
+    get:
+      tags: [Analytics]
+      summary: Project overview
+      operationId: getProjectAnalyticsOverview
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Overview
+
+  /api/v1/analytics/{workspaceId}/projects/{projectId}/tasks/trends:
+    get:
+      tags: [Analytics]
+      summary: Project task trends
+      operationId: getProjectTaskTrends
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Trends
+
+  /api/v1/analytics/{workspaceId}/projects/{projectId}/members/contribution:
+    get:
+      tags: [Analytics]
+      summary: Project member contributions
+      operationId: getProjectMemberContributions
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Contributions
+
+  /api/v1/analytics/{workspaceId}/projects/{projectId}/time/summary:
+    get:
+      tags: [Analytics]
+      summary: Project time summary
+      operationId: getProjectTimeSummary
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Summary
+
+  /api/v1/analytics/{workspaceId}/projects/{projectId}/time/report:
+    get:
+      tags: [Analytics]
+      summary: Project time report
+      operationId: getProjectTimeReport
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Report
+
+  /api/v1/analytics/{workspaceId}/projects/{projectId}/deadline-risk:
+    get:
+      tags: [Analytics]
+      summary: Deadline risk analysis
+      operationId: getDeadlineRisk
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Risk analysis
+
+  /api/v1/ai/quota:
+    get:
+      tags: [AI]
+      summary: AI quota
+      operationId: getAIQuota
+      responses:
+        '200':
+          description: Quota
+
+  /api/v1/ai/usage:
+    get:
+      tags: [AI]
+      summary: AI usage report
+      operationId: getAIUsage
+      parameters:
+        - name: workspaceId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Usage
+
+  /api/v1/ai/tasks/autocomplete:
+    post:
+      tags: [AI]
+      summary: Autocomplete task
+      description: AI-powered task description, priority, energy type, subtask generation
+      operationId: aiAutocomplete
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AIAutocompleteRequest'
+      responses:
+        '200':
+          description: AI suggestions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AIAutocompleteResponse'
+
+  /api/v1/ai/goals/breakdown:
+    post:
+      tags: [AI]
+      summary: Break down goal into tasks
+      operationId: aiBreakdown
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AIBreakdownRequest'
+      responses:
+        '200':
+          description: Task breakdown
+
+  /api/v1/ai/comments/assist:
+    post:
+      tags: [AI]
+      summary: Comment writing assist
+      operationId: aiCommentAssist
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AICommentAssistRequest'
+      responses:
+        '200':
+          description: Rewritten text
+
+  /api/v1/ai/plan/daily:
+    post:
+      tags: [AI]
+      summary: AI daily plan
+      description: Generate optimized daily task schedule
+      operationId: aiDailyPlan
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AIDailyPlanRequest'
+      responses:
+        '200':
+          description: Plan
+
+  /api/v1/ai/meetings/summarize:
+    post:
+      tags: [AI]
+      summary: Summarize meeting
+      operationId: aiMeetingSummary
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AIMeetingSummaryRequest'
+      responses:
+        '200':
+          description: Summary
+
+  /api/v1/ai/insights/weekly:
+    post:
+      tags: [AI]
+      summary: Weekly insights
+      operationId: aiWeeklyInsights
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AIWeeklyInsightsRequest'
+      responses:
+        '200':
+          description: Insights
+
+  /api/v1/automations:
+    get:
+      tags: [Automation]
+      summary: List automation rules
+      operationId: listAutomations
+      parameters:
+        - name: workspaceId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Rules
+    post:
+      tags: [Automation]
+      summary: Create rule
+      operationId: createAutomation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAutomationRequest'
+      responses:
+        '201':
+          description: Created
+
+  /api/v1/automations/{id}:
+    get:
+      tags: [Automation]
+      summary: Get rule
+      operationId: getAutomation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Rule
+    patch:
+      tags: [Automation]
+      summary: Update rule
+      operationId: updateAutomation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateAutomationRequest'
+      responses:
+        '200':
+          description: Updated
+    delete:
+      tags: [Automation]
+      summary: Delete rule
+      operationId: deleteAutomation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Deleted
+
+  /api/v1/automations/{id}/runs:
+    get:
+      tags: [Automation]
+      summary: Rule run history
+      operationId: getAutomationRuns
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Run history
+
+  /api/v1/automations/{id}/test:
+    post:
+      tags: [Automation]
+      summary: Test rule
+      operationId: testAutomation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [taskId]
+              properties:
+                taskId:
+                  type: string
+      responses:
+        '200':
+          description: Test result
+
+  /api/v1/notifications:
+    get:
+      tags: [Notification]
+      summary: List notifications
+      operationId: listNotifications
+      responses:
+        '200':
+          description: Notifications
+
+  /api/v1/notifications/stream:
+    get:
+      tags: [Notification]
+      summary: SSE notification stream
+      security: []
+      operationId: notificationStream
+      responses:
+        '200':
+          description: Event stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+
+  /api/v1/notifications/sse-token:
+    get:
+      tags: [Notification]
+      summary: Get SSE token
+      operationId: getSSEToken
+      responses:
+        '200':
+          description: SSE token
+
+  /api/v1/notifications/unread-count:
+    get:
+      tags: [Notification]
+      summary: Unread count
+      operationId: getUnreadCount
+      responses:
+        '200':
+          description: Count
+
+  /api/v1/notifications/{id}/read:
+    patch:
+      tags: [Notification]
+      summary: Mark as read
+      operationId: markNotificationRead
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Marked
+
+  /api/v1/notifications/read-all:
+    patch:
+      tags: [Notification]
+      summary: Mark all as read
+      operationId: markAllRead
+      responses:
+        '200':
+          description: All marked
+
+  /api/v1/notifications/read/all:
+    delete:
+      tags: [Notification]
+      summary: Delete all read notifications
+      operationId: deleteAllRead
+      responses:
+        '200':
+          description: Deleted
+
+  /api/v1/notifications/{id}:
+    delete:
+      tags: [Notification]
+      summary: Delete notification
+      operationId: deleteNotification
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Deleted
+
+  /api/v1/storage/workspaces:
+    get:
+      tags: [Storage]
+      summary: List workspaces for storage
+      operationId: listStorageWorkspaces
+      responses:
+        '200':
+          description: Workspaces
+
+  /api/v1/storage/{workspaceId}/overview:
+    get:
+      tags: [Storage]
+      summary: Storage overview
+      operationId: getStorageOverview
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Overview
+
+  /api/v1/storage/{workspaceId}/largest-files:
+    get:
+      tags: [Storage]
+      summary: Largest files
+      operationId: getLargestFiles
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Files
+
+  /api/v1/storage/{workspaceId}/bulk-delete:
+    post:
+      tags: [Storage]
+      summary: Bulk delete files
+      operationId: bulkDeleteFiles
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [fileIds]
+              properties:
+                fileIds:
+                  type: array
+                  items:
+                    type: string
+                  minItems: 1
+      responses:
+        '200':
+          description: Deleted
+
+  /api/v1/storage/files/{fileId}:
+    delete:
+      tags: [Storage]
+      summary: Delete file
+      operationId: deleteFile
+      parameters:
+        - name: fileId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Deleted
+
+  /api/v1/storage/{workspaceId}/check-upload:
+    post:
+      tags: [Storage]
+      summary: Check upload quota
+      operationId: checkUpload
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [fileSize]
+              properties:
+                fileSize:
+                  type: number
+      responses:
+        '200':
+          description: Check result
+
+  /api/v1/upload:
+    post:
+      tags: [Upload]
+      summary: Upload file to Cloudinary
+      operationId: uploadFile
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          description: Uploaded
+
+  /api/v1/workspaces/{workspaceId}/billing/subscription:
+    get:
+      tags: [Billing]
+      summary: Get subscription
+      operationId: getSubscription
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Subscription
+
+  /api/v1/workspaces/{workspaceId}/billing/create-checkout-session:
+    post:
+      tags: [Billing]
+      summary: Create checkout session
+      operationId: createCheckoutSession
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                planId:
+                  type: string
+                billingCycle:
+                  type: string
+                  enum: [MONTHLY, YEARLY]
+      responses:
+        '200':
+          description: Checkout URL
+
+  /api/v1/workspaces/{workspaceId}/billing/create-portal-session:
+    post:
+      tags: [Billing]
+      summary: Create billing portal
+      operationId: createPortalSession
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Portal URL
+
+  /api/v1/workspaces/{workspaceId}/billing/change-plan:
+    post:
+      tags: [Billing]
+      summary: Change plan
+      operationId: changePlan
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [planId]
+              properties:
+                planId:
+                  type: string
+      responses:
+        '200':
+          description: Changed
+
+  /api/v1/workspaces/{workspaceId}/billing/cancel-subscription:
+    post:
+      tags: [Billing]
+      summary: Cancel subscription
+      operationId: cancelSubscription
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Cancelled
+
+  /api/v1/workspaces/{workspaceId}/billing/reactivate-subscription:
+    post:
+      tags: [Billing]
+      summary: Reactivate subscription
+      operationId: reactivateSubscription
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Reactivated
+
+  /api/v1/workspaces/{workspaceId}/billing/invoices:
+    get:
+      tags: [Billing]
+      summary: List invoices
+      operationId: listInvoices
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Invoices
+
+  /api/v1/user/integrations:
+    get:
+      tags: [Integration]
+      summary: List integrations
+      operationId: listIntegrations
+      responses:
+        '200':
+          description: Integrations
+    post:
+      tags: [Integration]
+      summary: Connect integration
+      operationId: createIntegration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateIntegrationRequest'
+      responses:
+        '200':
+          description: Connected
+
+  /api/v1/user/integrations/{id}:
+    delete:
+      tags: [Integration]
+      summary: Disconnect
+      operationId: deleteIntegration
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Disconnected
+
+  /api/v1/user/integrations/{id}/config:
+    put:
+      tags: [Integration]
+      summary: Update config
+      operationId: updateIntegrationConfig
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IntegrationConfigRequest'
+      responses:
+        '200':
+          description: Updated
+
+  /api/v1/user/integrations/{id}/sync:
+    post:
+      tags: [Integration]
+      summary: Trigger sync
+      operationId: syncIntegration
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Sync started
+
+  /api/v1/meetings/{workspaceId}/meetings:
+    get:
+      tags: [Meeting]
+      summary: List meetings
+      operationId: listMeetings
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/MeetingStatus'
+      responses:
+        '200':
+          description: Meetings
+    post:
+      tags: [Meeting]
+      summary: Create meeting
+      operationId: createMeeting
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateMeetingRequest'
+      responses:
+        '201':
+          description: Created
+
+  /api/v1/meetings/{workspaceId}/meetings/{meetingId}:
+    get:
+      tags: [Meeting]
+      summary: Get meeting
+      operationId: getMeeting
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: meetingId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Meeting
+    patch:
+      tags: [Meeting]
+      summary: Update meeting
+      operationId: updateMeeting
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: meetingId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateMeetingRequest'
+      responses:
+        '200':
+          description: Updated
+    delete:
+      tags: [Meeting]
+      summary: Delete meeting
+      operationId: deleteMeeting
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: meetingId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Deleted
+
+  /api/v1/workspaces/{workspaceSlug}/announcements:
+    get:
+      tags: [Announcement]
+      summary: List announcements
+      operationId: listAnnouncements
+      parameters:
+        - name: workspaceSlug
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Announcements
+    post:
+      tags: [Announcement]
+      summary: Create announcement
+      operationId: createAnnouncement
+      parameters:
+        - name: workspaceSlug
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAnnouncementRequest'
+      responses:
+        '201':
+          description: Created
+
+  /api/v1/announcements/{id}:
+    get:
+      tags: [Announcement]
+      summary: Get announcement
+      operationId: getAnnouncement
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Announcement
+    patch:
+      tags: [Announcement]
+      summary: Update
+      operationId: updateAnnouncement
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateAnnouncementRequest'
+      responses:
+        '200':
+          description: Updated
+    delete:
+      tags: [Announcement]
+      summary: Delete
+      operationId: deleteAnnouncement
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Deleted
+
+  /api/v1/announcements/{id}/pin:
+    patch:
+      tags: [Announcement]
+      summary: Toggle pin
+      operationId: togglePin
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Toggled
+
+  /api/v1/features:
+    get:
+      tags: [Feature]
+      summary: List feature requests
+      operationId: listFeatures
+      parameters:
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/FeatureStatus'
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Features
+    post:
+      tags: [Feature]
+      summary: Submit feature request
+      operationId: createFeatureRequest
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateFeatureRequest'
+      responses:
+        '201':
+          description: Created
+
+  /api/v1/features/{id}:
+    get:
+      tags: [Feature]
+      summary: Get feature
+      operationId: getFeature
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Feature
+
+  /api/v1/features/{id}/status:
+    patch:
+      tags: [Feature]
+      summary: Update status (admin)
+      operationId: updateFeatureStatus
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateFeatureStatusRequest'
+      responses:
+        '200':
+          description: Updated
+
+  /api/v1/features/{id}/vote:
+    post:
+      tags: [Feature]
+      summary: Cast vote
+      operationId: castVote
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type]
+              properties:
+                type:
+                  type: string
+                  enum: [UP, DOWN]
+      responses:
+        '200':
+          description: Voted
+
+  /api/v1/templates/catalog:
+    get:
+      tags: [Template]
+      summary: Browse catalog
+      operationId: listCatalog
+      security: []
+      responses:
+        '200':
+          description: Templates
+
+  /api/v1/templates/{slug}:
+    get:
+      tags: [Template]
+      summary: Get template
+      operationId: getTemplate
+      security: []
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Template
+
+  /api/v1/templates/{slug}/use:
+    post:
+      tags: [Template]
+      summary: Use template
+      operationId: useTemplate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UseTemplateRequest'
+      responses:
+        '201':
+          description: Project created
+
+  /api/v1/templates/{slug}/rate:
+    post:
+      tags: [Template]
+      summary: Rate template
+      operationId: rateTemplate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [stars]
+              properties:
+                stars:
+                  type: integer
+                  minimum: 1
+                  maximum: 5
+      responses:
+        '200':
+          description: Rated
+
+  /api/v1/ratings:
+    get:
+      tags: [Rating]
+      summary: List ratings
+      operationId: listRatings
+      security: []
+      responses:
+        '200':
+          description: Ratings
+    post:
+      tags: [Rating]
+      summary: Submit rating
+      operationId: createRating
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRatingRequest'
+      responses:
+        '201':
+          description: Submitted
+
+  /api/v1/ratings/mine:
+    get:
+      tags: [Rating]
+      summary: My rating
+      operationId: getMyRating
+      responses:
+        '200':
+          description: My rating
+
+  /api/v1/contact:
+    post:
+      tags: [Contact]
+      summary: Submit contact form
+      operationId: createContactMessage
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateContactRequest'
+      responses:
+        '201':
+          description: Sent
+
+  /api/v1/jobs:
+    get:
+      tags: [Job]
+      summary: List job postings
+      operationId: listJobs
+      security: []
+      parameters:
+        - name: department
+          in: query
+          schema:
+            $ref: '#/components/schemas/JobDepartment'
+        - name: locationType
+          in: query
+          schema:
+            $ref: '#/components/schemas/JobLocationType'
+        - name: type
+          in: query
+          schema:
+            $ref: '#/components/schemas/JobType'
+        - name: search
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Jobs
+
+  /api/v1/jobs/{slug}:
+    get:
+      tags: [Job]
+      summary: Get job
+      operationId: getJob
+      security: []
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Job
+
+  /api/v1/jobs/admin:
+    get:
+      tags: [Job]
+      summary: List all (admin)
+      operationId: listAllJobs
+      responses:
+        '200':
+          description: Jobs
+    post:
+      tags: [Job]
+      summary: Create job
+      operationId: createJob
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateJobRequest'
+      responses:
+        '201':
+          description: Created
+
+  /api/v1/jobs/admin/{id}:
+    put:
+      tags: [Job]
+      summary: Update job
+      operationId: updateJob
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateJobRequest'
+      responses:
+        '200':
+          description: Updated
+    delete:
+      tags: [Job]
+      summary: Delete job
+      operationId: deleteJob
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Deleted
+
+  /api/v1/resources/popular:
+    get:
+      tags: [Resource]
+      summary: Popular resources
+      operationId: listPopularResources
+      security: []
+      responses:
+        '200':
+          description: Resources
+
+  /api/v1/resources/product-updates:
+    get:
+      tags: [Resource]
+      summary: Product updates
+      operationId: listProductUpdates
+      security: []
+      responses:
+        '200':
+          description: Updates
+
+  /api/v1/admin/stats:
+    get:
+      tags: [Admin]
+      summary: Dashboard stats
+      operationId: getAdminStats
+      responses:
+        '200':
+          description: Stats
+
+  /api/v1/admin/users:
+    get:
+      tags: [Admin]
+      summary: List users
+      operationId: adminListUsers
+      parameters:
+        - $ref: '#/components/parameters/AdminPage'
+        - $ref: '#/components/parameters/AdminPageSize'
+        - name: search
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Users
+
+  /api/v1/admin/users/{id}:
+    get:
+      tags: [Admin]
+      summary: Get user
+      operationId: adminGetUser
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: User
+
+  /api/v1/admin/users/{id}/ban:
+    patch:
+      tags: [Admin]
+      summary: Ban user
+      operationId: banUser
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason:
+                  type: string
+                  maxLength: 500
+      responses:
+        '200':
+          description: Banned
+
+  /api/v1/admin/users/{id}/unban:
+    patch:
+      tags: [Admin]
+      summary: Unban user
+      operationId: unbanUser
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Unbanned
+
+  /api/v1/admin/workspaces:
+    get:
+      tags: [Admin]
+      summary: List workspaces
+      operationId: adminListWorkspaces
+      parameters:
+        - $ref: '#/components/parameters/AdminPage'
+        - $ref: '#/components/parameters/AdminPageSize'
+      responses:
+        '200':
+          description: Workspaces
+
+  /api/v1/admin/projects:
+    get:
+      tags: [Admin]
+      summary: List projects
+      operationId: adminListProjects
+      parameters:
+        - $ref: '#/components/parameters/AdminPage'
+        - $ref: '#/components/parameters/AdminPageSize'
+      responses:
+        '200':
+          description: Projects
+
+  /api/v1/api-keys:
+    get:
+      tags: [APIKey]
+      summary: List API keys
+      operationId: listApiKeys
+      responses:
+        '200':
+          description: Keys
+    post:
+      tags: [APIKey]
+      summary: Create API key
+      operationId: createApiKey
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  name:
+                    type: string
+                  key:
+                    type: string
+                  prefix:
+                    type: string
+                  createdAt:
+                    type: string
+                    format: date-time
+
+  /api/v1/api-keys/{id}/toggle:
+    patch:
+      tags: [APIKey]
+      summary: Toggle key
+      operationId: toggleApiKey
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Toggled
+
+  /api/v1/api-keys/{id}:
+    delete:
+      tags: [APIKey]
+      summary: Delete key
+      operationId: deleteApiKey
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Deleted
+
+  /webhooks/billing:
+    post:
+      tags: [Webhook]
+      summary: Payment webhook
+      description: Receives events from Stripe, Paddle, or LemonSqueezy
+      security: []
+      operationId: billingWebhook
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Processed
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: RS256 JWT access token (15min expiry)
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for programmatic access
+
+  parameters:
+    WorkspaceId:
+      name: workspaceId
+      in: path
+      required: true
+      schema:
+        type: string
+    WorkspaceSlug:
+      name: slug
+      in: path
+      required: true
+      schema:
+        type: string
+    ProjectId:
+      name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+    TaskId:
+      name: taskId
+      in: path
+      required: true
+      schema:
+        type: string
+    LabelId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+    SessionId:
+      name: sessionId
+      in: path
+      required: true
+      schema:
+        type: string
+    AdminPage:
+      name: page
+      in: query
+      schema:
+        type: integer
+        default: 1
+    AdminPageSize:
+      name: pageSize
+      in: query
+      schema:
+        type: integer
+        default: 20
+        maximum: 100
+
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    RateLimited:
+      description: Rate limited
+      headers:
+        X-RateLimit-Limit:
+          schema:
+            type: integer
+        X-RateLimit-Remaining:
+          schema:
+            type: integer
+        X-RateLimit-Reset:
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        message:
+          type: string
+        code:
+          type: string
+
+    # ─── ENUMS ───
+    TaskStatus:
+      type: string
+      enum: [TODO, IN_PROGRESS, IN_REVIEW, BLOCKED, COMPLETED, CANCELLED]
+    Priority:
+      type: string
+      enum: [URGENT, HIGH, MEDIUM, LOW]
+    TaskEnergy:
+      type: string
+      enum: [LOW, MEDIUM, HIGH]
+    TaskIntent:
+      type: string
+      enum: [EXECUTION, PLANNING, REVIEW, LEARNING, COMMUNICATION]
+    WorkspaceRole:
+      type: string
+      enum: [OWNER, ADMIN, MEMBER, GUEST]
+    ProjectRole:
+      type: string
+      enum: [MANAGER, COLLABORATOR, VIEWER]
+    ProjectStatus:
+      type: string
+      enum: [PLANNING, ACTIVE, ON_HOLD, COMPLETED, ARCHIVED]
+    FocusType:
+      type: string
+      enum: [POMODORO, SHORT_BREAK, LONG_BREAK, DEEP_WORK, CUSTOM]
+    TimeEntryCategory:
+      type: string
+      enum: [DEEP_WORK, MEETINGS, ADMIN, LEARNING, BREAK, OTHER]
+    MeetingStatus:
+      type: string
+      enum: [SCHEDULED, ONGOING, COMPLETED, CANCELLED]
+    AnnouncementVisibility:
+      type: string
+      enum: [PUBLIC, PRIVATE]
+    FeatureStatus:
+      type: string
+      enum: [PENDING, APPROVED, REJECTED, PLANNED, COMPLETED]
+    TemplateTier:
+      type: string
+      enum: [FREE, PRO, BUSINESS]
+    JobDepartment:
+      type: string
+      enum: [ENGINEERING, DESIGN, PRODUCT, MARKETING, SALES, CUSTOMER_SUCCESS, OPERATIONS, FINANCE, HR, OTHER]
+    JobLocationType:
+      type: string
+      enum: [REMOTE, ONSITE, HYBRID]
+    JobType:
+      type: string
+      enum: [FULL_TIME, PART_TIME, CONTRACT, INTERNSHIP, FREELANCE]
+    ResourceStatus:
+      type: string
+      enum: [DRAFT, PUBLIC, ARCHIVE]
+
+    # ─── AUTH ───
+    ExchangeRequest:
+      type: object
+      required: [userId, email, role, sessionId, timestamp, signature]
+      properties:
+        userId:
+          type: string
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum: [USER, ADMIN, SUPER_ADMIN]
+        sessionId:
+          type: string
+          format: uuid
+        timestamp:
+          type: integer
+        signature:
+          type: string
+          pattern: '^[a-f0-9]{64}$'
+    RefreshRequest:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken:
+          type: string
+    TokenResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            accessToken:
+              type: string
+            refreshToken:
+              type: string
+            expiresIn:
+              type: integer
+            user:
+              $ref: '#/components/schemas/User'
+
+    # ─── USER ───
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        image:
+          type: string
+          nullable: true
+        role:
+          type: string
+          enum: [USER, ADMIN, SUPER_ADMIN]
+        bio:
+          type: string
+          nullable: true
+        timezone:
+          type: string
+        theme:
+          type: string
+        twoFactorEnabled:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+    UpdateProfileRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        bio:
+          type: string
+          maxLength: 500
+          nullable: true
+        timezone:
+          type: string
+        image:
+          type: string
+          format: uri
+          nullable: true
+        notifications:
+          type: boolean
+        theme:
+          type: string
+          enum: [light, dark, system]
+    ChangePasswordRequest:
+      type: object
+      required: [currentPassword, newPassword, confirmPassword]
+      properties:
+        currentPassword:
+          type: string
+        newPassword:
+          type: string
+          minLength: 8
+          maxLength: 128
+        confirmPassword:
+          type: string
+    Session:
+      type: object
+      properties:
+        id:
+          type: string
+        device:
+          type: string
+        ip:
+          type: string
+        lastActive:
+          type: string
+          format: date-time
+
+    # ─── WORKSPACE ───
+    Workspace:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        slug:
+          type: string
+        description:
+          type: string
+          nullable: true
+        logo:
+          type: string
+          nullable: true
+        color:
+          type: string
+        isPublic:
+          type: boolean
+        plan:
+          type: string
+          enum: [FREE, PRO, BUSINESS, ENTERPRISE]
+        maxMembers:
+          type: integer
+        maxStorage:
+          type: integer
+        ownerId:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    WorkspaceListResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Workspace'
+    CreateWorkspaceRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        description:
+          type: string
+        color:
+          type: string
+          pattern: '^#[0-9A-F]{6}$'
+        logo:
+          type: string
+          format: uri
+        isPublic:
+          type: boolean
+    UpdateWorkspaceRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        description:
+          type: string
+        color:
+          type: string
+        logo:
+          type: string
+          format: uri
+        isPublic:
+          type: boolean
+        allowInvites:
+          type: boolean
+    InviteMemberRequest:
+      type: object
+      required: [email, role]
+      properties:
+        email:
+          type: string
+          format: email
+        role:
+          $ref: '#/components/schemas/WorkspaceRole'
+
+    # ─── PROJECT ───
+    CreateProjectRequest:
+      type: object
+      required: [name, workspaceId]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        description:
+          type: string
+        color:
+          type: string
+        icon:
+          type: string
+        status:
+          $ref: '#/components/schemas/ProjectStatus'
+        priority:
+          $ref: '#/components/schemas/Priority'
+        startDate:
+          type: string
+          format: date-time
+        dueDate:
+          type: string
+          format: date-time
+        workspaceId:
+          type: string
+    UpdateProjectRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        description:
+          type: string
+        color:
+          type: string
+        icon:
+          type: string
+        status:
+          $ref: '#/components/schemas/ProjectStatus'
+        priority:
+          $ref: '#/components/schemas/Priority'
+        startDate:
+          type: string
+          format: date-time
+        dueDate:
+          type: string
+          format: date-time
+    AddProjectMemberRequest:
+      type: object
+      required: [userId]
+      properties:
+        userId:
+          type: string
+        role:
+          $ref: '#/components/schemas/ProjectRole'
+    CreateSectionRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        description:
+          type: string
+          maxLength: 500
+        color:
+          type: string
+        status:
+          type: string
+          enum: [PENDING, ACTIVE, COMPLETED]
+        position:
+          type: integer
+        wipLimit:
+          type: integer
+          minimum: 0
+          maximum: 9999
+    UpdateSectionRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        description:
+          type: string
+          maxLength: 500
+        color:
+          type: string
+        status:
+          type: string
+          enum: [PENDING, ACTIVE, COMPLETED]
+        position:
+          type: integer
+        wipLimit:
+          type: integer
+    CreateSprintRequest:
+      type: object
+      required: [name, startDate, endDate]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        goal:
+          type: string
+          maxLength: 1000
+        startDate:
+          type: string
+          format: date-time
+        endDate:
+          type: string
+          format: date-time
+    UpdateSprintRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        goal:
+          type: string
+          maxLength: 1000
+        status:
+          type: string
+          enum: [PLANNING, ACTIVE, COMPLETED, CANCELLED]
+        startDate:
+          type: string
+          format: date-time
+        endDate:
+          type: string
+          format: date-time
+        retrospective:
+          type: string
+          maxLength: 5000
+    CreateMilestoneRequest:
+      type: object
+      required: [title]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        description:
+          type: string
+          maxLength: 2000
+        dueDate:
+          type: string
+          format: date-time
+        color:
+          type: string
+        icon:
+          type: string
+    UpdateMilestoneRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        description:
+          type: string
+          maxLength: 2000
+        status:
+          type: string
+          enum: [ON_TRACK, AT_RISK, DELAYED, COMPLETED]
+        progress:
+          type: integer
+          minimum: 0
+          maximum: 100
+        color:
+          type: string
+        icon:
+          type: string
+        dueDate:
+          type: string
+          format: date-time
+    CreateViewRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        description:
+          type: string
+          maxLength: 500
+        type:
+          type: string
+          enum: [KANBAN, LIST, CALENDAR, TIMELINE]
+        isDefault:
+          type: boolean
+        visibility:
+          type: string
+          enum: [PRIVATE, SHARED]
+    UpdateViewRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        type:
+          type: string
+          enum: [KANBAN, LIST, CALENDAR, TIMELINE]
+        isDefault:
+          type: boolean
+        visibility:
+          type: string
+          enum: [PRIVATE, SHARED]
+
+    # ─── TASK ───
+    CreateTaskRequest:
+      type: object
+      required: [title]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 500
+        description:
+          type: string
+        projectId:
+          type: string
+        sectionId:
+          type: string
+        sprintId:
+          type: string
+        milestoneId:
+          type: string
+        status:
+          $ref: '#/components/schemas/TaskStatus'
+        priority:
+          $ref: '#/components/schemas/Priority'
+        dueDate:
+          type: string
+          format: date-time
+        startDate:
+          type: string
+          format: date-time
+        estimatedHours:
+          type: number
+          minimum: 0
+        assigneeIds:
+          type: array
+          items:
+            type: string
+          maxItems: 5
+        labelIds:
+          type: array
+          items:
+            type: string
+        parentId:
+          type: string
+        focusRequired:
+          type: boolean
+        focusLevel:
+          type: integer
+          minimum: 1
+          maximum: 5
+        energyType:
+          $ref: '#/components/schemas/TaskEnergy'
+        distractionCost:
+          type: number
+          minimum: 0
+        intent:
+          $ref: '#/components/schemas/TaskIntent'
+        recurrence:
+          $ref: '#/components/schemas/RecurrenceSchema'
+    UpdateTaskRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 500
+        description:
+          type: string
+        status:
+          $ref: '#/components/schemas/TaskStatus'
+        priority:
+          $ref: '#/components/schemas/Priority'
+        dueDate:
+          type: string
+          format: date-time
+          nullable: true
+        startDate:
+          type: string
+          format: date-time
+          nullable: true
+        estimatedHours:
+          type: number
+          minimum: 0
+        assigneeIds:
+          type: array
+          items:
+            type: string
+          maxItems: 5
+        sectionId:
+          type: string
+          nullable: true
+        sprintId:
+          type: string
+          nullable: true
+        milestoneId:
+          type: string
+          nullable: true
+        labelIds:
+          type: array
+          items:
+            type: string
+        focusRequired:
+          type: boolean
+        focusLevel:
+          type: integer
+          minimum: 1
+          maximum: 5
+        energyType:
+          $ref: '#/components/schemas/TaskEnergy'
+        intent:
+          $ref: '#/components/schemas/TaskIntent'
+        recurrence:
+          $ref: '#/components/schemas/RecurrenceSchema'
+    TaskListResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Task'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+    Task:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+          nullable: true
+        status:
+          $ref: '#/components/schemas/TaskStatus'
+        priority:
+          $ref: '#/components/schemas/Priority'
+        energyType:
+          $ref: '#/components/schemas/TaskEnergy'
+        intent:
+          $ref: '#/components/schemas/TaskIntent'
+        focusRequired:
+          type: boolean
+        focusLevel:
+          type: integer
+          nullable: true
+        dueDate:
+          type: string
+          format: date-time
+          nullable: true
+        startDate:
+          type: string
+          format: date-time
+          nullable: true
+        estimatedHours:
+          type: integer
+          nullable: true
+        projectId:
+          type: string
+          nullable: true
+        sprintId:
+          type: string
+          nullable: true
+        sectionId:
+          type: string
+          nullable: true
+        milestoneId:
+          type: string
+          nullable: true
+        createdById:
+          type: string
+        parentId:
+          type: string
+          nullable: true
+        depth:
+          type: integer
+        position:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    RecurrenceSchema:
+      type: object
+      required: [pattern]
+      properties:
+        pattern:
+          type: string
+          enum: [DAILY, WEEKLY, MONTHLY, CUSTOM]
+        interval:
+          type: integer
+          minimum: 1
+          maximum: 365
+          default: 1
+        days:
+          type: array
+          items:
+            type: integer
+            minimum: 0
+            maximum: 6
+          maxItems: 7
+        endsAt:
+          type: string
+          format: date-time
+          nullable: true
+    Pagination:
+      type: object
+      properties:
+        page:
+          type: integer
+        pageSize:
+          type: integer
+        total:
+          type: integer
+        totalPages:
+          type: integer
+
+    # ─── SUBTASK ───
+    CreateSubtaskRequest:
+      type: object
+      required: [title]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 500
+        description:
+          type: string
+        status:
+          type: string
+          enum: [TODO, IN_PROGRESS, COMPLETED, CANCELLED]
+        priority:
+          $ref: '#/components/schemas/Priority'
+        dueDate:
+          type: string
+          format: date-time
+        estimatedHours:
+          type: number
+          minimum: 0
+        assigneeIds:
+          type: array
+          items:
+            type: string
+          maxItems: 5
+    UpdateSubtaskRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 500
+        description:
+          type: string
+        status:
+          type: string
+          enum: [TODO, IN_PROGRESS, COMPLETED, CANCELLED]
+        priority:
+          $ref: '#/components/schemas/Priority'
+        dueDate:
+          type: string
+          format: date-time
+          nullable: true
+        estimatedHours:
+          type: number
+          minimum: 0
+
+    # ─── COMMENT ───
+    CreateCommentRequest:
+      type: object
+      required: [content]
+      properties:
+        content:
+          type: string
+          minLength: 1
+          maxLength: 5000
+        parentId:
+          type: string
+          nullable: true
+    UpdateCommentRequest:
+      type: object
+      required: [content]
+      properties:
+        content:
+          type: string
+          minLength: 1
+          maxLength: 5000
+
+    # ─── LABEL ───
+    CreateLabelRequest:
+      type: object
+      required: [name, color]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 50
+        color:
+          type: string
+          pattern: '^#([A-Fa-f0-9]{6})$'
+        description:
+          type: string
+        workspaceId:
+          type: string
+    UpdateLabelRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 50
+        color:
+          type: string
+        description:
+          type: string
+          nullable: true
+
+    # ─── DAILY TASK ───
+    AddDailyTaskRequest:
+      type: object
+      required: [taskId, type]
+      properties:
+        taskId:
+          type: string
+        type:
+          type: string
+          enum: [PRIMARY, SECONDARY]
+        date:
+          type: string
+          format: date
+
+    # ─── FOCUS SESSION ───
+    StartSessionRequest:
+      type: object
+      required: [type, duration]
+      properties:
+        taskId:
+          type: string
+        type:
+          $ref: '#/components/schemas/FocusType'
+        duration:
+          type: number
+          minimum: 1
+          maximum: 480
+
+    # ─── TIME ENTRY ───
+    CreateTimeEntryRequest:
+      type: object
+      required: [taskId, duration]
+      properties:
+        taskId:
+          type: string
+        duration:
+          type: integer
+          minimum: 1
+          maximum: 1440
+        category:
+          $ref: '#/components/schemas/TimeEntryCategory'
+          default: OTHER
+        billable:
+          type: boolean
+          default: false
+        description:
+          type: string
+          maxLength: 500
+          nullable: true
+        startedAt:
+          type: string
+          format: date-time
+        endedAt:
+          type: string
+          format: date-time
+          nullable: true
+    UpdateTimeEntryRequest:
+      type: object
+      properties:
+        duration:
+          type: integer
+          minimum: 1
+          maximum: 1440
+        category:
+          $ref: '#/components/schemas/TimeEntryCategory'
+        billable:
+          type: boolean
+        description:
+          type: string
+          maxLength: 500
+          nullable: true
+        startedAt:
+          type: string
+          format: date-time
+        endedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    # ─── CALENDAR ───
+    LogEnergyRequest:
+      type: object
+      required: [date, energyLevel]
+      properties:
+        date:
+          type: string
+          format: date
+        energyLevel:
+          type: integer
+          minimum: 1
+          maximum: 10
+        note:
+          type: string
+          maxLength: 500
+    CreateGoalRequest:
+      type: object
+      required: [title, type, targetDate]
+      properties:
+        title:
+          type: string
+          minLength: 1
+        type:
+          type: string
+          enum: [WEEKLY, MONTHLY, QUARTERLY, KPI]
+        targetDate:
+          type: string
+          format: date
+    UpdateCapacityRequest:
+      type: object
+      properties:
+        weeklyHours:
+          type: integer
+          minimum: 1
+          maximum: 168
+        dailyCapacityHours:
+          type: integer
+          minimum: 1
+          maximum: 24
+        deepWorkHours:
+          type: integer
+          minimum: 0
+          maximum: 24
+    UpdateScheduleRequest:
+      type: object
+      properties:
+        workDays:
+          type: array
+          items:
+            type: string
+            enum: [MON, TUE, WED, THU, FRI, SAT, SUN]
+        workStartHour:
+          type: integer
+          minimum: 0
+          maximum: 23
+        workEndHour:
+          type: integer
+          minimum: 0
+          maximum: 23
+        timezone:
+          type: string
+
+    # ─── AI ───
+    AIAutocompleteRequest:
+      type: object
+      required: [title]
+      properties:
+        workspaceId:
+          type: string
+        title:
+          type: string
+          minLength: 3
+          maxLength: 200
+        projectId:
+          type: string
+        energyType:
+          $ref: '#/components/schemas/TaskEnergy'
+    AIAutocompleteResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            description:
+              type: string
+              maxLength: 2000
+            priority:
+              $ref: '#/components/schemas/Priority'
+            estimatedHours:
+              type: number
+            energyType:
+              $ref: '#/components/schemas/TaskEnergy'
+            intent:
+              $ref: '#/components/schemas/TaskIntent'
+            subtasks:
+              type: array
+              items:
+                type: object
+                properties:
+                  title:
+                    type: string
+    AIBreakdownRequest:
+      type: object
+      required: [goal]
+      properties:
+        workspaceId:
+          type: string
+        goal:
+          type: string
+          minLength: 5
+          maxLength: 500
+        energyType:
+          $ref: '#/components/schemas/TaskEnergy'
+    AICommentAssistRequest:
+      type: object
+      required: [text]
+      properties:
+        workspaceId:
+          type: string
+        text:
+          type: string
+          minLength: 2
+          maxLength: 2000
+        tone:
+          type: string
+          enum: [professional, friendly, concise, formal, persuasive]
+          default: professional
+    AIDailyPlanRequest:
+      type: object
+      required: [date, tasks]
+      properties:
+        workspaceId:
+          type: string
+        date:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        tasks:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items:
+            type: object
+            required: [id, title]
+            properties:
+              id:
+                type: string
+              title:
+                type: string
+              priority:
+                $ref: '#/components/schemas/Priority'
+              energyType:
+                $ref: '#/components/schemas/TaskEnergy'
+              estimatedHours:
+                type: number
+              dueDate:
+                type: string
+    AIMeetingSummaryRequest:
+      type: object
+      required: [meetingId]
+      properties:
+        workspaceId:
+          type: string
+        meetingId:
+          type: string
+        notes:
+          type: string
+          maxLength: 10000
+    AIWeeklyInsightsRequest:
+      type: object
+      required: [workspaceId]
+      properties:
+        workspaceId:
+          type: string
+        week:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+
+    # ─── AUTOMATION ───
+    CreateAutomationRequest:
+      type: object
+      required: [workspaceId, name, triggerType]
+      properties:
+        workspaceId:
+          type: string
+        projectId:
+          type: string
+          nullable: true
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        triggerType:
+          type: string
+          enum: [STATUS_CHANGED, TASK_CREATED, DUE_DATE_APPROACHING, ASSIGNEE_CHANGED, LABEL_ADDED, MENTION]
+        triggerConfig:
+          type: object
+        actions:
+          type: array
+          minItems: 1
+          maxItems: 5
+          items:
+            type: object
+            required: [type]
+            properties:
+              type:
+                type: string
+                enum: [ASSIGN_USER, SET_PRIORITY, NOTIFY_MEMBERS]
+              config:
+                type: object
+    UpdateAutomationRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        enabled:
+          type: boolean
+        triggerType:
+          type: string
+          enum: [STATUS_CHANGED, TASK_CREATED, DUE_DATE_APPROACHING, ASSIGNEE_CHANGED, LABEL_ADDED, MENTION]
+        triggerConfig:
+          type: object
+        actions:
+          type: array
+          minItems: 1
+          maxItems: 5
+
+    # ─── MEETING ───
+    CreateMeetingRequest:
+      type: object
+      required: [title, visibility, startTime, endTime]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        description:
+          type: string
+          maxLength: 2000
+        link:
+          type: string
+          format: uri
+        location:
+          type: string
+          maxLength: 300
+        visibility:
+          type: string
+          enum: [PUBLIC, PRIVATE]
+        startTime:
+          type: string
+          format: date-time
+        endTime:
+          type: string
+          format: date-time
+        attendeeIds:
+          type: array
+          items:
+            type: string
+    UpdateMeetingRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        description:
+          type: string
+          maxLength: 2000
+          nullable: true
+        link:
+          type: string
+          format: uri
+          nullable: true
+        location:
+          type: string
+          maxLength: 300
+          nullable: true
+        visibility:
+          type: string
+          enum: [PUBLIC, PRIVATE]
+        status:
+          $ref: '#/components/schemas/MeetingStatus'
+        startTime:
+          type: string
+          format: date-time
+        endTime:
+          type: string
+          format: date-time
+        attendeeIds:
+          type: array
+          items:
+            type: string
+
+    # ─── ANNOUNCEMENT ───
+    CreateAnnouncementRequest:
+      type: object
+      required: [title, content]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        content:
+          type: string
+          minLength: 1
+          maxLength: 10000
+        visibility:
+          $ref: '#/components/schemas/AnnouncementVisibility'
+          default: PUBLIC
+        isPinned:
+          type: boolean
+          default: false
+        targetIds:
+          type: array
+          items:
+            type: string
+        projectId:
+          type: string
+          nullable: true
+    UpdateAnnouncementRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        content:
+          type: string
+          minLength: 1
+          maxLength: 10000
+        visibility:
+          $ref: '#/components/schemas/AnnouncementVisibility'
+        isPinned:
+          type: boolean
+        targetIds:
+          type: array
+          items:
+            type: string
+
+    # ─── FEATURE ───
+    CreateFeatureRequest:
+      type: object
+      required: [title, description]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 150
+        description:
+          type: string
+          minLength: 1
+          maxLength: 2000
+    UpdateFeatureStatusRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          $ref: '#/components/schemas/FeatureStatus'
+        adminNote:
+          type: string
+          maxLength: 500
+
+    # ─── TEMPLATE ───
+    UseTemplateRequest:
+      type: object
+      required: [workspaceId]
+      properties:
+        workspaceId:
+          type: string
+        projectName:
+          type: string
+          minLength: 1
+          maxLength: 80
+    UpdateTemplateRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 80
+        description:
+          type: string
+          maxLength: 500
+        category:
+          type: string
+          maxLength: 40
+        complexity:
+          type: string
+          enum: [starter, intermediate, advanced]
+        tier:
+          $ref: '#/components/schemas/TemplateTier'
+        featured:
+          type: boolean
+        tags:
+          type: array
+          items:
+            type: string
+          maxItems: 20
+
+    # ─── RATING ───
+    CreateRatingRequest:
+      type: object
+      required: [stars]
+      properties:
+        stars:
+          type: integer
+          minimum: 1
+          maximum: 5
+        comment:
+          type: string
+          maxLength: 2000
+          nullable: true
+    UpdateRatingRequest:
+      type: object
+      properties:
+        stars:
+          type: integer
+          minimum: 1
+          maximum: 5
+        comment:
+          type: string
+          maxLength: 2000
+          nullable: true
+
+    # ─── CONTACT ───
+    CreateContactRequest:
+      type: object
+      required: [name, email, subject, category, message]
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 100
+        email:
+          type: string
+          format: email
+          maxLength: 255
+        subject:
+          type: string
+          minLength: 5
+          maxLength: 200
+        category:
+          type: string
+          enum: [GENERAL, BILLING, TECHNICAL, FEATURE_REQUEST, PARTNERSHIP, SECURITY, OTHER]
+        message:
+          type: string
+          minLength: 20
+          maxLength: 5000
+
+    # ─── JOB ───
+    CreateJobRequest:
+      type: object
+      required: [title, department, location, description, requirements]
+      properties:
+        title:
+          type: string
+          minLength: 3
+          maxLength: 150
+        department:
+          $ref: '#/components/schemas/JobDepartment'
+        location:
+          type: string
+          minLength: 2
+          maxLength: 100
+        locationType:
+          $ref: '#/components/schemas/JobLocationType'
+          default: REMOTE
+        type:
+          $ref: '#/components/schemas/JobType'
+          default: FULL_TIME
+        experienceLevel:
+          type: string
+          enum: [ENTRY, MID, SENIOR, LEAD, EXECUTIVE]
+          default: MID
+        salaryMin:
+          type: integer
+          exclusiveMinimum: 0
+        salaryMax:
+          type: integer
+          exclusiveMinimum: 0
+        salaryCurrency:
+          type: string
+          minLength: 3
+          maxLength: 3
+          default: USD
+        description:
+          type: string
+          minLength: 50
+        requirements:
+          type: string
+          minLength: 20
+        niceToHave:
+          type: string
+        benefits:
+          type: string
+        status:
+          type: string
+          enum: [DRAFT, OPEN, PAUSED, CLOSED]
+          default: DRAFT
+        closingDate:
+          type: string
+          format: date-time
+        applicationUrl:
+          type: string
+          format: uri
+        applicationEmail:
+          type: string
+          format: email
+        isPinned:
+          type: boolean
+          default: false
+    UpdateJobRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 3
+          maxLength: 150
+        department:
+          $ref: '#/components/schemas/JobDepartment'
+        location:
+          type: string
+        locationType:
+          $ref: '#/components/schemas/JobLocationType'
+        type:
+          $ref: '#/components/schemas/JobType'
+        experienceLevel:
+          type: string
+          enum: [ENTRY, MID, SENIOR, LEAD, EXECUTIVE]
+        salaryMin:
+          type: integer
+        salaryMax:
+          type: integer
+        description:
+          type: string
+        requirements:
+          type: string
+        status:
+          type: string
+          enum: [DRAFT, OPEN, PAUSED, CLOSED]
+        isPinned:
+          type: boolean
+
+    # ─── INTEGRATION ───
+    CreateIntegrationRequest:
+      type: object
+      required: [provider]
+      properties:
+        provider:
+          type: string
+          enum: [github, slack, google-calendar, trello]
+        workspaceId:
+          type: string
+    IntegrationConfigRequest:
+      type: object
+      properties:
+        config:
+          type: object
+          properties:
+            syncDirection:
+              type: string
+              enum: [one-way, two-way]
+            autoSync:
+              type: boolean
+            syncInterval:
+              type: integer
+              minimum: 60
+              maximum: 86400
+            notifications:
+              type: boolean
+            selectedChannels:
+              type: array
+              items:
+                type: string
+            selectedRepos:
+              type: array
+              items:
+                type: string
+
+    # ─── RESOURCE ───
+    CreatePopularResourceRequest:
+      type: object
+      required: [title, description, image, category]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        description:
+          type: string
+          minLength: 1
+          maxLength: 5000
+        image:
+          type: string
+          format: uri
+        category:
+          type: string
+          minLength: 1
+          maxLength: 100
+        status:
+          $ref: '#/components/schemas/ResourceStatus'
+          default: DRAFT
+    UpdatePopularResourceRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        description:
+          type: string
+          maxLength: 5000
+        image:
+          type: string
+          format: uri
+        category:
+          type: string
+        status:
+          $ref: '#/components/schemas/ResourceStatus'
+    CreateProductUpdateRequest:
+      type: object
+      required: [title, date, description, version]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        date:
+          type: string
+          format: date-time
+        description:
+          type: string
+          minLength: 1
+          maxLength: 5000
+        version:
+          type: string
+          minLength: 1
+          maxLength: 50
+        status:
+          $ref: '#/components/schemas/ResourceStatus'
+          default: DRAFT
+    UpdateProductUpdateRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        date:
+          type: string
+          format: date-time
+        description:
+          type: string
+          maxLength: 5000
+        version:
+          type: string
+          maxLength: 50
+        status:
+          $ref: '#/components/schemas/ResourceStatus'
+
+    # ─── ADMIN ───
+    UpdateWorkspaceLimitsRequest:
+      type: object
+      required: [plan, maxMembers, maxStorage]
+      properties:
+        plan:
+          type: string
+          enum: [FREE, PRO, BUSINESS, ENTERPRISE]
+        maxMembers:
+          type: integer
+          description: Use -1 for unlimited
+        maxStorage:
+          type: integer
+          description: Use -1 for unlimited
+        aiDailyCalls:
+          type: integer
+          nullable: true
+        aiMonthlyTokens:
+          type: integer
+          nullable: true
+        aiMaxOutputTokens:
+          type: integer
+          nullable: true
+
+    # ─── FILE ───
+    File:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        originalName:
+          type: string
+        size:
+          type: integer
+        mimeType:
+          type: string
+        url:
+          type: string
+          format: uri
+        thumbnail:
+          type: string
+          nullable: true
+        uploadedAt:
+          type: string
+          format: date-time
+        uploadedById:
+          type: string
+        workspaceId:
+          type: string
+          nullable: true
+        projectId:
+          type: string
+          nullable: true
+        taskId:
+          type: string
+          nullable: true
