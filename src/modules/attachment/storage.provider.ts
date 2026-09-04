@@ -11,7 +11,7 @@ export const StorageProvider = {
 
   async upload(dataURI: string) {
     return cloudinary.uploader.upload(dataURI, {
-      folder: "focura/attachments",
+      folder: "gablura/attachments",
       resource_type: "auto",
     });
   },

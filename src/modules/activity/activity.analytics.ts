@@ -27,13 +27,13 @@ export const ActivityAnalytics = {
     const startOfToday = new Date();
     startOfToday.setHours(0, 0, 0, 0);
 
-    // Focura-admin audit rows (metadata.source === 'focura-admin', e.g. AI cap
+    // Gablura-admin audit rows (metadata.source === 'gablura-admin', e.g. AI cap
     // changes) are excluded from user-facing stats. The positive JSON-path
     // filter is reliable (a negated one would drop rows lacking the key due to
     // SQL NULL semantics), so count them separately and subtract.
     const adminWhere = {
       ...where,
-      metadata: { path: ['source'], equals: 'focura-admin' },
+      metadata: { path: ['source'], equals: 'gablura-admin' },
     };
 
     const [total, today, actionCounts, adminTotal, adminToday] = await Promise.all([

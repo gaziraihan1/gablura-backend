@@ -5,7 +5,7 @@ const REFRESH_LOCK_TTL_SECONDS = 45;
 export async function acquireRefreshLock(sessionId: string): Promise<boolean> {
   try {
     const result = await getRedisClient().set(
-      `focura:refresh:lock:${sessionId}`,
+      `gablura:refresh:lock:${sessionId}`,
       "1",
       "EX",
       REFRESH_LOCK_TTL_SECONDS,
@@ -20,7 +20,7 @@ export async function acquireRefreshLock(sessionId: string): Promise<boolean> {
 
 export async function releaseRefreshLock(sessionId: string): Promise<void> {
   try {
-    await getRedisClient().del(`focura:refresh:lock:${sessionId}`);
+    await getRedisClient().del(`gablura:refresh:lock:${sessionId}`);
   } catch (err) {
     console.error("[RefreshLock] Failed to release lock:", err);
   }
@@ -28,7 +28,7 @@ export async function releaseRefreshLock(sessionId: string): Promise<void> {
 
 export async function isRefreshLocked(sessionId: string): Promise<boolean> {
   try {
-    const val = await getRedisClient().get(`focura:refresh:lock:${sessionId}`);
+    const val = await getRedisClient().get(`gablura:refresh:lock:${sessionId}`);
     return !!val;
   } catch (err) {
     console.error("[RefreshLock] Failed to check lock status:", err);

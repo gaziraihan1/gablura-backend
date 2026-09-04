@@ -79,8 +79,8 @@ export function createAccessToken(p: {
     {
       algorithm: "RS256",
       expiresIn: ACCESS_TOKEN_EXPIRY,
-      issuer: "focura-app",
-      audience: "focura-backend",
+      issuer: "gablura-app",
+      audience: "gablura-backend",
     },
   );
 }
@@ -105,8 +105,8 @@ export function createRefreshToken(p: {
     {
       algorithm: "RS256",
       expiresIn: REFRESH_TOKEN_EXPIRY,
-      issuer: "focura-app",
-      audience: "focura-backend",
+      issuer: "gablura-app",
+      audience: "gablura-backend",
     },
   );
 }
@@ -139,8 +139,8 @@ export function createSseToken(userId: string): string {
     {
       algorithm: "RS256",
       expiresIn: SSE_TOKEN_EXPIRY,
-      issuer: "focura-app",
-      audience: "focura-backend",
+      issuer: "gablura-app",
+      audience: "gablura-backend",
     },
   );
 }
@@ -148,11 +148,11 @@ export function createSseToken(userId: string): string {
 export function verifyToken(
   token: string,
   expectedType?: TokenPayload["type"],
-  audience = "focura-backend",
+  audience = "gablura-backend",
 ): TokenPayload {
   const decoded = jwt.verify(token, publicKey, {
     algorithms: ["RS256"],
-    issuer: "focura-app",
+    issuer: "gablura-app",
     audience,
   }) as jwt.JwtPayload;
 

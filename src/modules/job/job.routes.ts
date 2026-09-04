@@ -14,7 +14,7 @@ const router = Router();
 router.get('/',          publicListJobs);
 router.get('/:slug',     publicGetJob);
 
-// ── Admin (FOCURA_ADMIN_IDS) ───────────────────────────────────────────────────
+// ── Admin (GABLURA_ADMIN_IDS) ───────────────────────────────────────────────────
 router.use(authenticate)
 router.get   ('/admin/all',          adminListJobs);
 router.post  ('/admin',              adminCreateJob);

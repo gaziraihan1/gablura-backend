@@ -3,12 +3,12 @@ version: '3.9'
 services:
   db:
     image: postgres:16
-    container_name: focura_test_db
+    container_name: _test_db
     restart: always
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: focura_test
+      POSTGRES_DB: _test
     ports:
       - "5433:5432"
     volumes:
@@ -16,7 +16,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: focura_test_redis
+    container_name: _test_redis
     restart: always
     ports:
       - "6379:6379"

@@ -11,7 +11,7 @@ vi.mock('cloudinary', () => {
     uploader: {
       upload: vi.fn().mockResolvedValue({
         secure_url: 'https://cloudinary.com/test.pdf',
-        public_id: 'focura/files/test_file',
+        public_id: 'gablura/files/test_file',
         format: 'pdf',
         bytes: 2048,
         thumbnail_url: null,

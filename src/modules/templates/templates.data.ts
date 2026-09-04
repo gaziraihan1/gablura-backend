@@ -1,7 +1,7 @@
 /**
  * modules/templates/templates.data.ts
  *
- * The official Focura template catalog — the single source of truth for the
+ * The official Gablura template catalog — the single source of truth for the
  * seeded templates. Every template stores its full project snapshot in
  * `content` (sections with taskStatus, labels, tasks, milestones, views) so
  * the import endpoint can clone the whole structure in one transaction.
@@ -79,7 +79,7 @@ export const OFFICIAL_TEMPLATES: OfficialTemplateSeed[] = [
     color: '#ec4899',
     tags: ['goals', 'okr', 'personal', 'habits', 'productivity'],
     estimatedSetupMinutes: 2,
-    authorName: 'Focura Team',
+    authorName: 'Gablura Team',
     authorRole: 'Official',
     content: {
       sections: [
@@ -130,7 +130,7 @@ export const OFFICIAL_TEMPLATES: OfficialTemplateSeed[] = [
     color: '#f43f5e',
     tags: ['content', 'marketing', 'editorial', 'calendar', 'social'],
     estimatedSetupMinutes: 3,
-    authorName: 'Focura Team',
+    authorName: 'Gablura Team',
     authorRole: 'Official',
     content: {
       sections: [
@@ -183,7 +183,7 @@ export const OFFICIAL_TEMPLATES: OfficialTemplateSeed[] = [
     color: '#3b82f6',
     tags: ['agile', 'scrum', 'sprint', 'kanban', 'engineering'],
     estimatedSetupMinutes: 3,
-    authorName: 'Focura Team',
+    authorName: 'Gablura Team',
     authorRole: 'Official',
     content: {
       sections: [
@@ -240,7 +240,7 @@ export const OFFICIAL_TEMPLATES: OfficialTemplateSeed[] = [
     color: '#ef4444',
     tags: ['bugs', 'qa', 'triage', 'engineering'],
     estimatedSetupMinutes: 2,
-    authorName: 'Focura Team',
+    authorName: 'Gablura Team',
     authorRole: 'Official',
     content: {
       sections: [
@@ -290,7 +290,7 @@ export const OFFICIAL_TEMPLATES: OfficialTemplateSeed[] = [
     color: '#8b5cf6',
     tags: ['product', 'roadmap', 'okr', 'strategy', 'planning'],
     estimatedSetupMinutes: 5,
-    authorName: 'Focura Team',
+    authorName: 'Gablura Team',
     authorRole: 'Official',
     content: {
       sections: [
@@ -341,7 +341,7 @@ export const OFFICIAL_TEMPLATES: OfficialTemplateSeed[] = [
     color: '#10b981',
     tags: ['hiring', 'recruiting', 'hr', 'people', 'interviews'],
     estimatedSetupMinutes: 4,
-    authorName: 'Focura Team',
+    authorName: 'Gablura Team',
     authorRole: 'Official',
     content: {
       sections: [
@@ -390,7 +390,7 @@ export const OFFICIAL_TEMPLATES: OfficialTemplateSeed[] = [
     color: '#06b6d4',
     tags: ['onboarding', 'hr', 'new-hire', 'people'],
     estimatedSetupMinutes: 3,
-    authorName: 'Focura Team',
+    authorName: 'Gablura Team',
     authorRole: 'Official',
     content: {
       sections: [
@@ -440,7 +440,7 @@ export const OFFICIAL_TEMPLATES: OfficialTemplateSeed[] = [
     color: '#f97316',
     tags: ['startup', 'launch', 'mvp', 'fundraising', 'product'],
     estimatedSetupMinutes: 10,
-    authorName: 'Focura Team',
+    authorName: 'Gablura Team',
     authorRole: 'Official',
     content: {
       sections: [
@@ -486,7 +486,7 @@ export const OFFICIAL_TEMPLATES: OfficialTemplateSeed[] = [
     description:
       'Run a 5-day design sprint — understand, ideate, decide, prototype, and test — with phase labels.',
     longDescription:
-      'The Google Ventures 5-day design sprint, adapted for Focura. The board uses the standard workflow columns while phase labels (Day 1 Understand → Day 5 Test) keep every task anchored to its sprint day. Includes facilitation tasks and a test-session milestone.',
+      'The Google Ventures 5-day design sprint, adapted for Gablura. The board uses the standard workflow columns while phase labels (Day 1 Understand → Day 5 Test) keep every task anchored to its sprint day. Includes facilitation tasks and a test-session milestone.',
     category: 'design',
     complexity: 'intermediate',
     tier: 'PRO',
@@ -494,7 +494,7 @@ export const OFFICIAL_TEMPLATES: OfficialTemplateSeed[] = [
     color: '#f59e0b',
     tags: ['design', 'sprint', 'ux', 'workshop', 'prototype'],
     estimatedSetupMinutes: 5,
-    authorName: 'Focura Team',
+    authorName: 'Gablura Team',
     authorRole: 'Official',
     content: {
       sections: [
@@ -543,7 +543,7 @@ export const OFFICIAL_TEMPLATES: OfficialTemplateSeed[] = [
     color: '#0891b2',
     tags: ['operations', 'incident', 'sop', 'oncall', 'reliability'],
     estimatedSetupMinutes: 4,
-    authorName: 'Focura Team',
+    authorName: 'Gablura Team',
     authorRole: 'Official',
     content: {
       sections: [
@@ -589,7 +589,7 @@ export const OFFICIAL_TEMPLATES: OfficialTemplateSeed[] = [
     color: '#ea580c',
     tags: ['social', 'marketing', 'campaign', 'content', 'brand'],
     estimatedSetupMinutes: 3,
-    authorName: 'Focura Team',
+    authorName: 'Gablura Team',
     authorRole: 'Official',
     content: {
       sections: [
@@ -640,7 +640,7 @@ export const OFFICIAL_TEMPLATES: OfficialTemplateSeed[] = [
     color: '#7c3aed',
     tags: ['launch', 'product', 'checklist', 'marketing', 'engineering', 'go-to-market'],
     estimatedSetupMinutes: 8,
-    authorName: 'Focura Team',
+    authorName: 'Gablura Team',
     authorRole: 'Official',
     content: {
       sections: [

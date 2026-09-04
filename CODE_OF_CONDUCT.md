@@ -3,7 +3,7 @@
 ## Our Pledge
 
 In the interest of fostering an open, welcoming, and inclusive environment, we as
-contributors and maintainers of **Focura Backend** pledge to make participation in our
+contributors and maintainers of **Gablura Backend** pledge to make participation in our
 project a harassment-free experience for everyone, regardless of age, body size,
 disability, ethnicity, gender identity and expression, level of experience,
 nationality, personal appearance, race, religion, or sexual identity and orientation.
@@ -42,7 +42,7 @@ Examples of unacceptable behavior include:
 This Code of Conduct applies to:
 
 - All project spaces (GitHub repositories, issues, pull requests, discussions)
-- Public and private communication related to Focura Backend
+- Public and private communication related to Gablura Backend
 - Any individual representing the project or community
 
 The Code of Conduct also applies outside project spaces when behavior may
@@ -99,7 +99,7 @@ If you experience or witness unacceptable behavior, please report it responsibly
 
 You may report issues by contacting the project maintainer directly:
 
-**Email:** focurabusiness@gmail.com
+**Email:** business@gmail.com
 
 All reports will be reviewed promptly and confidentially.
 Maintainers are committed to protecting reporters from retaliation.
@@ -116,14 +116,14 @@ Information will be shared only with those who need to know to resolve the issue
 ## Attribution
 
 This Code of Conduct is inspired by the **Contributor Covenant**, version 2.1,
-and adapted to fit the needs and values of the Focura project.
+and adapted to fit the needs and values of the Gablura project.
 
 ---
 
 ## Final Note
 
-Focura is built on trust, focus, and respect.
+Gablura is built on trust, focus, and respect.
 By participating in this project, you agree to uphold these standards and help create
 a healthy and professional community for everyone.
 
-Thank you for contributing to Focura.
+Thank you for contributing to Gablura.

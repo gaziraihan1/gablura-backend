@@ -26,7 +26,7 @@ async function slidingWindowLimit(
   const redis = getRedisClient();
   const now = Date.now();
   const windowStart = now - windowSeconds * 1000;
-  const limitKey = `focura:contact:${key}`;
+  const limitKey = `gablura:contact:${key}`;
 
   const pipeline = redis.pipeline();
   pipeline.zremrangebyscore(limitKey, 0, windowStart);

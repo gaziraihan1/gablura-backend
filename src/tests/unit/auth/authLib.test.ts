@@ -715,7 +715,7 @@ describe("accountLockout", () => {
       expect(result.attempts).toBe(10);
       expect(result.unlocksAt).toBeInstanceOf(Date);
       expect(mockRedis.setex).toHaveBeenCalledWith(
-        "focura:lockout:locked:user@test.com",
+        "gablura:lockout:locked:user@test.com",
         900,
         expect.any(String)
       );
@@ -779,8 +779,8 @@ describe("accountLockout", () => {
       await clearFailedAttempts("user@test.com");
 
       expect(mockRedis.del).toHaveBeenCalledWith(
-        "focura:lockout:failures:user@test.com",
-        "focura:lockout:locked:user@test.com"
+        "gablura:lockout:failures:user@test.com",
+        "gablura:lockout:locked:user@test.com"
       );
     });
 
@@ -865,7 +865,7 @@ describe("refreshLock", () => {
 
       expect(result).toBe(true);
       expect(mockRedis.set).toHaveBeenCalledWith(
-        "focura:refresh:lock:session-123",
+        "gablura:refresh:lock:session-123",
         "1",
         "EX",
         45,
@@ -910,7 +910,7 @@ describe("refreshLock", () => {
       await releaseRefreshLock("session-123");
 
       expect(mockRedis.del).toHaveBeenCalledWith(
-        "focura:refresh:lock:session-123"
+        "gablura:refresh:lock:session-123"
       );
     });
 
@@ -1231,7 +1231,7 @@ describe("tokenRevocation", () => {
       await revokeAccessToken("jti-abc", 3600);
 
       expect(mockRedis.setex).toHaveBeenCalledWith(
-        "focura:revoked:access:jti-abc",
+        "gablura:revoked:access:jti-abc",
         3600,
         "1"
       );
@@ -1267,7 +1267,7 @@ describe("tokenRevocation", () => {
 
       expect(result).toBe(true);
       expect(mockRedis.get).toHaveBeenCalledWith(
-        "focura:revoked:access:jti-abc"
+        "gablura:revoked:access:jti-abc"
       );
     });
 
@@ -1317,13 +1317,13 @@ describe("tokenRevocation", () => {
       await storeRefreshToken("user1", "jti-abc", 3600);
 
       expect(mockRedis.setex).toHaveBeenCalledWith(
-        "focura:refresh:user1:jti-abc",
+        "gablura:refresh:user1:jti-abc",
         3600,
         expect.stringContaining('"jti":"jti-abc"')
       );
       expect(mockRedis.sadd).toHaveBeenCalledWith(
-        "focura:refresh:index:user1",
-        "focura:refresh:user1:jti-abc"
+        "gablura:refresh:index:user1",
+        "gablura:refresh:user1:jti-abc"
       );
     });
 
@@ -1357,7 +1357,7 @@ describe("tokenRevocation", () => {
 
       expect(result).toBe(true);
       expect(mockRedis.get).toHaveBeenCalledWith(
-        "focura:refresh:user1:jti-abc"
+        "gablura:refresh:user1:jti-abc"
       );
     });
 
@@ -1399,11 +1399,11 @@ describe("tokenRevocation", () => {
       await revokeRefreshToken("user1", "jti-abc");
 
       expect(mockRedis.del).toHaveBeenCalledWith(
-        "focura:refresh:user1:jti-abc"
+        "gablura:refresh:user1:jti-abc"
       );
       expect(mockRedis.srem).toHaveBeenCalledWith(
-        "focura:refresh:index:user1",
-        "focura:refresh:user1:jti-abc"
+        "gablura:refresh:index:user1",
+        "gablura:refresh:user1:jti-abc"
       );
     });
 
@@ -1432,8 +1432,8 @@ describe("tokenRevocation", () => {
   describe("revokeAllRefreshTokens", () => {
     it("revokes all tokens via index when index has keys", async () => {
       mockRedis.smembers.mockResolvedValueOnce([
-        "focura:refresh:user1:j1",
-        "focura:refresh:user1:j2",
+        "gablura:refresh:user1:j1",
+        "gablura:refresh:user1:j2",
       ]);
       mockRedis.del.mockResolvedValueOnce(2);
       mockRedis.del.mockResolvedValueOnce(1);
@@ -1441,11 +1441,11 @@ describe("tokenRevocation", () => {
       await revokeAllRefreshTokens("user1");
 
       expect(mockRedis.del).toHaveBeenCalledWith(
-        "focura:refresh:user1:j1",
-        "focura:refresh:user1:j2"
+        "gablura:refresh:user1:j1",
+        "gablura:refresh:user1:j2"
       );
       expect(mockRedis.del).toHaveBeenCalledWith(
-        "focura:refresh:index:user1"
+        "gablura:refresh:index:user1"
       );
       expect(mockRedis.keys).not.toHaveBeenCalled();
     });
@@ -1453,16 +1453,16 @@ describe("tokenRevocation", () => {
     it("falls back to SCAN when index is empty", async () => {
       mockRedis.smembers.mockResolvedValueOnce([]);
       mockRedis.scan
-        .mockResolvedValueOnce(['0', ["focura:refresh:user1:k1", "focura:refresh:user1:k2"]]);
+        .mockResolvedValueOnce(['0', ["gablura:refresh:user1:k1", "gablura:refresh:user1:k2"]]);
       mockRedis.del.mockResolvedValueOnce(2);
       mockRedis.del.mockResolvedValueOnce(1);
 
       await revokeAllRefreshTokens("user1");
 
-      expect(mockRedis.scan).toHaveBeenCalledWith('0', 'MATCH', 'focura:refresh:user1:*', 'COUNT', 100);
+      expect(mockRedis.scan).toHaveBeenCalledWith('0', 'MATCH', 'gablura:refresh:user1:*', 'COUNT', 100);
       expect(mockRedis.del).toHaveBeenCalledWith(
-        "focura:refresh:user1:k1",
-        "focura:refresh:user1:k2"
+        "gablura:refresh:user1:k1",
+        "gablura:refresh:user1:k2"
       );
     });
 
@@ -1475,7 +1475,7 @@ describe("tokenRevocation", () => {
 
       // only the index key delete
       expect(mockRedis.del).toHaveBeenCalledTimes(1);
-      expect(mockRedis.del).toHaveBeenCalledWith("focura:refresh:index:user1");
+      expect(mockRedis.del).toHaveBeenCalledWith("gablura:refresh:index:user1");
     });
 
     it("does not throw on Redis error", async () => {
@@ -1515,9 +1515,9 @@ describe("tokenRevocation", () => {
       expect(mockRedis.eval).toHaveBeenCalledWith(
         expect.stringContaining("redis.call"),
         3,
-        "focura:refresh:user1:oldJti",
-        "focura:refresh:user1:newJti",
-        "focura:refresh:index:user1",
+        "gablura:refresh:user1:oldJti",
+        "gablura:refresh:user1:newJti",
+        "gablura:refresh:index:user1",
         "3600",
         expect.stringContaining('"jti":"newJti"')
       );
@@ -1551,9 +1551,9 @@ describe("tokenRevocation", () => {
 
       const args = mockRedis.eval.mock.calls[0];
       expect(args[1]).toBe(3); // 3 KEYS
-      expect(args[2]).toBe("focura:refresh:u42:old123");
-      expect(args[3]).toBe("focura:refresh:u42:new456");
-      expect(args[4]).toBe("focura:refresh:index:u42");
+      expect(args[2]).toBe("gablura:refresh:u42:old123");
+      expect(args[3]).toBe("gablura:refresh:u42:new456");
+      expect(args[4]).toBe("gablura:refresh:index:u42");
       expect(args[5]).toBe("7200");
       const payload = JSON.parse(args[6]);
       expect(payload.jti).toBe("new456");
@@ -1568,7 +1568,7 @@ describe("tokenRevocation", () => {
       await storeSseToken("jti-sse", "user1");
 
       expect(mockRedis.setex).toHaveBeenCalledWith(
-        "focura:sse:jti-sse",
+        "gablura:sse:jti-sse",
         30,
         "user1"
       );
@@ -1593,7 +1593,7 @@ describe("tokenRevocation", () => {
       expect(mockRedis.eval).toHaveBeenCalledWith(
         expect.stringContaining("redis.call"),
         1,
-        "focura:sse:jti-sse",
+        "gablura:sse:jti-sse",
       );
     });
 

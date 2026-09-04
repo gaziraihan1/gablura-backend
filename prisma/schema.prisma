@@ -308,7 +308,7 @@ model Workspace {
   plan            WorkspacePlan         @default(FREE)
   maxMembers      Int                   @default(5)
   maxStorage      Int                   @default(1024)
-  /// Focura-admin overrides for AI limits (null = fall back to the plan default).
+  /// Gablura-admin overrides for AI limits (null = fall back to the plan default).
   aiDailyCalls    Int?
   aiMonthlyTokens Int?
   aiMaxOutputTokens Int?
@@ -1599,7 +1599,7 @@ model JobPosting {
   postedById       String // cuid of the admin who posted
   closingDate      DateTime?
   applicationUrl   String? // external ATS link, optional
-  applicationEmail String? // defaults to focurabusiness@gmail.com
+  applicationEmail String? // defaults to gablurabusiness@gmail.com
   totalApplicants  Int             @default(0) // bumped by application webhook / manual
   isPinned         Boolean         @default(false)
   createdAt        DateTime        @default(now())

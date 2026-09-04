@@ -25,7 +25,7 @@ const SOURCE_DIR = join(__dirname, "..", "lib", "contracts");
 // Override with FRONTEND_REPO_ROOT if the client lives elsewhere.
 const TARGET_DIR = join(
   process.env.FRONTEND_REPO_ROOT ??
-    join(__dirname, "..", "..", "..", "Focura-client", "focura"),
+    join(__dirname, "..", "..", "..", "Gablura-client", "gablura"),
   "types",
   "api-contracts",
 );
@@ -40,7 +40,7 @@ for (const file of CONTRACT_FILES) {
   const header =
     `/**\n` +
     ` * GENERATED FILE — do not edit directly.\n` +
-    ` * Synced from focura-backend/src/lib/contracts/${file} via \`npm run sync:contracts\`.\n` +
+    ` * Synced from gablura-backend/src/lib/contracts/${file} via \`npm run sync:contracts\`.\n` +
     ` * This is the single source of truth for the API wire format.\n` +
     ` */\n\n`;
   const targetContent = header + source;

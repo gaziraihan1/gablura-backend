@@ -325,7 +325,7 @@ export const exportUserData = async (req: AuthRequest, res: Response): Promise<v
     }
 
     const json = JSON.stringify(bundle, null, 2);
-    const fileName = `focura-export-${bundle.profile.id}-${new Date().toISOString().slice(0, 10)}.json`;
+    const fileName = `gablura-export-${bundle.profile.id}-${new Date().toISOString().slice(0, 10)}.json`;
 
     if (json.length > 4 * 1024 * 1024) {
       console.warn(`[DataExport] Large export (${json.length} bytes) for user ${req.user.id}`);
@@ -334,7 +334,7 @@ export const exportUserData = async (req: AuthRequest, res: Response): Promise<v
     await addSendEmailJob({
       type: 'data-export-email',
       to: bundle.profile.email,
-      subject: 'Your Focura data export is ready',
+      subject: 'Your Gablura data export is ready',
       data: {
         toEmail: bundle.profile.email,
         toName: bundle.profile.name,

@@ -62,7 +62,7 @@ export type AiPlan = keyof typeof AI_PLAN_LIMITS;
 
 /**
  * The effective per-plan AI limits. Workspaces may override `daily`,
- * `monthlyTokens` and `maxOutputTokens` via the Focura admin dashboard
+ * `monthlyTokens` and `maxOutputTokens` via the Gablura admin dashboard
  * (Workspace.aiDailyCalls / aiMonthlyTokens / aiMaxOutputTokens); the other
  * fields always come from `AI_PLAN_LIMITS`.
  */
@@ -224,7 +224,7 @@ export interface AiQuotaResponse {
   hourly: number;
   dailyTokens: number;
   monthlyTokens: number;
-  /** Effective per-response output cap (honors Focura-admin overrides). */
+  /** Effective per-response output cap (honors Gablura-admin overrides). */
   maxOutputTokens: number;
   tokensUsedToday: number;
   tokensUsedThisMonth: number;
@@ -233,7 +233,7 @@ export interface AiQuotaResponse {
   resetAt: string;
   /** Plan defaults for the overrideable fields — what the tier gives without admin changes. */
   defaults: Pick<AiLimits, "daily" | "monthlyTokens" | "maxOutputTokens">;
-  /** Per-workspace Focura-admin overrides currently active (absent field = plan default). */
+  /** Per-workspace Gablura-admin overrides currently active (absent field = plan default). */
   overrides: Partial<Pick<AiLimits, "daily" | "monthlyTokens" | "maxOutputTokens">>;
 }
 

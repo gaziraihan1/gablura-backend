@@ -1,4 +1,4 @@
-# 🧠 Focura Focus & Burnout Detection System - Backend Guide
+# 🧠 Gablura Focus & Burnout Detection System - Backend Guide
 
 ## Table of Contents
 - [Overview](#overview)
@@ -14,14 +14,14 @@
 
 ## Overview
 
-Focura's focus and burnout system is a **scientifically-grounded, integrated solution** that combines:
+Gablura's focus and burnout system is a **scientifically-grounded, integrated solution** that combines:
 
 1. **Focus Session Tracking** - Quantifies deep work with multiple session types
 2. **Burnout Detection** - Predictive algorithm based on workload analysis
 3. **Calendar Intelligence** - Daily aggregates of tasks, capacity, and wellness metrics
 4. **Wellness Recommendations** - Personalized, actionable suggestions
 
-**Key Principle**: _Unlike standalone tools (Toggl, RescueTime, Asana), Focura connects focus data with task management and capacity planning to prevent burnout before it happens._
+**Key Principle**: _Unlike standalone tools (Toggl, RescueTime, Asana), Gablura connects focus data with task management and capacity planning to prevent burnout before it happens._
 
 ---
 
@@ -251,4 +251,4 @@ CREATE INDEX wellness_rec_user_dismissed ON WellnessRecommendation(userId, dismi
 ---
 
 _Last Updated: January 2026_
-_Focura Backend Team_
+_Gablura Backend Team_

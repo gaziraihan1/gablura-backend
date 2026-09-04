@@ -1,5 +1,5 @@
 import { FeatureRepository }  from './feature.repository.js';
-import { isFocuraAdminUser }  from '../../config/admin.config.js';
+import { isGabluraAdminUser }  from '../../config/admin.config.js';
 import { NotFoundError, ForbiddenError } from '../../errors/index.js';
 import type {
   CreateFeatureRequestInput,
@@ -24,8 +24,8 @@ export const FeatureService = {
   },
 
   async updateStatus(id: string, userId: string, role: string, input: UpdateFeatureStatusInput) {
-    if (!isFocuraAdminUser(role, userId))
-      throw new ForbiddenError('Only Focura admins can update feature status');
+    if (!isGabluraAdminUser(role, userId))
+      throw new ForbiddenError('Only Gablura admins can update feature status');
 
     const feature = await FeatureRepository.findById(id, null);
     if (!feature) throw new NotFoundError('Feature request');
@@ -34,8 +34,8 @@ export const FeatureService = {
   },
 
   async delete(id: string, userId: string, role: string) {
-    if (!isFocuraAdminUser(role, userId))
-      throw new ForbiddenError('Only Focura admins can delete feature requests');
+    if (!isGabluraAdminUser(role, userId))
+      throw new ForbiddenError('Only Gablura admins can delete feature requests');
 
     const feature = await FeatureRepository.findById(id, null);
     if (!feature) throw new NotFoundError('Feature request');

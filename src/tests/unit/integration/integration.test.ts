@@ -82,8 +82,8 @@ vi.mock('../../../middleware/auth.js', async () => {
     try {
       const decoded: any = jwt.default.verify(token, publicKey, {
         algorithms: ['RS256'],
-        issuer: 'focura-app',
-        audience: 'focura-backend',
+        issuer: 'gablura-app',
+        audience: 'gablura-backend',
       });
       req.user = {
         id: decoded.sub,

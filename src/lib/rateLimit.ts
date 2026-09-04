@@ -15,7 +15,7 @@ export const ratelimit = {
     const redis = getRedisClient();
     const now = Date.now();
     const windowStart = now - WINDOW_SECONDS * 1000;
-    const key = `focura:ratelimit:${identifier}`;
+    const key = `gablura:ratelimit:${identifier}`;
 
     const pipeline = redis.pipeline();
     pipeline.zremrangebyscore(key, 0, windowStart);

@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { authenticate } from "../../middleware/auth.js";
-import { requireFocuraAdmin } from "../../middleware/focuraAdmin.js"; // adjust path if yours
+import { requireGabluraAdmin } from "../../middleware/focuraAdmin.js"; // adjust path if yours
 // lives elsewhere
 import { resourceController } from "./index.js";
 const router = Router();
@@ -9,54 +9,54 @@ const router = Router();
 
 router.get(
   "/popular",
-  requireFocuraAdmin,
+  requireGabluraAdmin,
   resourceController.adminListPopularResources,
 );
 router.get(
   "/popular/:slug",
   authenticate,
-  requireFocuraAdmin,
+  requireGabluraAdmin,
   resourceController.adminGetPopularResource,
 );
 router.post(
   "/popular",
-  requireFocuraAdmin,
+  requireGabluraAdmin,
   resourceController.adminCreatePopularResource,
 );
 router.patch(
   "/popular/:slug",
-  requireFocuraAdmin,
+  requireGabluraAdmin,
   resourceController.adminUpdatePopularResource,
 );
 router.delete(
   "/popular/:slug",
-  requireFocuraAdmin,
+  requireGabluraAdmin,
   resourceController.adminDeletePopularResource,
 );
 
 router.get(
   "/product-updates",
-  requireFocuraAdmin,
+  requireGabluraAdmin,
   resourceController.adminListProductUpdates,
 );
 router.get(
   "/product-updates/:slug",
-  requireFocuraAdmin,
+  requireGabluraAdmin,
   resourceController.adminGetProductUpdate,
 );
 router.post(
   "/product-updates",
-  requireFocuraAdmin,
+  requireGabluraAdmin,
   resourceController.adminCreateProductUpdate,
 );
 router.patch(
   "/product-updates/:slug",
-  requireFocuraAdmin,
+  requireGabluraAdmin,
   resourceController.adminUpdateProductUpdate,
 );
 router.delete(
   "/product-updates/:slug",
-  requireFocuraAdmin,
+  requireGabluraAdmin,
   resourceController.adminDeleteProductUpdate,
 );
 export default router;

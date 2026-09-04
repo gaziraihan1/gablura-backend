@@ -62,7 +62,7 @@ import { timeEntryRouter } from "./modules/timeEntry/index.js";
 import { integrationRouter, workspaceIntegrationRouter, integrationWebhookRouter } from "./modules/integration/index.js";
 import { initQueueWorkers, closeQueueWorkers } from "./queue/index.js";
 import { applySecurity } from "./middleware/securityHeaders.js";
-import { requireFocuraAdmin } from "./middleware/focuraAdmin.js";
+import { requireGabluraAdmin } from "./middleware/focuraAdmin.js";
 
 // Initialize Sentry for error tracking
 initSentry();
@@ -320,7 +320,7 @@ app.use(
 );
 app.use("/api/v1/meetings", authenticate, sessionTimeout, requireCsrfToken(), meetingRoutes);
 app.use("/api/v1/features", authenticate, sessionTimeout, requireCsrfToken(), featureRouter);
-app.use("/api/v1/admin", authenticate, sessionTimeout, requireCsrfToken(), requireFocuraAdmin, adminRouter);
+app.use("/api/v1/admin", authenticate, sessionTimeout, requireCsrfToken(), requireGabluraAdmin, adminRouter);
 
 app.use(notFoundHandler);  // catches unmatched routes → forwards to errorHandler
 app.use(errorHandler); 

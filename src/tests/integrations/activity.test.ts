@@ -107,7 +107,7 @@ describe('GET /api/v1/activities', () => {
     expect(res.body.data.length).toBeGreaterThan(0);
   });
 
-  it('excludes Focura-admin audit rows (e.g. AI cap changes) from the user feed', async () => {
+  it('excludes Gablura-admin audit rows (e.g. AI cap changes) from the user feed', async () => {
     await createActivity(user.id, workspace.id, {
       taskId: task.id,
     });
@@ -121,7 +121,7 @@ describe('GET /api/v1/activities', () => {
         workspaceId: workspace.id,
         workspaceSlug: workspace.slug,
         metadata: {
-          source: 'focura-admin',
+          source: 'gablura-admin',
           changes: {
             aiDailyCalls: { from: null, to: 9000 },
           },
@@ -136,7 +136,7 @@ describe('GET /api/v1/activities', () => {
     expect(res.status).toBe(200);
     expect(res.body.data.length).toBeGreaterThan(0);
     expect(
-      res.body.data.some((a: any) => a.metadata?.source === 'focura-admin'),
+      res.body.data.some((a: any) => a.metadata?.source === 'gablura-admin'),
     ).toBe(false);
   });
 
@@ -179,7 +179,7 @@ describe('GET /api/v1/activities/workspace/:workspaceId', () => {
     expect(res.body.data.length).toBeGreaterThan(0);
   });
 
-  it('shows workspace-limit changes (Focura-admin audit rows) to the workspace owner', async () => {
+  it('shows workspace-limit changes (Gablura-admin audit rows) to the workspace owner', async () => {
     await createActivity(user.id, workspace.id);
     await prisma.activity.create({
       data: {
@@ -190,7 +190,7 @@ describe('GET /api/v1/activities/workspace/:workspaceId', () => {
         workspaceId: workspace.id,
         workspaceSlug: workspace.slug,
         metadata: {
-          source: 'focura-admin',
+          source: 'gablura-admin',
           changes: {
             aiMonthlyTokens: { from: 500000, to: 100000000 },
           },
@@ -205,11 +205,11 @@ describe('GET /api/v1/activities/workspace/:workspaceId', () => {
     expect(res.status).toBe(200);
     expect(res.body.data.length).toBeGreaterThan(0);
     expect(
-      res.body.data.some((a: any) => a.metadata?.source === 'focura-admin'),
+      res.body.data.some((a: any) => a.metadata?.source === 'gablura-admin'),
     ).toBe(true);
   });
 
-  it('shows workspace-limit changes (Focura-admin audit rows) to workspace admins', async () => {
+  it('shows workspace-limit changes (Gablura-admin audit rows) to workspace admins', async () => {
     await createActivity(user.id, workspace.id);
     await prisma.activity.create({
       data: {
@@ -220,7 +220,7 @@ describe('GET /api/v1/activities/workspace/:workspaceId', () => {
         workspaceId: workspace.id,
         workspaceSlug: workspace.slug,
         metadata: {
-          source: 'focura-admin',
+          source: 'gablura-admin',
           changes: {
             maxStorage: { from: 1024, to: 20000 },
           },
@@ -237,11 +237,11 @@ describe('GET /api/v1/activities/workspace/:workspaceId', () => {
 
     expect(res.status).toBe(200);
     expect(
-      res.body.data.some((a: any) => a.metadata?.source === 'focura-admin'),
+      res.body.data.some((a: any) => a.metadata?.source === 'gablura-admin'),
     ).toBe(true);
   });
 
-  it('hides workspace-limit changes (Focura-admin audit rows) from regular members', async () => {
+  it('hides workspace-limit changes (Gablura-admin audit rows) from regular members', async () => {
     await createActivity(user.id, workspace.id);
     await prisma.activity.create({
       data: {
@@ -252,7 +252,7 @@ describe('GET /api/v1/activities/workspace/:workspaceId', () => {
         workspaceId: workspace.id,
         workspaceSlug: workspace.slug,
         metadata: {
-          source: 'focura-admin',
+          source: 'gablura-admin',
           changes: {
             aiDailyCalls: { from: null, to: 9000 },
           },
@@ -270,7 +270,7 @@ describe('GET /api/v1/activities/workspace/:workspaceId', () => {
     expect(res.status).toBe(200);
     expect(res.body.data.length).toBeGreaterThan(0);
     expect(
-      res.body.data.some((a: any) => a.metadata?.source === 'focura-admin'),
+      res.body.data.some((a: any) => a.metadata?.source === 'gablura-admin'),
     ).toBe(false);
   });
 
@@ -289,7 +289,7 @@ describe('GET /api/v1/activities/workspace/:workspaceId', () => {
         workspaceId: workspace.id,
         workspaceSlug: workspace.slug,
         metadata: {
-          source: 'focura-admin',
+          source: 'gablura-admin',
           changes: {
             plan: { from: 'PRO', to: 'ENTERPRISE' },
           },
@@ -305,7 +305,7 @@ describe('GET /api/v1/activities/workspace/:workspaceId', () => {
     expect(res.status).toBe(200);
     expect(res.body.data.length).toBeGreaterThan(0);
     expect(
-      res.body.data.some((a: any) => a.metadata?.source === 'focura-admin'),
+      res.body.data.some((a: any) => a.metadata?.source === 'gablura-admin'),
     ).toBe(false);
   });
 

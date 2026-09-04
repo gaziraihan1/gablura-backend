@@ -12,11 +12,11 @@ export class EmailSendError extends Error {
 // ─── Shared helpers ──────────────────────────────────────────────────────────
 
 export function getFromAddress(): string {
-  return process.env.SMTP_FROM ?? process.env.SMTP_USER ?? "noreply@focura.app";
+  return process.env.SMTP_FROM ?? process.env.SMTP_USER ?? "noreply@gablura.app";
 }
 
 export function getClientUrl(): string {
-  return process.env.CLIENT_URL || process.env.FRONTEND_URL || "https://focura.app";
+  return process.env.CLIENT_URL || process.env.FRONTEND_URL || "https://gablura.app";
 }
 
 // ─── Singleton transporter (SMTP_* env vars) ────────────────────────────────
@@ -68,7 +68,7 @@ export function baseWrapper(content: string): string {
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Focura</title>
+  <title>Gablura</title>
 </head>
 <body style="margin:0;padding:0;background:#f5f5f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
   <table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f5f5;padding:40px 0;">
@@ -78,7 +78,7 @@ export function baseWrapper(content: string): string {
           <!-- Header -->
           <tr>
             <td style="background:#0a0a0a;border-radius:12px 12px 0 0;padding:28px 36px;">
-              <span style="font-size:20px;font-weight:700;color:#ffffff;letter-spacing:-0.5px;">Focura</span>
+              <span style="font-size:20px;font-weight:700;color:#ffffff;letter-spacing:-0.5px;">Gablura</span>
             </td>
           </tr>
           <!-- Body -->
@@ -91,7 +91,7 @@ export function baseWrapper(content: string): string {
           <tr>
             <td style="padding:24px 0;text-align:center;">
               <p style="margin:0;font-size:12px;color:#a3a3a3;">
-                \u00a9 ${year} Focura \u00b7
+                \u00a9 ${year} Gablura \u00b7
                 <a href="${clientUrl}" style="color:#a3a3a3;">${displayUrl}</a>
               </p>
             </td>
@@ -109,7 +109,7 @@ export function baseWrapper(content: string): string {
 export function plainTextFooter(): string {
   const year = new Date().getFullYear();
   const clientUrl = getClientUrl();
-  return `\n\n\u2014\n\u00a9 ${year} Focura \u00b7 ${clientUrl}`;
+  return `\n\n\u2014\n\u00a9 ${year} Gablura \u00b7 ${clientUrl}`;
 }
 
 // ─── HTML escaping (lightweight, no dependency) ──────────────────────────────

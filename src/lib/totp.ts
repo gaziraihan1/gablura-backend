@@ -1,6 +1,6 @@
 import { generateSecret as otpGenerateSecret, generateURI, verify as otpVerify } from 'otplib';
 
-const ISSUER = 'Focura';
+const ISSUER = 'Gablura';
 
 export function generateTOTPSecret(): string {
   return otpGenerateSecret();

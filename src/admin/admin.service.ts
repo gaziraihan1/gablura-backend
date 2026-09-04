@@ -1,6 +1,6 @@
 import { WorkspacePlan } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
-import { isFocuraAdmin, isFocuraAdminUser } from "../config/admin.config.js";
+import { isGabluraAdmin, isGabluraAdminUser } from "../config/admin.config.js";
 
 import {
   ForbiddenError,
@@ -25,9 +25,9 @@ import { ActivityMutation } from "../modules/activity/activity.mutation.js";
 
 // ─── Guards ────────────────────────────────────────────────────────────────────
 
-export function assertFocuraAdmin(userId: string, role: string): void {
-  if (!isFocuraAdminUser(role, userId)) {
-    throw new ForbiddenError("Focura admin access required");
+export function assertGabluraAdmin(userId: string, role: string): void {
+  if (!isGabluraAdminUser(role, userId)) {
+    throw new ForbiddenError("Gablura admin access required");
   }
 }
 
@@ -155,7 +155,7 @@ export async function serviceUpdateWorkspaceLimits(
         userId:        adminId,
         workspaceId:   workspace.id,
         workspaceSlug: workspace.slug,
-        metadata:      { source: "focura-admin", changes },
+        metadata:      { source: "gablura-admin", changes },
       });
     } catch (e) {
       // Audit logging must never fail the limits update itself.
@@ -178,7 +178,7 @@ export async function serviceUpdateWorkspaceLimits(
       senderId:  adminId,
       type:      "PROJECT_UPDATE",
       title:     "📦 Workspace Limits Updated",
-      message:   `A Focura admin updated "${workspace.name}": ${summaryText}.`,
+      message:   `A Gablura admin updated "${workspace.name}": ${summaryText}.`,
       actionUrl: "/dashboard",
     }).catch((e) => console.error("Workspace limits notification failed:", e));
 
@@ -204,8 +204,8 @@ export async function serviceBanUser(
   adminId:  string,
   reason:   string,
 ): Promise<void> {
-  if (isFocuraAdmin(targetId)) {
-    throw new ForbiddenError("Cannot ban another Focura admin");
+  if (isGabluraAdmin(targetId)) {
+    throw new ForbiddenError("Cannot ban another Gablura admin");
   }
 
   const user = await queryUserForGuard(targetId);
@@ -262,7 +262,7 @@ export async function serviceDeleteWorkspace(
       senderId:  adminId,
       type:      "PROJECT_UPDATE",
       title:     "⚠️ Workspace Suspended",
-      message:   `Your workspace "${workspace.name}" has been suspended by Focura admin.${reason ? ` Reason: ${reason}` : ""}`,
+      message:   `Your workspace "${workspace.name}" has been suspended by Gablura admin.${reason ? ` Reason: ${reason}` : ""}`,
       actionUrl: "/dashboard",
     }).catch((e) =>
       console.error("Workspace suspend notification failed:", e),
@@ -306,7 +306,7 @@ export async function serviceRestoreWorkspace(
     senderId:  adminId,
     type:      "PROJECT_UPDATE",
     title:     "✅ Workspace Restored",
-    message:   "Your workspace has been restored by Focura admin.",
+    message:   "Your workspace has been restored by Gablura admin.",
     actionUrl: "/dashboard",
   }).catch((e) => console.error("Workspace restore notification failed:", e));
 }

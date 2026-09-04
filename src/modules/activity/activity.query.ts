@@ -18,15 +18,15 @@ type ActivitySlim = Prisma.ActivityGetPayload<{ include: typeof activitySlimIncl
 type ActivityUserOnly = Prisma.ActivityGetPayload<{ include: typeof activityUserOnlyInclude }>;
 
 /**
- * Focura-admin audit rows (metadata.source === 'focura-admin', e.g. workspace
+ * Gablura-admin audit rows (metadata.source === 'gablura-admin', e.g. workspace
  * limits / AI cap changes) are excluded from user-facing feeds — they surface
  * only in the admin activity log. Filtered in app code because a SQL
- * `NOT (json->>'source' = 'focura-admin')` is NULL for rows without the key
+ * `NOT (json->>'source' = 'gablura-admin')` is NULL for rows without the key
  * and would silently drop them too.
  */
 function isAdminAuditRow(metadata: Prisma.JsonValue | null): boolean {
   if (!metadata || typeof metadata !== 'object') return false;
-  return (metadata as Record<string, unknown>).source === 'focura-admin';
+  return (metadata as Record<string, unknown>).source === 'gablura-admin';
 }
 
 export const ActivityQuery = {
@@ -82,7 +82,7 @@ export const ActivityQuery = {
   ): Promise<ActivitySlim[]> {
     const cacheKey = CACHE_KEYS.activityWorkspaceList(workspaceId);
 
-    // The admin variant (workspace owners/admins) includes Focura-admin audit
+    // The admin variant (workspace owners/admins) includes Gablura-admin audit
     // rows, so it must not share the member cache — read fresh from the DB.
     if (!opts?.includeAdminRows) {
       const cached = await CacheClient.get<ActivitySlim[]>(cacheKey);

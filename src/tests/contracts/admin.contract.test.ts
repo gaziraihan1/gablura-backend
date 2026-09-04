@@ -18,13 +18,13 @@ vi.mock('../../middleware/auth.js', () => ({
 }));
 
 vi.mock('../../middleware/focuraAdmin.js', () => ({
-  requireFocuraAdmin: (req: any, res: any, next: any) => next(),
+  requireGabluraAdmin: (req: any, res: any, next: any) => next(),
 }));
 
 vi.mock('../../config/admin.config.js', () => ({
-  isFocuraAdmin: vi.fn((userId: string) => userId === 'test-admin-id'),
-  isFocuraAdminUser: vi.fn((role: string, userId: string) => userId === 'test-admin-id'),
-  getFocuraAdminIds: vi.fn(() => ['test-admin-id']),
+  isGabluraAdmin: vi.fn((userId: string) => userId === 'test-admin-id'),
+  isGabluraAdminUser: vi.fn((role: string, userId: string) => userId === 'test-admin-id'),
+  getGabluraAdminIds: vi.fn(() => ['test-admin-id']),
 }));
 
 vi.mock('../../middleware/csrf.js', () => ({

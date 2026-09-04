@@ -33,7 +33,7 @@ function buildInvitationHtml(params: {
     <p style="margin:0 0 16px;font-size:14px;color:#525252;line-height:1.7;">Hi ${greeting},</p>
     <p style="margin:0 0 16px;font-size:14px;color:#525252;line-height:1.7;">
       <strong>${safeSender}</strong> has invited you to join the
-      <strong>${safeWorkspace}</strong> workspace on Focura.
+      <strong>${safeWorkspace}</strong> workspace on Gablura.
     </p>
     <table cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
       <tr>
@@ -50,7 +50,7 @@ function buildInvitationHtml(params: {
       <br />
       <span style="color:#0a0a0a;font-size:12px;word-break:break-all;">${escape(inviteLink)}</span>
     </p>
-    <p style="margin:0;font-size:13px;color:#737373;">— The Focura Team</p>
+    <p style="margin:0;font-size:13px;color:#737373;">— The Gablura Team</p>
   `);
 }  function buildInvitationText(params: {
   inviteLink: string;
@@ -64,11 +64,11 @@ function buildInvitationHtml(params: {
   return [
     `Hi ${greeting},`,
     "",
-    `${senderName} has invited you to join the ${workspaceName} workspace on Focura.`,
+    `${senderName} has invited you to join the ${workspaceName} workspace on Gablura.`,
     "",
     `Accept: ${inviteLink}`,
     "",
-    "— The Focura Team",
+    "— The Gablura Team",
   ].join("\n") + plainTextFooter();
 }
 
@@ -80,7 +80,7 @@ export async function sendInvitationEmail(
 ): Promise<void> {
   const clientUrl = getClientUrl();
   const inviteLink = `${clientUrl}/invitations/${invitation.token}`;
-  const senderName = invitation.senderName ?? "A Focura user";
+  const senderName = invitation.senderName ?? "A Gablura user";
   const workspaceName = invitation.workspaceName ?? "a workspace";
 
   const transporter = getTransporter();
@@ -91,9 +91,9 @@ export async function sendInvitationEmail(
 
   try {
     await transporter.sendMail({
-      from: `"Focura" <${getFromAddress()}>`,
+      from: `"Gablura" <${getFromAddress()}>`,
       to: email,
-      subject: `${senderName} invited you to join ${workspaceName} on Focura`,
+      subject: `${senderName} invited you to join ${workspaceName} on Gablura`,
       html: buildInvitationHtml({ inviteLink, senderName, workspaceName, toName: invitation.toName }),
       text: buildInvitationText({ inviteLink, senderName, workspaceName, toName: invitation.toName }),
     });
@@ -120,14 +120,14 @@ export async function sendDataExportEmail(params: {
 
   try {
     await transporter.sendMail({
-      from: `"Focura" <${getFromAddress()}>`,
+      from: `"Gablura" <${getFromAddress()}>`,
       to: toEmail,
-      subject: "Your Focura data export is ready",
+      subject: "Your Gablura data export is ready",
       html: baseWrapper(`
         <h2 style="margin:0 0 8px;font-size:18px;font-weight:700;color:#0a0a0a;">Your data export is ready</h2>
         <p style="margin:0 0 16px;font-size:14px;color:#525252;line-height:1.7;">Hi ${greeting},</p>
         <p style="margin:0 0 16px;font-size:14px;color:#525252;line-height:1.7;">
-          As requested, here is a JSON export of your Focura account data — your
+          As requested, here is a JSON export of your Gablura account data — your
           profile, workspaces, projects, tasks, comments, focus sessions, time
           entries, notifications, and activity.
         </p>
@@ -138,23 +138,23 @@ export async function sendDataExportEmail(params: {
         <p style="margin:0 0 8px;font-size:13px;color:#737373;line-height:1.6;">
           Exports are generated on request from Settings &rarr; Account &rarr; Privacy.
           If you didn&rsquo;t request this export, contact
-          <a href="mailto:privacy@focura.app" style="color:#0a0a0a;">privacy@focura.app</a>.
+          <a href="mailto:privacy@gablura.app" style="color:#0a0a0a;">privacy@gablura.app</a>.
         </p>
-        <p style="margin:0;font-size:13px;color:#737373;">— The Focura Team</p>
+        <p style="margin:0;font-size:13px;color:#737373;">— The Gablura Team</p>
       `),
       text: [
         "Your data export is ready",
         "",
         `Hi ${greeting},`,
         "",
-        "As requested, here is a JSON export of your Focura account data — profile, workspaces, projects, tasks, comments, focus sessions, time entries, notifications, and activity.",
+        "As requested, here is a JSON export of your Gablura account data — profile, workspaces, projects, tasks, comments, focus sessions, time entries, notifications, and activity.",
         "",
         `The file is attached as ${fileName}. Keep it somewhere safe — it contains personal data.`,
         "",
         "Exports are generated on request from Settings > Account > Privacy.",
-        "If you didn't request this export, contact privacy@focura.app.",
+        "If you didn't request this export, contact privacy@gablura.app.",
         "",
-        "— The Focura Team",
+        "— The Gablura Team",
       ].join("\n") + plainTextFooter(),
       attachments: [
         {

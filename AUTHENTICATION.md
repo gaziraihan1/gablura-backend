@@ -1,6 +1,6 @@
 # Authentication System
 
-This is the **canonical** authentication document for Focura. It covers the full system: the Express backend (JWT flows, token exchange, SSE, rate limiting, lockout, audit) and the Next.js/React client (NextAuth integration, interceptors, protected routes, multi-tab coordination). It supersedes the retired `FRONTEND_AUTH_GUIDE.md` — the client is implemented and the code documents itself (see `lib/auth/` and `lib/axios/`).
+This is the **canonical** authentication document for Gablura. It covers the full system: the Express backend (JWT flows, token exchange, SSE, rate limiting, lockout, audit) and the Next.js/React client (NextAuth integration, interceptors, protected routes, multi-tab coordination). It supersedes the retired `FRONTEND_AUTH_GUIDE.md` — the client is implemented and the code documents itself (see `lib/auth/` and `lib/axios/`).
 
 ---
 
@@ -66,7 +66,7 @@ Browser                  Next.js (NextAuth)           Express Backend
 |-----------|------------------------------|
 | Algorithm | RS256                        |
 | Expiry    | 15 minutes                   |
-| Audience  | `focura-backend`             |
+| Audience  | `-backend`             |
 | Stored    | Inside NextAuth session (HTTP-only cookie) |
 
 **Payload:**
@@ -447,15 +447,15 @@ receives a "temporarily locked" message on the login page. Audit events:
 | Failure-count window | 60 minutes |
 
 **Redis keys:**
-- `focura:lockout:failures:<email>` — incrementing failure counter (60-min window)
-- `focura:lockout:locked:<email>` — lock flag (15-min TTL)
+- `:lockout:failures:<email>` — incrementing failure counter (60-min window)
+- `:lockout:locked:<email>` — lock flag (15-min TTL)
 
 ### Concurrent Session Management
 
 Each user is limited to **5 active sessions**. On the 6th login, the least-active session is evicted and tombstoned.
 
 - Tracked via `user:sessions:<userId>` (Redis set) plus `session:metadata:<sessionId>`
-- The evicted session's tokens can no longer authenticate or refresh (`focura:session:revoked:<sessionId>` tombstone)
+- The evicted session's tokens can no longer authenticate or refresh (`:session:revoked:<sessionId>` tombstone)
 
 ### Session Revocation on Credential Changes
 
@@ -466,7 +466,7 @@ Each user is limited to **5 active sessions**. On the 6th login, the least-activ
 
 A Redis-based lock prevents duplicate refresh token rotation across multiple backend instances.
 
-**Redis key:** `focura:refresh:lock:<sessionId>`
+**Redis key:** `:refresh:lock:<sessionId>`
 **TTL:** 10 seconds
 
 If a refresh request arrives while another is in-flight for the same session, the second request waits for the first to complete and reuses its result.
@@ -481,7 +481,7 @@ All state-changing requests (POST, PUT, PATCH, DELETE) require a CSRF token in t
 GET /api/v1/csrf-token → { csrfToken: "random-32-byte-hex" }
 ```
 
-The token is generated per-session, stored in Redis (`focura:csrf:<sessionId>`, 30-min TTL), and verified via timing-safe comparison.
+The token is generated per-session, stored in Redis (`:csrf:<sessionId>`, 30-min TTL), and verified via timing-safe comparison.
 
 ---
 
@@ -647,25 +647,25 @@ In production, pipe stdout to your SIEM (Datadog, CloudWatch, Splunk).
 
 ## Redis Key Schema
 
-All keys are prefixed with `focura:` to avoid collisions.
+All keys are prefixed with `:` to avoid collisions.
 
 | Key pattern                        | TTL       | Purpose                        |
 |------------------------------------|-----------|--------------------------------|
-| `focura:revoked:access:<jti>`      | 900s      | Revoked access token JTIs      |
-| `focura:refresh:<userId>:<jti>`    | 7 days    | Valid refresh token JTIs       |
-| `focura:refresh:index:<userId>`    | no TTL*   | Set of refresh-token keys per user for fast revoke-all |
-| `focura:refresh:result:<userId>:<oldJti>` | 30s | Cached refresh response for idempotent duplicate refresh handling |
-| `focura:refresh:lock:<sessionId>`  | 45s       | Distributed lock for refresh rotation |
-| `focura:rl:<key>`                  | 60s       | Rate limiting sliding window   |
+| `:revoked:access:<jti>`      | 900s      | Revoked access token JTIs      |
+| `:refresh:<userId>:<jti>`    | 7 days    | Valid refresh token JTIs       |
+| `:refresh:index:<userId>`    | no TTL*   | Set of refresh-token keys per user for fast revoke-all |
+| `:refresh:result:<userId>:<oldJti>` | 30s | Cached refresh response for idempotent duplicate refresh handling |
+| `:refresh:lock:<sessionId>`  | 45s       | Distributed lock for refresh rotation |
+| `:rl:<key>`                  | 60s       | Rate limiting sliding window   |
 | `session:metadata:<sessionId>`     | 7 days    | Device + IP fingerprint + last activity |
 | `session:created:<sessionId>`      | 7 days    | Absolute session lifetime marker |
 | `session:activity:<sessionId>`     | 7 days    | Inactivity tracking              |
-| `focura:session:revoked:<sessionId>` | 7 days | Tombstone for evicted/revoked sessions |
-| `focura:lockout:failures:<email>`  | 60 min    | Failed login attempt counter     |
-| `focura:lockout:locked:<email>`    | 15 min    | Account lockout flag             |
-| `focura:csrf:<sessionId>`          | 30 min    | CSRF token per session         |
-| `focura:sse:<jti>`                 | 30s       | Single-use SSE token binding   |
-| `focura:db:pool:metrics`           | 10s       | Database connection pool stats |
+| `:session:revoked:<sessionId>` | 7 days | Tombstone for evicted/revoked sessions |
+| `:lockout:failures:<email>`  | 60 min    | Failed login attempt counter     |
+| `:lockout:locked:<email>`    | 15 min    | Account lockout flag             |
+| `:csrf:<sessionId>`          | 30 min    | CSRF token per session         |
+| `:sse:<jti>`                 | 30s       | Single-use SSE token binding   |
+| `:db:pool:metrics`           | 10s       | Database connection pool stats |
 
 \* Index members are updated on token store/rotate/revoke; key is removed on revoke-all.
 
@@ -795,7 +795,7 @@ if (!session) redirect("/authentication/login");
 
 ### Multi-tab
 
-- Tabs coordinate through a `BroadcastChannel` (`focura-auth`, see `lib/axios/broadcast.ts`) using `refresh-start` / `refresh-complete` / `logout-all` events.
+- Tabs coordinate through a `BroadcastChannel` (`-auth`, see `lib/axios/broadcast.ts`) using `refresh-start` / `refresh-complete` / `logout-all` events.
 - Only one tab refreshes at a time; the others queue or wait for the completion event.
 - A `logout-all` event from any tab stops timers, invalidates the token cache, and (in the initiating tab) performs the redirect.
 - A **hidden tab never kills the session** — inactivity enforcement and heartbeat pings are suspended while hidden; on becoming visible the tab re-syncs with the live session before restarting timers.

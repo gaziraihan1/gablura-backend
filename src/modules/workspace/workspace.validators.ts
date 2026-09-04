@@ -11,7 +11,7 @@ export const createWorkspaceSchema = z.object({
   isPublic: z.boolean().optional(),
   // NOTE: `plan` is deliberately NOT part of the create schema. Workspaces
   // always start on FREE; a paid tier can only be granted by the billing
-  // flow (upgrade/checkout/webhook) or a Focura admin (limits endpoint).
+  // flow (upgrade/checkout/webhook) or a Gablura admin (limits endpoint).
   // Any client-sent `plan` is stripped by Zod (non-strict) and ignored.
 });
 

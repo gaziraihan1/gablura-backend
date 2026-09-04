@@ -58,7 +58,7 @@ type ValidationSource = "body" | "query" | "params";
  * errorHandler and comes back to the client as a 400 with a field-level
  * `errors` array — same shape errorHandler already special-cases.
  *
- * If you already have a Zod-interception middleware elsewhere in Focura,
+ * If you already have a Zod-interception middleware elsewhere in Gablura,
  * reuse that one instead — this is a drop-in if you don't.
  */
 declare module "express-serve-static-core" {

@@ -166,7 +166,7 @@ router.post(
       return res.status(400).json({ success: false, error: "Invalid verification code. Please try again." });
     }
     try {
-      await getRedisClient().setex(`focura:2fa:verified:${userId}`, 600, "1");
+      await getRedisClient().setex(`gablura:2fa:verified:${userId}`, 600, "1");
     } catch (err) {
       console.error("[2fa-verify] Failed to set Redis marker:", err);
       return res.status(503).json({ success: false, error: "Verification service unavailable. Please try again." });
@@ -179,7 +179,7 @@ router.post("/2fa-check", validate(internal2FACheckSchema, "body"), asyncHandler
   const { userId } = req.body;
   let verified = false;
   try {
-    verified = (await getRedisClient().exists(`focura:2fa:verified:${userId}`)) === 1;
+    verified = (await getRedisClient().exists(`gablura:2fa:verified:${userId}`)) === 1;
   } catch {
     // Redis down → fail closed: 2FA must never be skipped.
   }

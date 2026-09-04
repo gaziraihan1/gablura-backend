@@ -32,13 +32,13 @@ function buildWorkspaceDeletedHtml(params: {
       <h2 style="margin:0 0 8px;font-size:18px;font-weight:700;color:#0a0a0a;">Workspace Permanently Deleted</h2>
       <p style="margin:0 0 16px;font-size:14px;color:#525252;line-height:1.7;">Hi ${safeName},</p>
       <p style="margin:0 0 16px;font-size:14px;color:#525252;line-height:1.7;">
-        Your Focura workspace <strong>${safeWorkspace}</strong> has been
+        Your Gablura workspace <strong>${safeWorkspace}</strong> has been
         <strong style="color:#dc2626;">permanently deleted</strong> by our admin team.
       </p>
       ${safeReason ? `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:14px 16px;margin-bottom:16px;"><p style="margin:0;font-size:13px;color:#991b1b;"><strong>Reason:</strong> ${safeReason}</p></div>` : ""}
       <p style="margin:0 0 16px;font-size:14px;color:#525252;line-height:1.7;">All data associated with this workspace has been removed and cannot be recovered.</p>
       <p style="margin:0 0 8px;font-size:14px;color:#525252;line-height:1.7;">If you believe this was a mistake, please contact support.</p>
-      <p style="margin:0;font-size:14px;color:#525252;">— The Focura Team</p>
+      <p style="margin:0;font-size:14px;color:#525252;">— The Gablura Team</p>
     `);
   }
 
@@ -46,12 +46,12 @@ function buildWorkspaceDeletedHtml(params: {
     <h2 style="margin:0 0 8px;font-size:18px;font-weight:700;color:#0a0a0a;">Workspace Suspended</h2>
     <p style="margin:0 0 16px;font-size:14px;color:#525252;line-height:1.7;">Hi ${safeName},</p>
     <p style="margin:0 0 16px;font-size:14px;color:#525252;line-height:1.7;">
-      Your Focura workspace <strong>${safeWorkspace}</strong> has been
+      Your Gablura workspace <strong>${safeWorkspace}</strong> has been
       <strong style="color:#f59e0b;">suspended</strong> by our admin team.
     </p>
     ${safeReason ? `<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:14px 16px;margin-bottom:16px;"><p style="margin:0;font-size:13px;color:#92400e;"><strong>Reason:</strong> ${safeReason}</p></div>` : ""}
     <p style="margin:0 0 8px;font-size:14px;color:#525252;line-height:1.7;">If you believe this was a mistake, please contact support.</p>
-    <p style="margin:0;font-size:14px;color:#525252;">— The Focura Team</p>
+    <p style="margin:0;font-size:14px;color:#525252;">— The Gablura Team</p>
   `);
 }
 
@@ -84,11 +84,11 @@ function buildWorkspaceLimitsHtml(params: {
     <h2 style="margin:0 0 8px;font-size:18px;font-weight:700;color:#0a0a0a;">Your Workspace Limits Were Updated</h2>
     <p style="margin:0 0 16px;font-size:14px;color:#525252;line-height:1.7;">Hi ${safeName},</p>
     <p style="margin:0 0 16px;font-size:14px;color:#525252;line-height:1.7;">
-      A Focura admin updated the limits for your workspace <strong>${safeWorkspace}</strong>:
+      A Gablura admin updated the limits for your workspace <strong>${safeWorkspace}</strong>:
     </p>
     <table role="presentation" style="width:100%;border-collapse:collapse;margin-bottom:16px;">${rows}</table>
     <p style="margin:0 0 8px;font-size:14px;color:#525252;line-height:1.7;">You can view your current plan and AI limits from the workspace settings.</p>
-    <p style="margin:0;font-size:14px;color:#525252;">— The Focura Team</p>
+    <p style="margin:0;font-size:14px;color:#525252;">— The Gablura Team</p>
   `);
 }
 
@@ -101,13 +101,13 @@ function buildWorkspaceLimitsText(params: {
   return [
     `Hi ${toName},`,
     "",
-    `A Focura admin updated the limits for your workspace "${workspaceName}":`,
+    `A Gablura admin updated the limits for your workspace "${workspaceName}":`,
     "",
     ...changes.map((c) => `  ${c.label}: ${c.from} → ${c.to}`),
     "",
     "You can view your current plan and AI limits from the workspace settings.",
     "",
-    "— The Focura Team",
+    "— The Gablura Team",
   ].join("\n") + plainTextFooter();
 }
 
@@ -120,13 +120,13 @@ function buildBanHtml(params: { toName: string; reason: string }): string {
     <h2 style="margin:0 0 8px;font-size:18px;font-weight:700;color:#0a0a0a;">Account Suspended</h2>
     <p style="margin:0 0 16px;font-size:14px;color:#525252;line-height:1.7;">Hi ${safeName},</p>
     <p style="margin:0 0 16px;font-size:14px;color:#525252;line-height:1.7;">
-      Your Focura account has been <strong style="color:#dc2626;">suspended</strong> by our admin team.
+      Your Gablura account has been <strong style="color:#dc2626;">suspended</strong> by our admin team.
     </p>
     <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:14px 16px;margin-bottom:16px;">
       <p style="margin:0;font-size:13px;color:#991b1b;"><strong>Reason:</strong> ${safeReason}</p>
     </div>
     <p style="margin:0 0 8px;font-size:14px;color:#525252;line-height:1.7;">If you believe this was a mistake, please contact support.</p>
-    <p style="margin:0;font-size:14px;color:#525252;">— The Focura Team</p>
+    <p style="margin:0;font-size:14px;color:#525252;">— The Gablura Team</p>
   `);
 }
 
@@ -143,21 +143,21 @@ function buildWorkspaceDeletedText(params: {
     ? [
         `Hi ${toName},`,
         "",
-        `Your Focura workspace "${workspaceName}" has been permanently deleted by our admin team.`,
+        `Your Gablura workspace "${workspaceName}" has been permanently deleted by our admin team.`,
         ...(reason ? [`Reason: ${reason}`, ""] : [""]),
         "All data associated with this workspace has been removed and cannot be recovered.",
         "If you believe this was a mistake, please contact support.",
         "",
-        "— The Focura Team",
+        "— The Gablura Team",
       ]
     : [
         `Hi ${toName},`,
         "",
-        `Your Focura workspace "${workspaceName}" has been suspended by our admin team.`,
+        `Your Gablura workspace "${workspaceName}" has been suspended by our admin team.`,
         ...(reason ? [`Reason: ${reason}`, ""] : [""]),
         "If you believe this was a mistake, please contact support.",
         "",
-        "— The Focura Team",
+        "— The Gablura Team",
       ];
   return lines.join("\n") + plainTextFooter();
 }
@@ -167,12 +167,12 @@ function buildBanText(params: { toName: string; reason: string }): string {
   return [
     `Hi ${toName},`,
     "",
-    "Your Focura account has been suspended by our admin team.",
+    "Your Gablura account has been suspended by our admin team.",
     `Reason: ${reason}`,
     "",
     "If you believe this was a mistake, please contact support.",
     "",
-    "— The Focura Team",
+    "— The Gablura Team",
   ].join("\n") + plainTextFooter();
 }
 
@@ -195,7 +195,7 @@ export async function sendWorkspaceDeletedEmail(params: {
 
   try {
     await transporter.sendMail({
-      from:    `"Focura" <${getFromAddress()}>`,
+      from:    `"Gablura" <${getFromAddress()}>`,
       to:      toEmail,
       subject: params.hardDelete
         ? `Your workspace "${params.workspaceName}" has been permanently deleted`
@@ -225,9 +225,9 @@ export async function sendWorkspaceLimitsChangedEmail(params: {
 
   try {
     await transporter.sendMail({
-      from:    `"Focura" <${getFromAddress()}>`,
+      from:    `"Gablura" <${getFromAddress()}>`,
       to:      toEmail,
-      subject: `Your Focura workspace "${params.workspaceName}" limits were updated`,
+      subject: `Your Gablura workspace "${params.workspaceName}" limits were updated`,
       html:    buildWorkspaceLimitsHtml(params),
       text:    buildWorkspaceLimitsText(params),
     });
@@ -252,9 +252,9 @@ export async function sendBanEmail(params: {
 
   try {
     await transporter.sendMail({
-      from:    `"Focura" <${getFromAddress()}>`,
+      from:    `"Gablura" <${getFromAddress()}>`,
       to:      toEmail,
-      subject: "Your Focura account has been suspended",
+      subject: "Your Gablura account has been suspended",
       html:    buildBanHtml(params),
       text:    buildBanText(params),
     });

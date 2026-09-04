@@ -1,12 +1,12 @@
 import { getRedisClient } from "../../redis/redis.client.js";
 import { parseExpiry, SSE_TOKEN_EXPIRY } from "./backendToken.js";
 
-const refreshIndexKey = (userId: string) => `focura:refresh:index:${userId}`;
-const refreshTokenKey = (userId: string, jti: string) => `focura:refresh:${userId}:${jti}`;
+const refreshIndexKey = (userId: string) => `gablura:refresh:index:${userId}`;
+const refreshTokenKey = (userId: string, jti: string) => `gablura:refresh:${userId}:${jti}`;
 
 export async function revokeAccessToken(jti: string, expiresInSeconds: number): Promise<void> {
   try {
-    await getRedisClient().setex(`focura:revoked:access:${jti}`, expiresInSeconds, "1");
+    await getRedisClient().setex(`gablura:revoked:access:${jti}`, expiresInSeconds, "1");
   } catch (err) {
     console.error("[TokenRevocation] Failed to revoke access token:", err);
   }
@@ -14,7 +14,7 @@ export async function revokeAccessToken(jti: string, expiresInSeconds: number): 
 
 export async function isAccessTokenRevoked(jti: string): Promise<boolean> {
   try {
-    const val = await getRedisClient().get(`focura:revoked:access:${jti}`);
+    const val = await getRedisClient().get(`gablura:revoked:access:${jti}`);
     return val === "1";
   } catch (err) {
     console.error("[TokenRevocation] Failed to check revoked access token:", err);
@@ -63,7 +63,7 @@ export async function revokeAllRefreshTokens(userId: string): Promise<void> {
     if (keys.length === 0) {
       // Fallback: SCAN (not KEYS) to avoid blocking Redis on large keyspaces
       let cursor = '0';
-      const pattern = `focura:refresh:${userId}:*`;
+      const pattern = `gablura:refresh:${userId}:*`;
       do {
         const [nextCursor, found] = await redis.scan(cursor, 'MATCH', pattern, 'COUNT', 100);
         cursor = nextCursor;
@@ -136,7 +136,7 @@ export async function storeSseToken(jti: string, userId: string): Promise<void> 
   // token would always fail at stream-connect time.
   try {
     await getRedisClient().setex(
-      `focura:sse:${jti}`,
+      `gablura:sse:${jti}`,
       parseExpiry(SSE_TOKEN_EXPIRY) / 1000,
       userId,
     );
@@ -152,7 +152,7 @@ export async function storeSseToken(jti: string, userId: string): Promise<void> 
 
 export async function consumeSseToken(jti: string): Promise<string | null> {
   const redis = getRedisClient();
-  const key = `focura:sse:${jti}`;
+  const key = `gablura:sse:${jti}`;
   // Atomic get-and-delete via Lua: exactly ONE concurrent stream connection
   // may consume the token. A naive get-then-del races — two replays could
   // both observe the key before either deletes it. Single round-trip, no
@@ -184,7 +184,7 @@ export async function consumeSseToken(jti: string): Promise<string | null> {
 export async function markSessionRevoked(sessionId: string): Promise<void> {
   try {
     await getRedisClient().setex(
-      `focura:session:revoked:${sessionId}`,
+      `gablura:session:revoked:${sessionId}`,
       7 * 24 * 60 * 60,
       "1",
     );
@@ -196,7 +196,7 @@ export async function markSessionRevoked(sessionId: string): Promise<void> {
 export async function isSessionRevoked(sessionId: string): Promise<boolean> {
   try {
     const val = await getRedisClient().get(
-      `focura:session:revoked:${sessionId}`,
+      `gablura:session:revoked:${sessionId}`,
     );
     return val === "1";
   } catch (err) {

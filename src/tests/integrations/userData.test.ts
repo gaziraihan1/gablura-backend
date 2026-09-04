@@ -59,7 +59,7 @@ afterAll(() => {
 describe("POST /api/v1/user/export-data", () => {
   it("202 — queues a data-export email with the JSON bundle and audits DATA_EXPORT", async () => {
     const { user, workspace } = await createWorkspaceWithOwner({
-      email: "export-me@focura.test",
+      email: "export-me@gablura.test",
       name: "Export Me",
     });
 
@@ -73,12 +73,12 @@ describe("POST /api/v1/user/export-data", () => {
     expect(addSendEmailJob).toHaveBeenCalledTimes(1);
     const job = vi.mocked(addSendEmailJob).mock.calls[0][0];
     expect(job.type).toBe("data-export-email");
-    expect(job.to).toBe("export-me@focura.test");
-    expect(job.data.toEmail).toBe("export-me@focura.test");
-    expect(job.data.fileName).toMatch(/^focura-export-.+\.json$/);
+    expect(job.to).toBe("export-me@gablura.test");
+    expect(job.data.toEmail).toBe("export-me@gablura.test");
+    expect(job.data.fileName).toMatch(/^gablura-export-.+\.json$/);
 
     const bundle = JSON.parse(job.data.json);
-    expect(bundle.profile.email).toBe("export-me@focura.test");
+    expect(bundle.profile.email).toBe("export-me@gablura.test");
     expect(Array.isArray(bundle.workspaces.owned)).toBe(true);
     expect(
       bundle.workspaces.owned.some((w: { id: string }) => w.id === workspace.id)
@@ -135,7 +135,7 @@ describe("DELETE /api/v1/user/account", () => {
   it("200 — OAuth-only accounts (no password) can delete without one", async () => {
     const user = await prisma.user.create({
       data: {
-        email: "oauth-only@focura.test",
+        email: "oauth-only@gablura.test",
         name: "OAuth User",
         role: "USER",
         emailVerified: new Date(),

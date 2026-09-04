@@ -50,7 +50,7 @@ describe('🔐 Auth & Security Journeys', () => {
 
     // Manually clear the deduplication cache to test actual rotation failure (replay detection)
     const { getRedisClient } = await import('../../redis/redis.client.js');
-    const cacheKey = `focura:refresh:result:${user.id}:${extractJti(tokens.refreshToken)}`;
+    const cacheKey = `gablura:refresh:result:${user.id}:${extractJti(tokens.refreshToken)}`;
     await getRedisClient().del(cacheKey);
 
     // Force rotation failure for replay detection test

@@ -32,7 +32,7 @@ export const updateWorkspaceLimitsSchema = z.object({
     .refine((v) => v === -1 || v > 0, {
       message: "maxStorage (MB) must be a positive integer, or -1 for unlimited",
     }),
-  // Focura-admin AI overrides — null (or omitted) = fall back to the plan
+  // Gablura-admin AI overrides — null (or omitted) = fall back to the plan
   // default for the workspace's plan.
   aiDailyCalls: aiOverrideField,
   aiMonthlyTokens: aiOverrideField,

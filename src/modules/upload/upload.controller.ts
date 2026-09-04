@@ -44,7 +44,7 @@ async function handleProfileUpload(req: AuthRequest, res: Response): Promise<voi
   const dataURI = `data:${file.mimetype};base64,${base64}`;
 
   const uploadOptions: Record<string, unknown> = {
-    folder: 'focura/profiles',
+    folder: 'gablura/profiles',
     resource_type: 'auto',
   };
 
@@ -106,7 +106,7 @@ async function handleWorkspaceFileUpload(req: AuthRequest, res: Response): Promi
   const dataURI = `data:${file.mimetype};base64,${base64}`;
 
   const result = await cloudinary.uploader.upload(dataURI, {
-    folder: 'focura/files',
+    folder: 'gablura/files',
     resource_type: 'auto',
   });
 

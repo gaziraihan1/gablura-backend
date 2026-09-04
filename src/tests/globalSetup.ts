@@ -19,8 +19,8 @@ import { writeFileSync, existsSync, unlinkSync, renameSync } from 'fs';
 import { tmpdir }            from 'os';
 import path                  from 'path';
 
-const PRIVATE_KEY_PATH = path.join(tmpdir(), 'focura-test-private.pem');
-const PUBLIC_KEY_PATH  = path.join(tmpdir(), 'focura-test-public.pem');
+const PRIVATE_KEY_PATH = path.join(tmpdir(), 'gablura-test-private.pem');
+const PUBLIC_KEY_PATH  = path.join(tmpdir(), 'gablura-test-public.pem');
 
 export async function setup() {
   // ── 1. Clean up any existing keys ────────────────────────────────────────────

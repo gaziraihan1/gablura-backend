@@ -890,9 +890,9 @@ describe("🚀 End-to-End User Journeys", () => {
      * 6. Admin updates workspace limits
      */
     const adminUser = await createUser({ role: "ADMIN" });
-    // Register the user as a Focura admin for the process
-    const { registerFocuraAdmin } = await import("../factories/index.js");
-    registerFocuraAdmin(adminUser.id);
+    // Register the user as a Gablura admin for the process
+    const { registerGabluraAdmin } = await import("../factories/index.js");
+    registerGabluraAdmin(adminUser.id);
     const adminHeaders = await authWithCsrfHeaders(adminUser, {
       sessionId: `session-admin-${Date.now()}`,
     });

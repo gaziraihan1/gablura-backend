@@ -149,7 +149,7 @@ describe("AiService.autocomplete", () => {
     expect(redis.pipeline).toHaveBeenCalled();
     // Prompt dedupe cache write happened.
     expect(redis.set).toHaveBeenCalledWith(
-      expect.stringMatching(/^focura:ai:cache:/),
+      expect.stringMatching(/^gablura:ai:cache:/),
       expect.any(String),
       "EX",
       3600,
@@ -623,7 +623,7 @@ describe("AiService — monthly budget pre-check (Phase 4)", () => {
   it("rejects with AI_MONTHLY_QUOTA_EXCEEDED when the budget cannot cover the call", async () => {
     const redis = createRedisMock();
     const month = new Date().toISOString().slice(0, 7);
-    await redis.set(`focura:ai:q:tokens:month:${month}:ws:ws-budget-cap`, "3999000");
+    await redis.set(`gablura:ai:q:tokens:month:${month}:ws:ws-budget-cap`, "3999000");
     mockGetRedisClient.mockReturnValue(redis);
 
     await expect(
@@ -636,7 +636,7 @@ describe("AiService — monthly budget pre-check (Phase 4)", () => {
   it("lets calls through when the remaining budget covers the estimate", async () => {
     const redis = createRedisMock();
     const month = new Date().toISOString().slice(0, 7);
-    await redis.set(`focura:ai:q:tokens:month:${month}:ws:ws-budget-ok`, "1000");
+    await redis.set(`gablura:ai:q:tokens:month:${month}:ws:ws-budget-ok`, "1000");
     mockGetRedisClient.mockReturnValue(redis);
 
     await expect(
@@ -784,8 +784,8 @@ describe("AiService.getQuota", () => {
   it("reports usage for a workspace scope", async () => {
     const redis = createRedisMock();
     const today = new Date().toISOString().slice(0, 10);
-    await redis.set(`focura:ai:q:daily:${today}:ws:ws-quota-free`, "10");
-    await redis.set(`focura:ai:q:tokens:daily:${today}:ws:ws-quota-free`, "500");
+    await redis.set(`gablura:ai:q:daily:${today}:ws:ws-quota-free`, "10");
+    await redis.set(`gablura:ai:q:tokens:daily:${today}:ws:ws-quota-free`, "500");
     mockGetRedisClient.mockReturnValue(redis);
     mockPrisma.workspace.findUnique.mockResolvedValue({ plan: "FREE" });
 

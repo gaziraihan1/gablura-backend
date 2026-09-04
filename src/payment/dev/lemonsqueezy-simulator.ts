@@ -112,7 +112,7 @@ function buildSubscriptionPayload(body: SimulateWebhookBody) {
         order_id: parseInt(body.orderId ?? `${Math.floor(100000 + Math.random() * 900000)}`, 10),
         product_id: 10001,
         variant_id: parseInt(variantId.replace(/\D/g, '').slice(0, 8) || '10000001', 10),
-        product_name: `Focura ${planName}`,
+        product_name: `Gablura ${planName}`,
         variant_name: `${planName} - ${cycle}`,
         user_name: 'Dev User',
         user_email: 'dev@example.com',

@@ -444,7 +444,7 @@ describe("GET /api/v1/user/profile", () => {
   it("200 — authenticated user gets their profile without password", async () => {
     const user = await createUser({
       name: "Profile Test",
-      email: "me@focura.test",
+      email: "me@gablura.test",
     });
 
     const res = await request(app)
@@ -453,7 +453,7 @@ describe("GET /api/v1/user/profile", () => {
     const data = res.body.data;
     expect(res.status).toBe(200);
     expect(data.user.id).toBe(user.id);
-    expect(data.user.email).toBe("me@focura.test");
+    expect(data.user.email).toBe("me@gablura.test");
     expect(data.user.password).toBeUndefined();
   });
 

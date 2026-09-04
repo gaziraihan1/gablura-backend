@@ -101,7 +101,7 @@ export async function createJob(data: CreateJobInput, postedById: string) {
       ...data,
       slug,
       postedById,
-      applicationEmail: data.applicationEmail ?? process.env.SUPPORT_EMAIL ?? 'careers@focura.app',
+      applicationEmail: data.applicationEmail ?? process.env.SUPPORT_EMAIL ?? 'careers@gablura.app',
       publishedAt     : data.status === 'OPEN' ? new Date() : null,
     },
   });

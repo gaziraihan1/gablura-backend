@@ -332,7 +332,7 @@ afterEach(async () => {
 });
 
 afterEach(() => {
-  process.env.FOCURA_ADMIN_IDS = '';
+  process.env.GABLURA_ADMIN_IDS = '';
 });
 
 afterAll(async () => {

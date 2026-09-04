@@ -36,7 +36,7 @@ describe('Feature Request API Contract Tests', () => {
   const testUserId = 'test-user-id';
 
   beforeAll(async () => {
-    vi.stubEnv('FOCURA_ADMIN_IDS', testUserId);
+    vi.stubEnv('GABLURA_ADMIN_IDS', testUserId);
     const appModule = await import('../../app.js');
     app = appModule.default;
   });
@@ -131,7 +131,7 @@ describe('Feature Request API Contract Tests', () => {
         },
       });
 
-      process.env.FOCURA_ADMIN_IDS = testUserId;
+      process.env.GABLURA_ADMIN_IDS = testUserId;
       setMockAdmin(true);
       const response = await request(app)
         .patch(`/api/v1/features/${feature.id}/status`)
@@ -151,7 +151,7 @@ describe('Feature Request API Contract Tests', () => {
         },
       });
 
-      process.env.FOCURA_ADMIN_IDS = testUserId;
+      process.env.GABLURA_ADMIN_IDS = testUserId;
       setMockAdmin(true);
       const response = await request(app)
         .delete(`/api/v1/features/${feature.id}`);

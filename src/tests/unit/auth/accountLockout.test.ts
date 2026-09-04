@@ -106,8 +106,8 @@ describe("accountLockout", () => {
       await clearFailedAttempts("user@example.com");
 
       expect(mockRedis.del).toHaveBeenCalledWith(
-        "focura:lockout:failures:user@example.com",
-        "focura:lockout:locked:user@example.com"
+        "gablura:lockout:failures:user@example.com",
+        "gablura:lockout:locked:user@example.com"
       );
     });
   });

@@ -537,7 +537,7 @@ describe('Slack Integration', () => {
       const service = new SlackService('int-1');
       const result = await service.postMessage({
         channel: 'C123',
-        text: 'Hello from Focura!',
+        text: 'Hello from Gablura!',
       });
 
       expect(result).not.toBeNull();
@@ -673,7 +673,7 @@ describe('Slack Integration', () => {
       });
 
       await IntegrationMutation.processWebhookEvent('slack', 'int-1', {
-        command: '/focura',
+        command: '/gablura',
         text: 'create Test task from Slack',
         user_id: 'U123',
         user_name: 'testuser',
@@ -713,7 +713,7 @@ describe('Slack Integration', () => {
       });
 
       await IntegrationMutation.processWebhookEvent('slack', 'int-1', {
-        command: '/focura',
+        command: '/gablura',
         text: 'status',
         user_id: 'U123',
         user_name: 'testuser',
@@ -787,7 +787,7 @@ describe('Slack Integration', () => {
   });
 
   describe('Slack User Resolution', () => {
-    it('should resolve Slack user to Focura user by email', async () => {
+    it('should resolve Slack user to Gablura user by email', async () => {
       const { SlackService } = await import('../../../modules/integration/slack.service.js');
 
       mockFetch.mockResolvedValueOnce({
@@ -802,12 +802,12 @@ describe('Slack Integration', () => {
       });
 
       const { prisma } = await import('../../../lib/prisma.js');
-      (prisma.user.findUnique as any).mockResolvedValue({ id: 'focura-user-1' });
+      (prisma.user.findUnique as any).mockResolvedValue({ id: 'gablura-user-1' });
 
       const service = new SlackService('int-1');
-      const focuraUserId = await service.resolveSlackUserToFocuraUserId('U123');
+      const gabluraUserId = await service.resolveSlackUserToGabluraUserId('U123');
 
-      expect(focuraUserId).toBe('focura-user-1');
+      expect(gabluraUserId).toBe('gablura-user-1');
       expect(prisma.user.findUnique).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { email: 'user@example.com' },
@@ -830,9 +830,9 @@ describe('Slack Integration', () => {
       });
 
       const service = new SlackService('int-1');
-      const focuraUserId = await service.resolveSlackUserToFocuraUserId('U123');
+      const gabluraUserId = await service.resolveSlackUserToGabluraUserId('U123');
 
-      expect(focuraUserId).toBeNull();
+      expect(gabluraUserId).toBeNull();
     });
   });
 

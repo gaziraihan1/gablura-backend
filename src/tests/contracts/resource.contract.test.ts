@@ -22,7 +22,7 @@ vi.mock('../../middleware/auth.js', () => ({
 }));
 
 vi.mock('../../middleware/focuraAdmin.js', () => ({
-  requireFocuraAdmin: (req: any, res: any, next: any) => next(),
+  requireGabluraAdmin: (req: any, res: any, next: any) => next(),
 }));
 
 vi.mock('../../middleware/csrf.js', () => ({

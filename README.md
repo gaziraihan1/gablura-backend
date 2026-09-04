@@ -1,10 +1,10 @@
-# ⚙️ Focura Backend
+# ⚙️ Gablura Backend
 
-> **The core API and business logic layer powering the Focura productivity SaaS.**
+> **The core API and business logic layer powering the Gablura productivity SaaS.**
 
 Built with a **modular monolith architecture** — each domain is fully self-contained with its own routes, controllers, queries, mutations, types, and selects, while sharing a single Express server and Prisma instance.
 
-**Deployment:** https://focura-backend-vr75.onrender.com
+**Deployment:** https://gablura-backend-vr75.onrender.com
 
 ---
 
@@ -148,7 +148,7 @@ src/
 ├── app.ts                      # Express app factory (used by tests)
 │
 ├── config/
-│   └── admin.config.ts         # Focura admin IDs configuration
+│   └── admin.config.ts         # Gablura admin IDs configuration
 │
 ├── middleware/                  # 11 middleware files
 │   ├── auth.ts                 # authenticate, authorize, rateLimitByUser
@@ -158,7 +158,7 @@ src/
 │   ├── sessionTimeout.ts       # 30-min inactivity, 7-day absolute timeout
 │   ├── rateLimiter.ts          # IP-based rate limiting (Redis sorted sets)
 │   ├── dbMonitoring.ts         # DB pool monitoring + guard at 95% utilization
-│   ├── focuraAdmin.ts          # Focura admin middleware
+│   ├── GabluraAdmin.ts          # Gablura admin middleware
 │   ├── upload.ts               # Multer config (10MB, image/doc/zip)
 │   ├── workspaceManage.ts      # Workspace access helpers
 │   └── errorHandler.ts         # Legacy error handler (Prisma codes)
@@ -1128,7 +1128,7 @@ TRELLO_CLIENT_ID=
 TRELLO_CLIENT_SECRET=
 
 # Admin
-FOCURA_ADMIN_IDS=
+GABLURA_ADMIN_IDS=
 
 # Ngrok (development)
 NGROK_AUTH_TOKEN=
@@ -1158,7 +1158,7 @@ The `deploy` script runs: `npm run build && prisma migrate deploy && npm start`
 
 ### Render
 
-Also deployed at https://focura-backend-vr75.onrender.com
+Also deployed at https://gablura-backend-vr75.onrender.com
 
 ### Deploy Command
 
@@ -1185,10 +1185,10 @@ This runs: `tsc && prisma migrate deploy && node dist/index.js`
 
 ## 🔗 Quick Links
 
-- **Backend API:** https://focura-backend-vr75.onrender.com
-- **Health Check:** https://focura-backend-vr75.onrender.com/health
-- **Client Repository:** https://github.com/gaziraihan1/focura-client
-- **Issues:** https://github.com/gaziraihan1/focura-backend/issues
+- **Backend API:** https://gablura-backend-vr75.onrender.com
+- **Health Check:** https://gablura-backend-vr75.onrender.com/health
+- **Client Repository:** https://github.com/gaziraihan1/gablura-client
+- **Issues:** https://github.com/gaziraihan1/gablura-backend/issues
 
 ---
 
@@ -1200,6 +1200,6 @@ This project is currently private / source-available. License details will be ad
 
 ## 👤 Maintainer
 
-**Mohammad Raihan Gazi** — Creator & Maintainer of Focura
+**Mohammad Raihan Gazi** — Creator & Maintainer of Gablura
 
 - GitHub: [@gaziraihan1](https://github.com/gaziraihan1)

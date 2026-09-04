@@ -39,7 +39,7 @@ const row = (overrides: Record<string, unknown> = {}) => ({
   status: 'available',
   featured: false,
   visibility: 'PUBLIC',
-  authorName: 'Focura Team',
+  authorName: 'Gablura Team',
   authorRole: 'Official',
   content: { sections: [], labels: [], tasks: [], milestones: [], views: [] },
   ...overrides,
@@ -146,7 +146,7 @@ describe('TemplateQuery.getBySlug', () => {
     const detail = await TemplateQuery.getBySlug('engineering-sprint');
 
     expect(detail.slug).toBe('engineering-sprint');
-    expect(detail.author).toEqual({ name: 'Focura Team', role: 'Official' });
+    expect(detail.author).toEqual({ name: 'Gablura Team', role: 'Official' });
   });
 
   it('maps rating aggregates and the featured flag onto the item', async () => {

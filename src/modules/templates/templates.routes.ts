@@ -15,7 +15,7 @@ import { authenticate } from '../../middleware/auth.js';
 import { requireCsrfToken } from '../../middleware/csrf.js';
 import { sessionTimeout } from '../../middleware/sessionTimeout.js';
 import { rateLimitMiddleware } from '../../middleware/rateLimiter.js';
-import { requireFocuraAdmin } from '../../middleware/focuraAdmin.js';
+import { requireGabluraAdmin } from '../../middleware/focuraAdmin.js';
 import {
   getCatalog,
   getTemplateDetail,
@@ -53,7 +53,7 @@ authedRouter.get(
   authenticate,
   sessionTimeout,
   requireCsrfToken(),
-  requireFocuraAdmin,
+  requireGabluraAdmin,
   listPendingTemplates,
 );
 authedRouter.post(
@@ -61,7 +61,7 @@ authedRouter.post(
   authenticate,
   sessionTimeout,
   requireCsrfToken(),
-  requireFocuraAdmin,
+  requireGabluraAdmin,
   approveTemplate,
 );
 authedRouter.post(
@@ -69,7 +69,7 @@ authedRouter.post(
   authenticate,
   sessionTimeout,
   requireCsrfToken(),
-  requireFocuraAdmin,
+  requireGabluraAdmin,
   rejectTemplate,
 );
 authedRouter.post(
@@ -100,7 +100,7 @@ authedRouter.patch('/:slug', authenticate, sessionTimeout, requireCsrfToken(), u
 
 // Admin waitlist removal. Emails always contain "@" (template slugs never do),
 // so this and DELETE /:slug below share the :param pattern without colliding.
-// The "@" check runs BEFORE requireFocuraAdmin so slug params fall through to
+// The "@" check runs BEFORE requireGabluraAdmin so slug params fall through to
 // the template-delete route — otherwise non-admin template authors would be
 // blocked by the admin gate and never reach their own DELETE /:slug.
 authedRouter.delete(
@@ -110,7 +110,7 @@ authedRouter.delete(
   requireCsrfToken(),
   (req, res, next) => {
     if (!req.params.email.includes('@')) return next();
-    requireFocuraAdmin(req, res, (err?: unknown) => {
+    requireGabluraAdmin(req, res, (err?: unknown) => {
       if (err) return next(err);
       void removeTemplateRequest(req, res, next);
     });
@@ -125,7 +125,7 @@ router.get('/catalog', getCatalog);
 
 // Admin waitlist listing — registered on the root path so GET /:slug never
 // shadows it (Express only matches /:slug against non-empty segments).
-router.get('/', authenticate, sessionTimeout, requireCsrfToken(), requireFocuraAdmin, listTemplateRequests);
+router.get('/', authenticate, sessionTimeout, requireCsrfToken(), requireGabluraAdmin, listTemplateRequests);
 
 router.use(authedRouter);
 router.get('/:slug', getTemplateDetail);

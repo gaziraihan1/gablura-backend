@@ -10,7 +10,7 @@ export type TemplateTier = 'FREE' | 'PRO' | 'BUSINESS';
 
 /**
  * Visibility lifecycle: PRIVATE (workspace draft) → PENDING (community
- * submission awaiting Focura-admin review) → PUBLIC (in the gallery).
+ * submission awaiting Gablura-admin review) → PUBLIC (in the gallery).
  * Only admins move templates to PUBLIC — see the moderation endpoints.
  */
 export type TemplateVisibility = 'PRIVATE' | 'PENDING' | 'PUBLIC';

@@ -113,7 +113,7 @@ router.post(
     }
 
     // Idempotency check — return cached tokens for duplicate exchange calls
-    const idempotencyKey = `focura:exchange:lock:${sessionId}`;
+    const idempotencyKey = `gablura:exchange:lock:${sessionId}`;
     try {
       const cached = await getRedisClient().get(idempotencyKey);
       if (cached) {
@@ -245,7 +245,7 @@ router.post(
     }
 
     const sessionId = decoded.sessionId!;
-    const refreshReplayCacheKey = `focura:refresh:result:${decoded.id}:${decoded.jti}`;
+    const refreshReplayCacheKey = `gablura:refresh:result:${decoded.id}:${decoded.jti}`;
 
     // Distributed lock — prevents concurrent refresh races
     const acquired = await acquireRefreshLock(sessionId);

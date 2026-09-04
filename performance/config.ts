@@ -2,7 +2,7 @@
  * Performance Test Configuration
  * 
  * Defines test scenarios, load patterns, and performance thresholds
- * for comprehensive performance testing of the Focura backend.
+ * for comprehensive performance testing of the Gablura backend.
  */
 
 export interface PerformanceConfig {

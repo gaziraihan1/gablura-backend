@@ -122,14 +122,14 @@ describe("ActivityQuery", () => {
       expect(prisma.activity.findMany).toHaveBeenCalled();
     });
 
-    it("filters Focura-admin audit rows from the member view", async () => {
+    it("filters Gablura-admin audit rows from the member view", async () => {
       vi.mocked(CacheClient.get).mockResolvedValue(null);
       const rows = [
         { id: "act-1", action: "CREATED", metadata: {} },
         {
           id: "act-2",
           action: "UPDATED",
-          metadata: { source: "focura-admin", changes: { aiDailyCalls: { from: null, to: 9000 } } },
+          metadata: { source: "gablura-admin", changes: { aiDailyCalls: { from: null, to: 9000 } } },
         },
       ];
       vi.mocked(prisma.activity.findMany).mockResolvedValue(rows as any);
@@ -140,13 +140,13 @@ describe("ActivityQuery", () => {
       expect(CacheClient.set).toHaveBeenCalled();
     });
 
-    it("includes Focura-admin audit rows for workspace admins without caching", async () => {
+    it("includes Gablura-admin audit rows for workspace admins without caching", async () => {
       const rows = [
         { id: "act-1", action: "CREATED", metadata: {} },
         {
           id: "act-2",
           action: "UPDATED",
-          metadata: { source: "focura-admin", changes: { plan: { from: "PRO", to: "ENTERPRISE" } } },
+          metadata: { source: "gablura-admin", changes: { plan: { from: "PRO", to: "ENTERPRISE" } } },
         },
       ];
       vi.mocked(prisma.activity.findMany).mockResolvedValue(rows as any);

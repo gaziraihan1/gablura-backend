@@ -96,8 +96,8 @@ describe("backendToken", () => {
       const token = createAccessToken(payload);
       const decoded = jwt.decode(token, { complete: true }) as any;
 
-      expect(decoded.payload.iss).toBe("focura-app");
-      expect(decoded.payload.aud).toBe("focura-backend");
+      expect(decoded.payload.iss).toBe("gablura-app");
+      expect(decoded.payload.aud).toBe("gablura-backend");
     });
   });
 

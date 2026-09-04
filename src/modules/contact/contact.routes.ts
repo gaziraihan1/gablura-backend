@@ -5,7 +5,7 @@ import {
   listContactMessages,
 } from "./contact.controller.js";
 import { authenticate } from "../../middleware/auth.js";
-import { requireFocuraAdmin } from "../../middleware/focuraAdmin.js";
+import { requireGabluraAdmin } from "../../middleware/focuraAdmin.js";
 const router = Router();
 
 // ─── Public routes ────────────────────────────────────────────────────────────
@@ -32,7 +32,7 @@ router.post(
 router.get(
   "/",
   authenticate,
-  requireFocuraAdmin,
+  requireGabluraAdmin,
   listContactMessages
 );
 export default router;

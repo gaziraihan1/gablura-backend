@@ -198,18 +198,18 @@ export class SlackService {
   }
 
   /**
-   * Resolve Slack user to Focura user (by email)
+   * Resolve Slack user to Gablura user (by email)
    */
-  async resolveSlackUserToFocuraUserId(slackUserId: string): Promise<string | null> {
+  async resolveSlackUserToGabluraUserId(slackUserId: string): Promise<string | null> {
     const slackUser = await this.getUserInfo(slackUserId);
     if (!slackUser?.email) return null;
 
-    const focuraUser = await prisma.user.findUnique({
+    const gabluraUser = await prisma.user.findUnique({
       where: { email: slackUser.email },
       select: { id: true },
     });
 
-    return focuraUser?.id || null;
+    return gabluraUser?.id || null;
   }
 
   // ─── Messages ────────────────────────────────────────────────────────────

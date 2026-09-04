@@ -1,6 +1,6 @@
-# 🤝 Contributing to Focura Backend
+# 🤝 Contributing to Gablura Backend
 
-Thank you for your interest in contributing to **Focura Backend** — the Express API and business-logic layer powering Focura, a focused, workspace-based productivity SaaS.
+Thank you for your interest in contributing to **Gablura Backend** — the Express API and business-logic layer powering Gablura, a focused, workspace-based productivity SaaS.
 
 This guide reflects how the repository actually works today (stack, module architecture, setup, test conventions, and review process). Please read it fully before opening a pull request.
 
@@ -69,8 +69,8 @@ Please make sure you have read:
 
 1. **Fork** the repository and clone your fork:
 ```bash
-git clone https://github.com/gaziraihan1/focura-backend.git
-cd focura-backend
+git clone https://github.com/gaziraihan1/-backend.git
+cd -backend
 ```
 
 2. **Install dependencies** (runs `prisma generate` via `postinstall`):
@@ -85,7 +85,7 @@ cp .env.example .env.test    # tests use TEST_DATABASE_URL (see below)
 ```
 At minimum, set in `.env`:
 ```env
-DATABASE_URL=postgresql://<user>:<pass>@localhost:5432/focura_dev
+DATABASE_URL=postgresql://<user>:<pass>@localhost:5432/_dev
 NEXTAUTH_SECRET=<must-match-the-frontend's-NEXTAUTH_SECRET>
 CLIENT_URL=http://localhost:3000
 ```
@@ -247,7 +247,7 @@ Tests run with **Vitest**. The infrastructure is already set up in `vitest.confi
 Tests need `.env.test` with a dedicated database:
 
 ```env
-TEST_DATABASE_URL=postgresql://<user>:<pass>@localhost:5432/focura_test
+TEST_DATABASE_URL=postgresql://<user>:<pass>@localhost:5432/_test
 # falls back to DATABASE_URL if TEST_DATABASE_URL is not set — do NOT run tests against your dev DB
 ```
 
@@ -323,7 +323,7 @@ npx vitest run src/tests/unit/calendar/wellness.service.test.ts
 
 ## 🧠 Project Philosophy
 
-Focura values:
+Gablura values:
 
 - Focus over feature bloat
 - Simplicity over complexity
@@ -338,6 +338,6 @@ All contributions should align with this mindset.
 
 All contributions are reviewed by:
 
-**Mohammad Raihan Gazi** — Creator & Maintainer of Focura
+**Mohammad Raihan Gazi** — Creator & Maintainer of Gablura
 
 Thank you for contributing 🚀

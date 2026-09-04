@@ -3,7 +3,7 @@ import { getRedisClient } from "../../redis/redis.client.js";
 const MAX_FAILURES    = 10;
 const LOCKOUT_SECONDS = 15 * 60;
 const WINDOW_SECONDS  = 60 * 60;
-const PREFIX          = "focura:lockout";
+const PREFIX          = "gablura:lockout";
 
 export async function recordFailedAttempt(
   identifier: string,

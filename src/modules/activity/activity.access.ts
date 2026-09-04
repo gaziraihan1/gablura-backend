@@ -48,7 +48,7 @@ export const ActivityAccess = {
   /**
    * Single-lookup access + role resolution for the workspace activity feed.
    * Returns whether the caller can see the feed at all, and whether they are
-   * a workspace owner/admin (who additionally see Focura-admin audit rows).
+   * a workspace owner/admin (who additionally see Gablura-admin audit rows).
    */
   async getWorkspaceAccess(
     userId: string,

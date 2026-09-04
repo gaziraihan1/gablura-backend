@@ -365,7 +365,7 @@ export const TemplateMutation = {
         icon: '📁',
         color: '#667eea',
         status: 'available',
-        // Moderation gate: a "PUBLIC" request becomes PENDING — a Focura
+        // Moderation gate: a "PUBLIC" request becomes PENDING — a Gablura
         // admin must approve before the template appears in the gallery.
         visibility: input.visibility === 'PUBLIC' ? 'PENDING' : 'PRIVATE',
         workspaceId: project.workspaceId,

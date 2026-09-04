@@ -35,7 +35,7 @@ describe('sendInvitationEmail', () => {
     expect(mockSendMail).toHaveBeenCalledWith(
       expect.objectContaining({
         to: 'test@example.com',
-        subject: 'Alice invited you to join Acme Corp on Focura',
+        subject: 'Alice invited you to join Acme Corp on Gablura',
         html: expect.stringContaining('Acme Corp'),
         text: expect.stringContaining('Acme Corp'),
       }),
@@ -66,7 +66,7 @@ describe('sendInvitationEmail', () => {
 
     expect(mockSendMail).toHaveBeenCalledWith(
       expect.objectContaining({
-        subject: expect.stringContaining('A Focura user'),
+        subject: expect.stringContaining('A Gablura user'),
         html: expect.stringContaining('a workspace'),
       }),
     );

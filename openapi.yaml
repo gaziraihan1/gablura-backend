@@ -1,10 +1,10 @@
 openapi: 3.0.3
 info:
-  title: Focura API
+  title: Gablura API
   description: |
-    # Focura — Team Productivity & Focus SaaS Platform
+    # Gablura — Team Productivity & Focus SaaS Platform
 
-    A production-grade REST API powering Focura, a comprehensive team productivity platform with task management, focus sessions, AI-powered insights, calendar optimization, burnout prevention, and multi-provider billing.
+    A production-grade REST API powering Gablura, a comprehensive team productivity platform with task management, focus sessions, AI-powered insights, calendar optimization, burnout prevention, and multi-provider billing.
 
     ## Architecture
     - **Runtime:** Node.js 22.x (ESM)
@@ -51,15 +51,15 @@ info:
     Response envelope: `{"success": true, "data": [...], "pagination": {"page": 1, "pageSize": 20, "total": 150, "totalPages": 8}}`
   version: 1.0.0
   contact:
-    name: Focura Support
-    email: support@focura.io
-    url: https://focura.io
+    name: Gablura Support
+    email: support@gablura.io
+    url: https://gablura.io
   license:
     name: Proprietary
-    url: https://focura.io/license
+    url: https://gablura.io/license
 
 servers:
-  - url: https://api.focura.io
+  - url: https://api.gablura.io
     description: Production
   - url: http://localhost:3001
     description: Local development

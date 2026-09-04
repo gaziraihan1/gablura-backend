@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('../../../config/admin.config.js', () => ({
-  isFocuraAdminUser: vi.fn((role: string, id: string) => role === 'ADMIN' && id === 'admin-user-id'),
+  isGabluraAdminUser: vi.fn((role: string, id: string) => role === 'ADMIN' && id === 'admin-user-id'),
 }));
 
 import { requireAdminId } from '../../../modules/contact/requireAdminId.js';

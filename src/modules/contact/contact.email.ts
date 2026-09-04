@@ -112,7 +112,7 @@ const categoryColor: Record<string, string> = {
 // ─── Public send functions ────────────────────────────────────────────────────
 
 /**
- * Sends the admin notification email to focurabusiness@gmail.com.
+ * Sends the admin notification email to gablurabusiness@gmail.com.
  * Called fire-and-forget in contact.service — errors are caught and logged there.
  */
 export async function sendAdminContactNotification(
@@ -121,7 +121,7 @@ export async function sendAdminContactNotification(
   ip: string
 ): Promise<void> {
   const supportEmail =
-    process.env.SUPPORT_EMAIL ?? process.env.EMAIL_SERVER_USER ?? "support@focura.app";
+    process.env.SUPPORT_EMAIL ?? process.env.EMAIL_SERVER_USER ?? "support@gablura.app";
 
   await sendMail({
     to: supportEmail,
@@ -141,7 +141,7 @@ export async function sendUserAutoReply(
 ): Promise<void> {
   await sendMail({
     to: data.email,
-    subject: `We received your message — Focura`,
+    subject: `We received your message — Gablura`,
     html: buildUserAutoReplyHtml(data),
     text: buildUserAutoReplyText(data),
   });
@@ -179,7 +179,7 @@ function buildAdminEmailHtml(
       <span style="font-size:11px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:${color};">${label}</span>
     </div>
     <h2 style="margin:0 0 4px;font-size:18px;font-weight:700;color:#0a0a0a;">New Contact Message</h2>
-    <p style="margin:0 0 24px;font-size:13px;color:#737373;">Submitted via ${process.env.CLIENT_URL || process.env.FRONTEND_URL || 'focura.app'}/contact</p>
+    <p style="margin:0 0 24px;font-size:13px;color:#737373;">Submitted via ${process.env.CLIENT_URL || process.env.FRONTEND_URL || 'gablura.app'}/contact</p>
 
     <table width="100%" cellpadding="0" cellspacing="0"
       style="border:1px solid #e5e5e5;border-radius:8px;overflow:hidden;margin-bottom:24px;">
@@ -206,7 +206,7 @@ function buildUserAutoReplyHtml(data: CreateContactMessageInput): string {
     data.message.length > 300 ? data.message.slice(0, 300) + "…" : data.message;
   const firstName = data.name.split(" ")[0];
   const supportEmail =
-    process.env.SUPPORT_EMAIL ?? process.env.EMAIL_SERVER_USER ?? "support@focura.app";
+    process.env.SUPPORT_EMAIL ?? process.env.EMAIL_SERVER_USER ?? "support@gablura.app";
 
   const content = `
     <h2 style="margin:0 0 8px;font-size:18px;font-weight:700;color:#0a0a0a;">
@@ -233,7 +233,7 @@ function buildUserAutoReplyHtml(data: CreateContactMessageInput): string {
       If this is urgent, you can also reach us directly at
       <a href="mailto:${escapeHtml(supportEmail)}" style="color:#0a0a0a;font-weight:600;">${escapeHtml(supportEmail)}</a>.
     </p>
-    <p style="margin:0;font-size:13px;color:#737373;">— The Focura Team</p>
+    <p style="margin:0;font-size:13px;color:#737373;">— The Gablura Team</p>
   `;
 
   return baseWrapper(content);
@@ -247,7 +247,7 @@ function buildAdminEmailText(
   ip: string
 ): string {
   return [
-    "NEW CONTACT MESSAGE — FOCURA",
+    "NEW CONTACT MESSAGE — gablura",
     `Message ID: ${messageId}`,
     "",
     `Name:     ${data.name}`,
@@ -270,7 +270,7 @@ function buildUserAutoReplyText(data: CreateContactMessageInput): string {
   return [
     `Hi ${data.name.split(" ")[0]},`,
     "",
-    "Thanks for reaching out to Focura. We received your message and will reply within 2 business days.",
+    "Thanks for reaching out to Gablura. We received your message and will reply within 2 business days.",
     "",
     `Subject:  ${data.subject}`,
     `Category: ${categoryLabel[data.category] ?? data.category}`,
@@ -278,8 +278,8 @@ function buildUserAutoReplyText(data: CreateContactMessageInput): string {
     "Your message:",
     preview,
     "",
-    "If urgent, email us directly at focurabusiness@gmail.com.",
+    "If urgent, email us directly at gablurabusiness@gmail.com.",
     "",
-    "— The Focura Team",
+    "— The Gablura Team",
   ].join("\n");
 }

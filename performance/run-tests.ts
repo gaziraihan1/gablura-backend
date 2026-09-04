@@ -17,7 +17,7 @@ import {
 } from './utils.js';
 
 async function main() {
-  console.log('🚀 Starting Focura Backend Performance Tests');
+  console.log('🚀 Starting Gablura Backend Performance Tests');
   console.log('='.repeat(60));
   console.log(`Server URL: ${defaultConfig.server.url}`);
   console.log(`Total Scenarios: ${defaultConfig.scenarios.length}`);

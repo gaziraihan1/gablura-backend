@@ -47,8 +47,8 @@ describe("lib/totp", () => {
     });
 
     it("builds an otpauth URI with the issuer and label", () => {
-      const uri = createTOTPURI("MOCKBASE32SECRET", "user@focura.test");
-      expect(uri).toContain("Focura:user@focura.test");
+      const uri = createTOTPURI("MOCKBASE32SECRET", "user@gablura.test");
+      expect(uri).toContain("Gablura:user@gablura.test");
       expect(uri).toContain("secret=MOCKBASE32SECRET");
     });
   });

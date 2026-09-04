@@ -3,7 +3,7 @@
 Items for v1.2.0. Status:
 - **DONE** — SSE token hardening (item 2), GA consent banner (item 1), data export + account deletion (item 3)
 
-This file is mirrored in both repos (`Focura-backend` / `Focura-client`). The
+This file is mirrored in both repos (`Gablura-backend` / `Gablura-client`). The
 backend copy also tracks the notification-coverage work (meeting reminders,
 task-completion/assignment/subtask notifications, attendee access checks).
 Changelog entries live in each repo's `CHANGELOG.md` under `[Unreleased]`.
@@ -23,7 +23,7 @@ GA gating.
 **Approach**
 - New `components/Consent/ConsentBanner.tsx` (client component): fixed
   bottom banner shown once; Accept / Decline buttons; choice persisted in
-  `localStorage` (e.g. `focura-consent: "accepted" | "declined"`); links to
+  `localStorage` (e.g. `-consent: "accepted" | "declined"`); links to
   `/cookies`.
 - `app/layout.tsx`: mount a small consent provider that renders the banner
   and passes `enabled={consent === "accepted"}` to `GoogleAnalytics`.

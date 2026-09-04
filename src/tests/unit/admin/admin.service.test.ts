@@ -2,7 +2,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Unit tests for the admin service layer — specifically that workspace-limit
 // updates (including AI overrides) are written to the Activity feed as an
-// audit trail attributed to the acting Focura admin.
+// audit trail attributed to the acting Gablura admin.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { describe, it, expect, vi } from 'vitest';
@@ -50,7 +50,7 @@ describe('serviceUpdateWorkspaceLimits audit logging', () => {
     });
 
     expect(activity).not.toBeNull();
-    // Who — the acting Focura admin
+    // Who — the acting Gablura admin
     expect(activity!.userId).toBe(admin.id);
     // What — a workspace limits update
     expect(activity!.action).toBe('UPDATED');
@@ -59,7 +59,7 @@ describe('serviceUpdateWorkspaceLimits audit logging', () => {
     expect(activity!.workspaceSlug).toBe(workspace.slug);
 
     const metadata = activity!.metadata as Record<string, any>;
-    expect(metadata.source).toBe('focura-admin');
+    expect(metadata.source).toBe('gablura-admin');
     // Which caps — the before/after diff
     expect(metadata.changes.aiDailyCalls).toEqual({ from: null, to: 9000 });
     expect(metadata.changes.aiMonthlyTokens).toEqual({ from: null, to: 100_000_000 });

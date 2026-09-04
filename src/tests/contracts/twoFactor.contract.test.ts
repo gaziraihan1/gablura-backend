@@ -4,7 +4,7 @@ vi.mock('argon2', () => ({ verify: vi.fn() }));
 
 vi.mock('../../lib/totp.js', () => ({
   generateTOTPSecret: vi.fn().mockReturnValue('MOCKBASE32SECRET'),
-  createTOTPURI: vi.fn().mockReturnValue('otpauth://totp/Focura:test@test.com?secret=MOCKBASE32SECRET&issuer=Focura'),
+  createTOTPURI: vi.fn().mockReturnValue('otpauth://totp/Gablura:test@test.com?secret=MOCKBASE32SECRET&issuer=Gablura'),
   verifyTOTPToken: vi.fn().mockResolvedValue(false),
 }));
 

@@ -50,7 +50,7 @@ export function generateTestToken(user: TestUser, opts: TokenOptions = {}): stri
       sessionId: opts.sessionId ?? crypto.randomUUID(),
     },
     getPrivateKey(),
-    { algorithm: 'RS256', expiresIn: (opts.expiresIn ?? '1h') as any, issuer: 'focura-app', audience: 'focura-backend' },
+    { algorithm: 'RS256', expiresIn: (opts.expiresIn ?? '1h') as any, issuer: 'gablura-app', audience: 'gablura-backend' },
   );
 }
 

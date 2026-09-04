@@ -279,7 +279,7 @@ describe('processAutomationEvent', () => {
 
   it('assigns a workspace member by email', async () => {
     vi.mocked(prisma.automationRule.findMany).mockResolvedValue([
-      rule({ actions: [{ type: 'ASSIGN_USER', config: { email: 'dev@focura.dev' } }] }),
+      rule({ actions: [{ type: 'ASSIGN_USER', config: { email: 'dev@gablura.dev' } }] }),
     ] as any);
     vi.mocked(prisma.workspaceMember.findFirst).mockResolvedValue({ userId: 'by-email' } as any);
     vi.mocked(prisma.taskAssignee.upsert).mockResolvedValue({} as any);
@@ -288,7 +288,7 @@ describe('processAutomationEvent', () => {
 
     expect(prisma.workspaceMember.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { workspaceId: 'ws1', user: { email: 'dev@focura.dev' } },
+        where: { workspaceId: 'ws1', user: { email: 'dev@gablura.dev' } },
       }),
     );
     expect(prisma.taskAssignee.upsert).toHaveBeenCalledWith(

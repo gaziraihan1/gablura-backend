@@ -19,7 +19,7 @@ import {
   queryActivity,
 } from "./admin.query.js";
 import {
-  assertFocuraAdmin,
+  assertGabluraAdmin,
   serviceUpdateWorkspaceLimits,
   serviceBanUser,
   serviceUnbanUser,
@@ -40,7 +40,7 @@ function parseOrThrow<T>(schema: z.ZodSchema<T>, data: unknown): T {
 
 export const getAdminStats = asyncHandler(
   async (req: AuthRequest, res: Response) => {
-    assertFocuraAdmin(req.user!.id, req.user!.role);
+    assertGabluraAdmin(req.user!.id, req.user!.role);
     const data = await queryStats();
     res.json({ success: true, data });
   },
@@ -48,7 +48,7 @@ export const getAdminStats = asyncHandler(
 
 export const getAdminWorkspaces = asyncHandler(
   async (req: AuthRequest, res: Response) => {
-    assertFocuraAdmin(req.user!.id, req.user!.role);
+    assertGabluraAdmin(req.user!.id, req.user!.role);
     const params = parseOrThrow(paginationSchema, req.query);
     const result = await queryWorkspaces(params);
     res.json({ success: true, ...result });
@@ -57,7 +57,7 @@ export const getAdminWorkspaces = asyncHandler(
 
 export const getAdminWorkspaceDetail = asyncHandler(
   async (req: AuthRequest, res: Response) => {
-    assertFocuraAdmin(req.user!.id, req.user!.role);
+    assertGabluraAdmin(req.user!.id, req.user!.role);
     const workspace = await queryWorkspaceDetailBySlug(req.params.slug);
     if (!workspace) throw new NotFoundError("NOT_FOUND: Workspace");
     res.json({ success: true, data: workspace });
@@ -66,7 +66,7 @@ export const getAdminWorkspaceDetail = asyncHandler(
 
 export const getAdminUsers = asyncHandler(
   async (req: AuthRequest, res: Response) => {
-    assertFocuraAdmin(req.user!.id, req.user!.role);
+    assertGabluraAdmin(req.user!.id, req.user!.role);
     const params = parseOrThrow(paginationSchema, req.query);
     const result = await queryUsers(params);
     res.json({ success: true, ...result });
@@ -75,7 +75,7 @@ export const getAdminUsers = asyncHandler(
 
 export const getAdminUserDetail = asyncHandler(
   async (req: AuthRequest, res: Response) => {
-    assertFocuraAdmin(req.user!.id, req.user!.role);
+    assertGabluraAdmin(req.user!.id, req.user!.role);
     const user = await queryUserDetail(req.params.id);
     if (!user) throw new NotFoundError("NOT_FOUND: User");
     res.json({ success: true, data: user });
@@ -84,7 +84,7 @@ export const getAdminUserDetail = asyncHandler(
 
 export const getAdminProjects = asyncHandler(
   async (req: AuthRequest, res: Response) => {
-    assertFocuraAdmin(req.user!.id, req.user!.role);
+    assertGabluraAdmin(req.user!.id, req.user!.role);
     const params = parseOrThrow(paginationSchema, req.query);
     const result = await queryProjects(params);
     res.json({ success: true, ...result });
@@ -93,7 +93,7 @@ export const getAdminProjects = asyncHandler(
 
 export const getAdminBilling = asyncHandler(
   async (req: AuthRequest, res: Response) => {
-    assertFocuraAdmin(req.user!.id, req.user!.role);
+    assertGabluraAdmin(req.user!.id, req.user!.role);
     const params = parseOrThrow(paginationSchema, req.query);
     const result = await queryBilling(params);
     res.json({ success: true, ...result });
@@ -102,7 +102,7 @@ export const getAdminBilling = asyncHandler(
 
 export const getAdminActivity = asyncHandler(
   async (req: AuthRequest, res: Response) => {
-    assertFocuraAdmin(req.user!.id, req.user!.role);
+    assertGabluraAdmin(req.user!.id, req.user!.role);
     const params = parseOrThrow(paginationSchema, req.query);
     const result = await queryActivity(params);
     res.json({ success: true, ...result });
@@ -113,7 +113,7 @@ export const getAdminActivity = asyncHandler(
 
 export const updateWorkspaceLimits = asyncHandler(
   async (req: AuthRequest, res: Response) => {
-    assertFocuraAdmin(req.user!.id, req.user!.role);
+    assertGabluraAdmin(req.user!.id, req.user!.role);
     const input = parseOrThrow(
       updateWorkspaceLimitsSchema,
       req.body,
@@ -134,7 +134,7 @@ export const updateWorkspaceLimits = asyncHandler(
 // ─── User moderation ───────────────────────────────────────────────────────────
 
 export const banUser = asyncHandler(async (req: AuthRequest, res: Response) => {
-  assertFocuraAdmin(req.user!.id, req.user!.role);
+  assertGabluraAdmin(req.user!.id, req.user!.role);
   const { reason } = parseOrThrow(banUserSchema, req.body);
   await serviceBanUser(req.params.id, req.user!.id, reason);
   res.json({ success: true, message: "User banned successfully" });
@@ -142,7 +142,7 @@ export const banUser = asyncHandler(async (req: AuthRequest, res: Response) => {
 
 export const unbanUser = asyncHandler(
   async (req: AuthRequest, res: Response) => {
-    assertFocuraAdmin(req.user!.id, req.user!.role);
+    assertGabluraAdmin(req.user!.id, req.user!.role);
     await serviceUnbanUser(req.params.id);
     res.json({ success: true, message: "User unbanned successfully" });
   },
@@ -152,7 +152,7 @@ export const unbanUser = asyncHandler(
 
 export const deleteWorkspace = asyncHandler(
   async (req: AuthRequest, res: Response) => {
-    assertFocuraAdmin(req.user!.id, req.user!.role);
+    assertGabluraAdmin(req.user!.id, req.user!.role);
     const { reason, hardDelete } = parseOrThrow(
       deleteWorkspaceSchema,
       req.body,
@@ -169,7 +169,7 @@ export const deleteWorkspace = asyncHandler(
 
 export const restoreWorkspace = asyncHandler(
   async (req: AuthRequest, res: Response) => {
-    assertFocuraAdmin(req.user!.id, req.user!.role);
+    assertGabluraAdmin(req.user!.id, req.user!.role);
     await serviceRestoreWorkspace(req.params.slug, req.user!.id);
     res.json({ success: true, message: "Workspace restored successfully" });
   },

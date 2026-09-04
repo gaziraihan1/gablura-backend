@@ -63,7 +63,7 @@ describe("POST /api/v1/ai/tasks/autocomplete", () => {
       const month = new Date().toISOString().slice(0, 7);
       // FREE personal budget is 500k/month — seed just under so any call trips it.
       await getRedisClient().set(
-        `focura:ai:q:tokens:month:${month}:usr:${user.id}`,
+        `gablura:ai:q:tokens:month:${month}:usr:${user.id}`,
         "499999",
       );
 

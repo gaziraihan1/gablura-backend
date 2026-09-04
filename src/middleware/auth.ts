@@ -22,7 +22,7 @@ export interface AuthRequest extends Request {
   };
 }
 
-interface FocuraJwtPayload extends JwtPayload {
+interface GabluraJwtPayload extends JwtPayload {
   sub: string;
   email: string;
   role: string;
@@ -67,7 +67,7 @@ const CURRENT_TOKEN_VERSION = 1;
  */
 async function enforceSessionBinding(
   req: AuthRequest,
-  decoded: FocuraJwtPayload,
+  decoded: GabluraJwtPayload,
 ): Promise<Error | null> {
   if (!decoded.sessionId) return null;
 
@@ -198,13 +198,13 @@ export const authenticate = async (
     }
  
     // 2. Verify JWT signature + standard claims
-    let decoded: FocuraJwtPayload;
+    let decoded: GabluraJwtPayload;
     try {
       decoded = jwt.verify(token, publicKey, {
         algorithms: ["RS256"],
-        issuer: "focura-app",
-        audience: "focura-backend",
-      }) as FocuraJwtPayload;
+        issuer: "gablura-app",
+        audience: "gablura-backend",
+      }) as GabluraJwtPayload;
     } catch (err: any) {
       if (err.name === "TokenExpiredError") {
         return next(new TokenExpiredError());

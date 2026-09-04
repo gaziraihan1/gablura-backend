@@ -408,7 +408,7 @@ function normalizeSlackInteraction(payload: Record<string, unknown>): Record<str
 }
 
 /**
- * Handle Slack slash commands (/focura, /f)
+ * Handle Slack slash commands (/gablura, /f)
  */
 async function handleSlackSlashCommand(
   integration: { id: string; workspaceId: string | null; connectedById: string | null; userId: string | null },
@@ -443,13 +443,13 @@ async function handleSlackSlashCommand(
     case 'help':
     default:
       await slackService.respondToUrl(command.responseUrl, {
-        text: `*Focura Bot Help* :robot_face:\n\n` +
-          `\`/focura create <title>\` - Create a new task\n` +
-          `\`/focura list\` - List your tasks\n` +
-          `\`/focura status\` - Show workspace task status\n` +
-          `\`/focura assign @user <task-id>\` - Assign a task\n` +
-          `\`/focura search <query>\` - Search tasks\n` +
-          `\`/focura help\` - Show this help message`,
+        text: `*Gablura Bot Help* :robot_face:\n\n` +
+          `\`/gablura create <title>\` - Create a new task\n` +
+          `\`/gablura list\` - List your tasks\n` +
+          `\`/gablura status\` - Show workspace task status\n` +
+          `\`/gablura assign @user <task-id>\` - Assign a task\n` +
+          `\`/gablura search <query>\` - Search tasks\n` +
+          `\`/gablura help\` - Show this help message`,
         responseType: 'ephemeral',
       });
       break;
@@ -457,7 +457,7 @@ async function handleSlackSlashCommand(
 }
 
 /**
- * Handle /focura create <title> [description]
+ * Handle /gablura create <title> [description]
  */
 async function handleSlackCreateCommand(
   integration: { id: string; workspaceId: string | null; connectedById: string | null; userId: string | null },
@@ -469,22 +469,22 @@ async function handleSlackCreateCommand(
 
   if (args.length === 0) {
     await slackService.respondToUrl(command.responseUrl, {
-      text: ':warning: Please provide a task title. Usage: `/focura create <title>`',
+      text: ':warning: Please provide a task title. Usage: `/gablura create <title>`',
       responseType: 'ephemeral',
     });
     return;
   }
 
-  // Try to find the Slack user's Focura user ID
+  // Try to find the Slack user's Gablura user ID
   let createdById = integration.connectedById ?? integration.userId;
   if (!createdById) {
     // Try to resolve from Slack user ID
-    createdById = await slackService.resolveSlackUserToFocuraUserId(command.userId);
+    createdById = await slackService.resolveSlackUserToGabluraUserId(command.userId);
   }
 
   if (!createdById) {
     await slackService.respondToUrl(command.responseUrl, {
-      text: ':x: Could not find your Focura account. Please connect your Slack account to Focura first via the dashboard.',
+      text: ':x: Could not find your Gablura account. Please connect your Slack account to Gablura first via the dashboard.',
       responseType: 'ephemeral',
     });
     return;
@@ -512,7 +512,7 @@ async function handleSlackCreateCommand(
 
     // Respond in channel so others can see the task was created
     await slackService.respondToUrl(command.responseUrl, {
-      text: `:white_check_mark: *Task Created:* ${title}\n:wastebasket: *ID:* \`${task.id}\`\n<${process.env.CLIENT_URL || process.env.FRONTEND_URL || ''}/dashboard/tasks/${task.id}|View in Focura>`,
+      text: `:white_check_mark: *Task Created:* ${title}\n:wastebasket: *ID:* \`${task.id}\`\n<${process.env.CLIENT_URL || process.env.FRONTEND_URL || ''}/dashboard/tasks/${task.id}|View in Gablura>`,
       responseType: 'in_channel',
     });
 
@@ -527,7 +527,7 @@ async function handleSlackCreateCommand(
 }
 
 /**
- * Handle /focura list [status] - list tasks
+ * Handle /gablura list [status] - list tasks
  */
 async function handleSlackListCommand(
   integration: { id: string; workspaceId: string | null; connectedById: string | null; userId: string | null },
@@ -539,12 +539,12 @@ async function handleSlackListCommand(
 
   let createdById = integration.connectedById ?? integration.userId;
   if (!createdById) {
-    createdById = await slackService.resolveSlackUserToFocuraUserId(command.userId);
+    createdById = await slackService.resolveSlackUserToGabluraUserId(command.userId);
   }
 
   if (!createdById || !workspaceId) {
     await slackService.respondToUrl(command.responseUrl, {
-      text: workspaceId ? ':x: Could not identify your Focura account.' : ':x: This integration is not connected to a workspace.',
+      text: workspaceId ? ':x: Could not identify your Gablura account.' : ':x: This integration is not connected to a workspace.',
       responseType: 'ephemeral',
     });
     return;
@@ -577,7 +577,7 @@ async function handleSlackListCommand(
       await slackService.respondToUrl(command.responseUrl, {
         text: status
           ? `:inbox_tray: No tasks with status *${status}* found.`
-          : ':inbox_tray: No tasks found. Create one with `/focura create <title>`',
+          : ':inbox_tray: No tasks found. Create one with `/gablura create <title>`',
         responseType: 'ephemeral',
       });
       return;
@@ -601,7 +601,7 @@ async function handleSlackListCommand(
 }
 
 /**
- * Handle /focura status - workspace statistics
+ * Handle /gablura status - workspace statistics
  */
 async function handleSlackStatusCommand(
   integration: { id: string; workspaceId: string | null; connectedById: string | null; userId: string | null },
@@ -655,7 +655,7 @@ async function handleSlackStatusCommand(
 }
 
 /**
- * Handle /focura assign @user <task-id>
+ * Handle /gablura assign @user <task-id>
  */
 async function handleSlackAssignCommand(
   integration: { id: string; workspaceId: string | null; connectedById: string | null; userId: string | null },
@@ -667,7 +667,7 @@ async function handleSlackAssignCommand(
 
   if (args.length < 2) {
     await slackService.respondToUrl(command.responseUrl, {
-      text: ':warning: Usage: `/focura assign @slackuser <task-id>`',
+      text: ':warning: Usage: `/gablura assign @slackuser <task-id>`',
       responseType: 'ephemeral',
     });
     return;
@@ -678,11 +678,11 @@ async function handleSlackAssignCommand(
   const slackUserId = slackMention.replace(/[<@>]/g, '');
 
   try {
-    // Resolve Slack user to Focura user
-    const focuraUserId = await slackService.resolveSlackUserToFocuraUserId(slackUserId);
-    if (!focuraUserId) {
+    // Resolve Slack user to Gablura user
+    const gabluraUserId = await slackService.resolveSlackUserToGabluraUserId(slackUserId);
+    if (!gabluraUserId) {
       await slackService.respondToUrl(command.responseUrl, {
-        text: ':x: Could not find a Focura user linked to that Slack account.',
+        text: ':x: Could not find a Gablura user linked to that Slack account.',
         responseType: 'ephemeral',
       });
       return;
@@ -704,12 +704,12 @@ async function handleSlackAssignCommand(
 
     // Upsert the assignment
     const existingAssignee = await prisma.taskAssignee.findUnique({
-      where: { taskId_userId: { taskId, userId: focuraUserId } },
+      where: { taskId_userId: { taskId, userId: gabluraUserId } },
     });
 
     if (!existingAssignee) {
       await prisma.taskAssignee.create({
-        data: { taskId, userId: focuraUserId },
+        data: { taskId, userId: gabluraUserId },
       });
     }
 
@@ -727,7 +727,7 @@ async function handleSlackAssignCommand(
 }
 
 /**
- * Handle /focura search <query>
+ * Handle /gablura search <query>
  */
 async function handleSlackSearchCommand(
   integration: { id: string; workspaceId: string | null; connectedById: string | null; userId: string | null },
@@ -739,7 +739,7 @@ async function handleSlackSearchCommand(
 
   if (args.length === 0) {
     await slackService.respondToUrl(command.responseUrl, {
-      text: ':warning: Usage: `/focura search <query>`',
+      text: ':warning: Usage: `/gablura search <query>`',
       responseType: 'ephemeral',
     });
     return;
@@ -946,7 +946,7 @@ async function handleSlackViewSubmission(
       const frontendUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || '';
       await slackService.postMessage({
         channel: payload.user.id,
-        text: `:white_check_mark: *Task Created:* ${title}\n:wastebasket: *ID:* \`${task.id}\`\n${frontendUrl ? `<${frontendUrl}/dashboard/tasks/${task.id}|View in Focura>` : ''}`,
+        text: `:white_check_mark: *Task Created:* ${title}\n:wastebasket: *ID:* \`${task.id}\`\n${frontendUrl ? `<${frontendUrl}/dashboard/tasks/${task.id}|View in Gablura>` : ''}`,
       });
     } catch (error) {
       console.error('[Slack] Error creating task from modal:', error);
@@ -1115,8 +1115,8 @@ async function handleSlackEventCallback(
     case 'message':
       // Only handle messages in channels (not DMs with the bot itself)
       // Messages are passively monitored - task creation happens via:
-      // - Slash commands (/focura create)
-      // - App mentions (@Focura create task)
+      // - Slash commands (/gablura create)
+      // - App mentions (@Gablura create task)
       // - Message actions (context menu)
       if (event.subtype === 'message_changed' || event.subtype === 'message_deleted') break;
       if (event.channelType === 'im') break;
@@ -1131,7 +1131,7 @@ async function handleSlackEventCallback(
     }
 
     case 'link_shared':
-      // Could handle link unfurling for Focura task links
+      // Could handle link unfurling for Gablura task links
       console.log('[SlackWebhook] Link shared event received');
       break;
 
@@ -1140,7 +1140,7 @@ async function handleSlackEventCallback(
       if (event.channel) {
         await slackService.postMessage({
           channel: event.channel,
-          text: `:wave: Hello! I'm Focura Bot. Use \`/focura help\` to see what I can do, or just @mention me to create tasks from messages!`,
+          text: `:wave: Hello! I'm Gablura Bot. Use \`/gablura help\` to see what I can do, or just @mention me to create tasks from messages!`,
         }).catch(() => {});
       }
       break;
@@ -1151,7 +1151,7 @@ async function handleSlackEventCallback(
 }
 
 /**
- * Handle @focura mentions in channels
+ * Handle @gablura mentions in channels
  */
 async function handleAppMention(
   integration: { id: string; workspaceId: string | null; connectedById: string | null; userId: string | null },
@@ -1177,7 +1177,7 @@ async function handleAppMention(
     if (!title) {
       await slackService.postMessage({
         channel: channelId,
-        text: `:wave: Hi there! To create a task, say \`@Focura create task <title>\`.`,
+        text: `:wave: Hi there! To create a task, say \`@Gablura create task <title>\`.`,
         threadTs,
       }).catch(() => {});
       return;
@@ -1214,12 +1214,12 @@ async function handleAppMention(
   if (lowerText.includes('help') || lowerText.includes('what')) {
     await slackService.postMessage({
       channel: channelId,
-      text: `:robot_face: *Focura Bot Help*\n\n` +
-        `• \`@Focura create task <title>\` - Create a task from this conversation\n` +
-        `• \`/focura status\` - View workspace overview\n` +
-        `• \`/focura list\` - View your tasks\n` +
-        `• \`/focura assign @user <task-id>\` - Assign a task\n` +
-        `• \`/focura search <query>\` - Search tasks`,
+      text: `:robot_face: *Gablura Bot Help*\n\n` +
+        `• \`@Gablura create task <title>\` - Create a task from this conversation\n` +
+        `• \`/gablura status\` - View workspace overview\n` +
+        `• \`/gablura list\` - View your tasks\n` +
+        `• \`/gablura assign @user <task-id>\` - Assign a task\n` +
+        `• \`/gablura search <query>\` - Search tasks`,
       threadTs,
     }).catch(() => {});
     return;
@@ -1228,7 +1228,7 @@ async function handleAppMention(
   // Default response
   await slackService.postMessage({
     channel: channelId,
-    text: `:wave: Hello! I'm Focura Bot. Say \`@Focura help\` to see what I can do!`,
+    text: `:wave: Hello! I'm Gablura Bot. Say \`@Gablura help\` to see what I can do!`,
     threadTs,
   }).catch(() => {});
 }

@@ -2,7 +2,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Integration tests for:
 //   POST /api/v1/contact   — public, rate-limit bypassed in test env
-//   GET  /api/v1/contact   — Focura-admin only
+//   GET  /api/v1/contact   — Gablura-admin only
 //
 // Email sending is mocked globally in setup.ts (nodemailer / cloudinary).
 // The rate-limit middleware skips in NODE_ENV=test so we never hit 429 here.
@@ -14,7 +14,7 @@ import app from '../../app.js';
 import { prisma } from '../../lib/prisma.js';
 import { createUser, createAdminUser } from '../factories/index.js';
 import { authHeaders } from '../helpers/auth.js';
-import { registerFocuraAdmin } from '../factories/index.js';
+import { registerGabluraAdmin } from '../factories/index.js';
 
 const BASE = '/api/v1/contact';
 
@@ -24,15 +24,15 @@ const BASE = '/api/v1/contact';
 let _originalAdminIds: string | undefined;
 
 beforeAll(() => {
-  _originalAdminIds = process.env.FOCURA_ADMIN_IDS;
+  _originalAdminIds = process.env.GABLURA_ADMIN_IDS;
 });
 
 afterAll(() => {
-  process.env.FOCURA_ADMIN_IDS = _originalAdminIds ?? '';
+  process.env.GABLURA_ADMIN_IDS = _originalAdminIds ?? '';
 });
 
 beforeEach(() => {
-  process.env.FOCURA_ADMIN_IDS = '';
+  process.env.GABLURA_ADMIN_IDS = '';
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -186,9 +186,9 @@ describe('GET /api/v1/contact', () => {
     }
   }
 
-  it('200 — Focura admin can list messages', async () => {
+  it('200 — Gablura admin can list messages', async () => {
     const admin = await createAdminUser();
-    registerFocuraAdmin(admin.id);
+    registerGabluraAdmin(admin.id);
     await seedMessages(3);
 
     const res = await request(app).get(BASE).set(authHeaders(admin));
@@ -201,7 +201,7 @@ describe('GET /api/v1/contact', () => {
 
   it('200 — response includes pagination metadata', async () => {
     const admin = await createAdminUser();
-    registerFocuraAdmin(admin.id);
+    registerGabluraAdmin(admin.id);
     await seedMessages(5);
 
     const res = await request(app).get(BASE).set(authHeaders(admin));
@@ -216,7 +216,7 @@ describe('GET /api/v1/contact', () => {
 
   it('200 — messages ordered newest first', async () => {
     const admin = await createAdminUser();
-    registerFocuraAdmin(admin.id);
+    registerGabluraAdmin(admin.id);
     await seedMessages(3);
 
     const res = await request(app).get(BASE).set(authHeaders(admin));
@@ -230,7 +230,7 @@ describe('GET /api/v1/contact', () => {
 
   it('200 — filters by status query param', async () => {
     const admin = await createAdminUser();
-    registerFocuraAdmin(admin.id);
+    registerGabluraAdmin(admin.id);
     await seedMessages(6);
 
     const res = await request(app)
@@ -244,7 +244,7 @@ describe('GET /api/v1/contact', () => {
 
   it('200 — filters by category query param', async () => {
     const admin = await createAdminUser();
-    registerFocuraAdmin(admin.id);
+    registerGabluraAdmin(admin.id);
     await seedMessages(6);
 
     const res = await request(app)
@@ -258,7 +258,7 @@ describe('GET /api/v1/contact', () => {
 
   it('200 — respects page and limit query params', async () => {
     const admin = await createAdminUser();
-    registerFocuraAdmin(admin.id);
+    registerGabluraAdmin(admin.id);
     await seedMessages(5);
 
     const res = await request(app)
@@ -273,7 +273,7 @@ describe('GET /api/v1/contact', () => {
 
   it('200 — response messages do not include ipAddress or userAgent', async () => {
     const admin = await createAdminUser();
-    registerFocuraAdmin(admin.id);
+    registerGabluraAdmin(admin.id);
     await seedMessages(1);
 
     const res = await request(app).get(BASE).set(authHeaders(admin));
@@ -290,24 +290,24 @@ describe('GET /api/v1/contact', () => {
     expect(res.status).toBe(401);
   });
 
-  it('403 — regular user (non Focura-admin) is rejected', async () => {
+  it('403 — regular user (non Gablura-admin) is rejected', async () => {
     const user = await createUser();
     const res = await request(app).get(BASE).set(authHeaders(user));
     expect(res.status).toBe(403);
   });
 
-  it('403 — ADMIN role user without FOCURA_ADMIN_IDS registration is rejected', async () => {
-    // createAdminUser gives DB role ADMIN but doesn't add to FOCURA_ADMIN_IDS
+  it('403 — ADMIN role user without GABLURA_ADMIN_IDS registration is rejected', async () => {
+    // createAdminUser gives DB role ADMIN but doesn't add to GABLURA_ADMIN_IDS
     const admin = await createAdminUser();
-    // Deliberately NOT calling registerFocuraAdmin(admin.id)
+    // Deliberately NOT calling registerGabluraAdmin(admin.id)
 
     // Reset env to remove any stale IDs from other tests
-    const prev = process.env.FOCURA_ADMIN_IDS ?? '';
-    process.env.FOCURA_ADMIN_IDS = '';
+    const prev = process.env.GABLURA_ADMIN_IDS ?? '';
+    process.env.GABLURA_ADMIN_IDS = '';
 
     const res = await request(app).get(BASE).set(authHeaders(admin));
     expect(res.status).toBe(403);
 
-    process.env.FOCURA_ADMIN_IDS = prev;
+    process.env.GABLURA_ADMIN_IDS = prev;
   });
 });

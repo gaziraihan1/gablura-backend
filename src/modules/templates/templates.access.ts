@@ -5,11 +5,11 @@
  *  - Catalog + detail are PUBLIC (templates page is a marketing page).
  *  - Importing into a workspace requires workspace membership.
  *  - Saving a project as a template requires project edit access.
- *  - Updating/deleting a template requires being its author or a Focura admin.
+ *  - Updating/deleting a template requires being its author or a Gablura admin.
  */
 import { prisma } from '../../lib/prisma.js';
 import { ForbiddenError, NotFoundError } from '../../errors/index.js';
-import { isFocuraAdmin } from '../../config/admin.config.js';
+import { isGabluraAdmin } from '../../config/admin.config.js';
 import type { AuthRequest } from '../../middleware/auth.js';
 
 // Project members who can edit a project. Mirrors the ProjectRole enum
@@ -74,7 +74,7 @@ export async function assertProjectEditAccess(
   return { workspaceId: project.workspaceId, slug: project.slug, name: project.name };
 }
 
-/** Throws unless the request user is the template author or a Focura admin. */
+/** Throws unless the request user is the template author or a Gablura admin. */
 export function assertCanManageTemplate(
   req: AuthRequest,
   template: { authorId: string | null },
@@ -82,6 +82,6 @@ export function assertCanManageTemplate(
   const userId = req.user?.id;
   if (!userId) throw new ForbiddenError('Authentication required');
   if (template.authorId && template.authorId === userId) return;
-  if (req.user?.role === 'ADMIN' && isFocuraAdmin(userId)) return;
+  if (req.user?.role === 'ADMIN' && isGabluraAdmin(userId)) return;
   throw new ForbiddenError('Only the template author can manage this template');
 }

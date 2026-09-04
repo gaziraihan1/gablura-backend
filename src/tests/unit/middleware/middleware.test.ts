@@ -19,9 +19,9 @@ const mockPrisma = vi.hoisted(() => ({
 
 const mockGetPoolMetrics = vi.hoisted(() => vi.fn());
 
-const mockIsFocuraAdmin = vi.hoisted(() => vi.fn());
+const mockIsGabluraAdmin = vi.hoisted(() => vi.fn());
 
-const mockIsFocuraAdminUser = vi.hoisted(() => vi.fn());
+const mockIsGabluraAdminUser = vi.hoisted(() => vi.fn());
 
 const mockGetRedisClient = vi.hoisted(() => vi.fn());
 
@@ -35,8 +35,8 @@ vi.mock('../../../lib/prisma.js', () => ({
 }));
 
 vi.mock('../../../config/admin.config.js', () => ({
-  isFocuraAdmin: mockIsFocuraAdmin,
-  isFocuraAdminUser: mockIsFocuraAdminUser,
+  isGabluraAdmin: mockIsGabluraAdmin,
+  isGabluraAdminUser: mockIsGabluraAdminUser,
 }));
 
 vi.mock('../../../redis/redis.client.js', () => ({
@@ -49,7 +49,7 @@ vi.mock('../../../redis/redis.client.js', () => ({
 
 import { securityHeaders } from '../../../middleware/securityHeaders.js';
 import { errorHandler } from '../../../middleware/errorHandler.js';
-import { requireFocuraAdmin } from '../../../middleware/focuraAdmin.js';
+import { requireGabluraAdmin } from '../../../middleware/focuraAdmin.js';
 import { dbMonitoring, dbPoolGuard } from '../../../middleware/dbMonitoring.js';
 import { rateLimitMiddleware } from '../../../middleware/rateLimiter.js';
 import type { AuthRequest } from '../../../middleware/auth.js';
@@ -506,10 +506,10 @@ describe('errorHandler', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 4. Focura Admin Middleware
+// 4. Gablura Admin Middleware
 // ═══════════════════════════════════════════════════════════════════════════════
 
-describe('requireFocuraAdmin', () => {
+describe('requireGabluraAdmin', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -519,7 +519,7 @@ describe('requireFocuraAdmin', () => {
     const req = createReq({});
     const res = createRes();
 
-    requireFocuraAdmin(req, res, next);
+    requireGabluraAdmin(req, res, next);
 
     expect(res.status).toHaveBeenCalledWith(401);
     expect(res.json).toHaveBeenCalledWith(
@@ -531,11 +531,11 @@ describe('requireFocuraAdmin', () => {
   });
 
   it('returns 403 when user is not ADMIN role', () => {
-    mockIsFocuraAdminUser.mockReturnValue(false);
+    mockIsGabluraAdminUser.mockReturnValue(false);
     const req = createReq({ user: { id: 'u1', email: 'a@b.com', role: 'MEMBER' } });
     const res = createRes();
 
-    requireFocuraAdmin(req, res, next);
+    requireGabluraAdmin(req, res, next);
 
     expect(res.status).toHaveBeenCalledWith(403);
     expect(res.json).toHaveBeenCalledWith(
@@ -545,12 +545,12 @@ describe('requireFocuraAdmin', () => {
     );
   });
 
-  it('returns 403 when user is ADMIN but not in FOCURA_ADMIN_IDS', () => {
-    mockIsFocuraAdminUser.mockReturnValue(false);
+  it('returns 403 when user is ADMIN but not in GABLURA_ADMIN_IDS', () => {
+    mockIsGabluraAdminUser.mockReturnValue(false);
     const req = createReq({ user: { id: 'u1', email: 'a@b.com', role: 'ADMIN' } });
     const res = createRes();
 
-    requireFocuraAdmin(req, res, next);
+    requireGabluraAdmin(req, res, next);
 
     expect(res.status).toHaveBeenCalledWith(403);
     expect(res.json).toHaveBeenCalledWith(
@@ -558,38 +558,38 @@ describe('requireFocuraAdmin', () => {
         message: 'Forbidden: Admin access required',
       }),
     );
-    expect(mockIsFocuraAdminUser).toHaveBeenCalledWith('ADMIN', 'u1');
+    expect(mockIsGabluraAdminUser).toHaveBeenCalledWith('ADMIN', 'u1');
   });
 
-  it('returns 403 when isFocuraAdmin returns false even with ADMIN role', () => {
-    mockIsFocuraAdminUser.mockReturnValue(false);
+  it('returns 403 when isGabluraAdmin returns false even with ADMIN role', () => {
+    mockIsGabluraAdminUser.mockReturnValue(false);
     const req = createReq({ user: { id: 'u1', email: 'a@b.com', role: 'ADMIN' } });
     const res = createRes();
 
-    requireFocuraAdmin(req, res, next);
+    requireGabluraAdmin(req, res, next);
 
     expect(res.status).toHaveBeenCalledWith(403);
   });
 
-  it('calls next() when user is ADMIN and isFocuraAdminUser returns true', () => {
-    mockIsFocuraAdminUser.mockReturnValue(true);
+  it('calls next() when user is ADMIN and isGabluraAdminUser returns true', () => {
+    mockIsGabluraAdminUser.mockReturnValue(true);
     const req = createReq({ user: { id: 'u1', email: 'a@b.com', role: 'ADMIN' } });
     const res = createRes();
 
-    requireFocuraAdmin(req, res, next);
+    requireGabluraAdmin(req, res, next);
 
     expect(next).toHaveBeenCalledTimes(1);
     expect(res.status).not.toHaveBeenCalled();
   });
 
   it('returns 500 when an unexpected error is thrown', () => {
-    mockIsFocuraAdminUser.mockImplementation(() => {
+    mockIsGabluraAdminUser.mockImplementation(() => {
       throw new Error('Unexpected error');
     });
     const req = createReq({ user: { id: 'u1', email: 'a@b.com', role: 'ADMIN' } });
     const res = createRes();
 
-    requireFocuraAdmin(req, res, next);
+    requireGabluraAdmin(req, res, next);
 
     expect(res.status).toHaveBeenCalledWith(500);
     expect(res.json).toHaveBeenCalledWith(

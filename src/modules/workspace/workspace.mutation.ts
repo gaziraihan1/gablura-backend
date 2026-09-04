@@ -50,7 +50,7 @@ export const WorkspaceMutation = {
           logo: input.logo,
           isPublic: input.isPublic || false,
           // Plan is never client-settable at creation — paid tiers require an
-          // active subscription (billing flow) or a Focura-admin override.
+          // active subscription (billing flow) or a Gablura-admin override.
           plan: "FREE",
           ownerId: userId,
           members: { create: { userId, role: "OWNER" } },
@@ -128,7 +128,7 @@ export const WorkspaceMutation = {
     // hides the workspace everywhere (all queries filter it) while keeping the
     // data recoverable through the admin restore flow
     // (PATCH /admin/workspaces/:slug/restore). Permanent removal is reserved
-    // for Focura admins (admin hardDelete), so an accidental delete is not
+    // for Gablura admins (admin hardDelete), so an accidental delete is not
     // destructive.
     await prisma.workspace.update({
       where: { id: workspaceId },

@@ -12,7 +12,7 @@ async function testPaddle() {
 
     // Test 1 — Create a customer
     const customer = await paddle.customers.create({
-      email: 'test@focura0.dev',
+      email: 'test@gablura0.dev',
       name: 'Test User',
     });
 

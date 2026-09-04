@@ -12,7 +12,7 @@ const API_URL = process.env.BACKEND_URL || 'http://localhost:5000';
  * Single source of truth for the security-header stack shared by BOTH app
  * instances (src/index.ts server entry and src/app.ts used by integration
  * tests). helmet applies its baseline protections; securityHeaders then
- * applies the explicit Focura header policy — its values intentionally win
+ * applies the explicit Gablura header policy — its values intentionally win
  * where they overlap with helmet's defaults (CSP, X-Frame-Options, CORP).
  */
 export function applySecurity(app: Application): void {

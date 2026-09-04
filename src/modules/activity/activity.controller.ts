@@ -44,7 +44,7 @@ export const getWorkspaceActivities = asyncHandler(async (req: AuthRequest, res:
   const isPublic = await ActivityAccess.isPublicWorkspace(workspaceId);
   if(!hasAccess && !isPublic) throw new ForbiddenError('You do not have access to this workspace');
 
-  // Workspace owners/admins see Focura-admin audit rows (e.g. AI cap changes)
+  // Workspace owners/admins see Gablura-admin audit rows (e.g. AI cap changes)
   // in the feed; regular members and public viewers don't.
   const includeAdminRows = isAdmin;
 

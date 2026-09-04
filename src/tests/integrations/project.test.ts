@@ -133,7 +133,7 @@ describe("POST /api/v1/projects", () => {
       .post("/api/v1/projects")
       .set(await authWithCsrfHeaders(user))
       .send({
-        name: "Focura v2",
+        name: "Gablura v2",
         description: "Next gen project management.",
         workspaceId: workspace.id,
         priority: Priority.HIGH,
@@ -141,7 +141,7 @@ describe("POST /api/v1/projects", () => {
 
     expect(res.status).toBe(201);
     const project = res.body.data;
-    expect(project.name).toBe("Focura v2");
+    expect(project.name).toBe("Gablura v2");
     expect(project.workspaceId).toBe(workspace.id);
     expect(project.status).toBe(ProjectStatus.ACTIVE);
 

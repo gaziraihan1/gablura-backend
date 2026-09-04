@@ -26,7 +26,7 @@ describe('StorageProvider', () => {
   describe('upload', () => {
     it('uploads a file to Cloudinary with correct options', async () => {
       const mockUploadResult = {
-        public_id:     'focura/attachments/file_123',
+        public_id:     'gablura/attachments/file_123',
         bytes:         1000,
         secure_url:    'https://cdn.example.com/file.txt',
         thumbnail_url: null,
@@ -39,7 +39,7 @@ describe('StorageProvider', () => {
       const result = await StorageProvider.upload(dataURI);
 
       expect(cloudinary.uploader.upload).toHaveBeenCalledWith(dataURI, {
-        folder:        'focura/attachments',
+        folder:        'gablura/attachments',
         resource_type: 'auto',
       });
       expect(result).toEqual(mockUploadResult);
@@ -47,7 +47,7 @@ describe('StorageProvider', () => {
 
     it('handles various MIME types correctly', async () => {
       const mockUploadResult = {
-        public_id:     'focura/attachments/image_456',
+        public_id:     'gablura/attachments/image_456',
         bytes:         5000,
         secure_url:    'https://cdn.example.com/image.png',
         thumbnail_url: 'https://cdn.example.com/image_thumb.png',
@@ -60,7 +60,7 @@ describe('StorageProvider', () => {
       const result = await StorageProvider.upload(dataURI);
 
       expect(cloudinary.uploader.upload).toHaveBeenCalledWith(dataURI, {
-        folder:        'focura/attachments',
+        folder:        'gablura/attachments',
         resource_type: 'auto',
       });
       expect(result.thumbnail_url).toBe('https://cdn.example.com/image_thumb.png');
@@ -76,7 +76,7 @@ describe('StorageProvider', () => {
 
     it('handles large file uploads', async () => {
       const mockUploadResult = {
-        public_id:     'focura/attachments/large_file',
+        public_id:     'gablura/attachments/large_file',
         bytes:         10 * 1024 * 1024, // 10 MB
         secure_url:    'https://cdn.example.com/large.pdf',
         thumbnail_url: null,
@@ -93,7 +93,7 @@ describe('StorageProvider', () => {
 
     it('handles video uploads', async () => {
       const mockUploadResult = {
-        public_id:     'focura/attachments/video_789',
+        public_id:     'gablura/attachments/video_789',
         bytes:         50 * 1024 * 1024, // 50 MB
         secure_url:    'https://cdn.example.com/video.mp4',
         thumbnail_url: 'https://cdn.example.com/video_thumb.jpg',
@@ -106,7 +106,7 @@ describe('StorageProvider', () => {
       const result = await StorageProvider.upload(dataURI);
 
       expect(cloudinary.uploader.upload).toHaveBeenCalledWith(dataURI, {
-        folder:        'focura/attachments',
+        folder:        'gablura/attachments',
         resource_type: 'auto',
       });
     });
@@ -118,9 +118,9 @@ describe('StorageProvider', () => {
 
       (cloudinary.uploader.destroy as any).mockResolvedValue(mockDestroyResult);
 
-      const result = await StorageProvider.destroy('focura/attachments/file_123');
+      const result = await StorageProvider.destroy('gablura/attachments/file_123');
 
-      expect(cloudinary.uploader.destroy).toHaveBeenCalledWith('focura/attachments/file_123');
+      expect(cloudinary.uploader.destroy).toHaveBeenCalledWith('gablura/attachments/file_123');
       expect(result).toEqual(mockDestroyResult);
     });
 
@@ -145,7 +145,7 @@ describe('StorageProvider', () => {
 
       (cloudinary.uploader.destroy as any).mockResolvedValue(mockDestroyResult);
 
-      const publicId = 'focura/attachments/file_with-special_chars_123';
+      const publicId = 'gablura/attachments/file_with-special_chars_123';
 
       await StorageProvider.destroy(publicId);
 

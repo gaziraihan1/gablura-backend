@@ -24,9 +24,9 @@ const PLAN_CACHE_TTL_MS = 60_000;
 
 interface WorkspaceAiConfig {
   plan: AiPlan;
-  /** Effective limits — plan defaults overridden by Focura-admin workspace overrides. */
+  /** Effective limits — plan defaults overridden by Gablura-admin workspace overrides. */
   limits: AiLimits;
-  /** Raw Focura-admin overrides currently active (absent field = plan default). */
+  /** Raw Gablura-admin overrides currently active (absent field = plan default). */
   overrides: Partial<Pick<AiLimits, "daily" | "monthlyTokens" | "maxOutputTokens">>;
   /** Plan defaults for the overrideable fields — what the tier gives without admin changes. */
   defaults: Pick<AiLimits, "daily" | "monthlyTokens" | "maxOutputTokens">;
@@ -87,14 +87,14 @@ export async function resolveWorkspacePlan(workspaceId: string): Promise<AiPlan>
 
 /**
  * Drop the cached AI config for a workspace so the next call re-reads it.
- * Called when a Focura admin updates the workspace's AI overrides — without
+ * Called when a Gablura admin updates the workspace's AI overrides — without
  * this, the new limits would only take effect after the 60s TTL.
  */
 export function invalidateWorkspaceAiConfig(workspaceId: string): void {
   configCache.delete(workspaceId);
 }
 
-/** Effective AI limits for a workspace, honoring Focura-admin overrides. */
+/** Effective AI limits for a workspace, honoring Gablura-admin overrides. */
 export async function resolveWorkspaceAiLimits(workspaceId: string): Promise<AiLimits> {
   return (await loadWorkspaceAiConfig(workspaceId)).limits;
 }
@@ -188,7 +188,7 @@ export const aiRateLimit = async (
     };
 
     const burstCount = await checkWindow(
-      `focura:ai:rl:min:${id}`,
+      `gablura:ai:rl:min:${id}`,
       60_000,
       limits.burstPerMinute,
     );
@@ -198,7 +198,7 @@ export const aiRateLimit = async (
     }
 
     const hourCount = await checkWindow(
-      `focura:ai:rl:hour:${id}`,
+      `gablura:ai:rl:hour:${id}`,
       3_600_000,
       limits.hourly,
     );
@@ -208,7 +208,7 @@ export const aiRateLimit = async (
     }
 
     // Layer 3 — daily request quota (idempotent reset at midnight)
-    const dailyKey = `focura:ai:q:daily:${today}:${id}`;
+    const dailyKey = `gablura:ai:q:daily:${today}:${id}`;
     const dailyCount = await redis.incr(dailyKey);
     if (dailyCount === 1) await redis.expire(dailyKey, 60 * 60 * 25);
     if (dailyCount > limits.daily) {

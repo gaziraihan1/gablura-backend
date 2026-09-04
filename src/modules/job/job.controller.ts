@@ -1,6 +1,6 @@
 import { Request, Response }   from 'express';
 import type { AuthRequest }    from '../../middleware/auth.js';
-import { isFocuraAdminUser }   from '../../config/admin.config.js';
+import { isGabluraAdminUser }   from '../../config/admin.config.js';
 import {
   listOpenJobs, getOpenJob,
   createJob, updateJob,
@@ -22,7 +22,7 @@ import {
 // ─── Guard ────────────────────────────────────────────────────────────────────
 
 function assertAdmin(userId: string | undefined, role: string | undefined): void {
-  if (!isFocuraAdminUser(role, userId)) {
+  if (!isGabluraAdminUser(role, userId)) {
     throw new ForbiddenError('You do not have permission to access this resource.');
   }
 }

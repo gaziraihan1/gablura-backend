@@ -1,8 +1,8 @@
 import { Response, NextFunction } from 'express';
 import { AuthRequest } from '../middleware/auth.js';
-import { isFocuraAdminUser } from '../config/admin.config.js';
+import { isGabluraAdminUser } from '../config/admin.config.js';
 
-export const requireFocuraAdmin = (
+export const requireGabluraAdmin = (
   req: AuthRequest,
   res: Response,
   next: NextFunction
@@ -20,8 +20,8 @@ export const requireFocuraAdmin = (
     });
   }
 
-  // Require both ADMIN role AND FOCURA_ADMIN_IDS registration
-  if (!isFocuraAdminUser(userRole, userId)) {
+  // Require both ADMIN role AND GABLURA_ADMIN_IDS registration
+  if (!isGabluraAdminUser(userRole, userId)) {
     return res.status(403).json({
       success: false,
       message: 'Forbidden: Admin access required',
@@ -31,7 +31,7 @@ export const requireFocuraAdmin = (
 
   next();
   } catch (error) {
-    console.error('FocuraAdminMiddleware Error:', error);
+    console.error('GabluraAdminMiddleware Error:', error);
     return res.status(500).json({
       success: false,
       message: 'Internal server error',

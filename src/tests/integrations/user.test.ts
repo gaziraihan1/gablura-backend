@@ -30,7 +30,7 @@ describe("GET /api/v1/user/profile", () => {
   it("200 — returns own profile wrapped in data.user, no password", async () => {
     const user = await createUser({
       name: "Test Person",
-      email: "testme@focura.test",
+      email: "testme@gablura.test",
     });
 
     const res = await request(app)
@@ -40,7 +40,7 @@ describe("GET /api/v1/user/profile", () => {
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
     expect(res.body.data.user.id).toBe(user.id);
-    expect(res.body.data.user.email).toBe("testme@focura.test");
+    expect(res.body.data.user.email).toBe("testme@gablura.test");
     expect(res.body.data.user.name).toBe("Test Person");
     expect(res.body.data.user.password).toBeUndefined();
   });
@@ -130,13 +130,13 @@ describe("PUT /api/v1/user/profile", () => {
     const res = await request(app)
       .put(`${BASE}/profile`)
       .set(await authWithCsrfHeaders(user))
-      .send({ bio: "Full-stack dev building Focura." });
+      .send({ bio: "Full-stack dev building Gablura." });
 
     expect(res.status).toBe(200);
-    expect(res.body.data.user.bio).toBe("Full-stack dev building Focura.");
+    expect(res.body.data.user.bio).toBe("Full-stack dev building Gablura.");
 
     const db = await prisma.user.findUnique({ where: { id: user.id } });
-    expect(db?.bio).toBe("Full-stack dev building Focura.");
+    expect(db?.bio).toBe("Full-stack dev building Gablura.");
   });
 
   it("200 — updates timezone (any string accepted, no validation)", async () => {
@@ -169,10 +169,10 @@ describe("PUT /api/v1/user/profile", () => {
     const res = await request(app)
       .put(`${BASE}/profile`)
       .set(await authWithCsrfHeaders(user))
-      .send({ image: "https://cdn.focura.com/avatar.png" });
+      .send({ image: "https://cdn.gablura.com/avatar.png" });
 
     expect(res.status).toBe(200);
-    expect(res.body.data.user.image).toBe("https://cdn.focura.com/avatar.png");
+    expect(res.body.data.user.image).toBe("https://cdn.gablura.com/avatar.png");
   });
 
   it("200 — empty string name is accepted (controller has no min-length check)", async () => {
@@ -320,7 +320,7 @@ describe("GET /api/v1/user/workspace-members", () => {
   it("200 — results are deduplicated (distinct by id)", async () => {
     const { user: owner1, workspace: ws1 } = await createWorkspaceWithOwner();
     const { workspace: ws2 } = await createWorkspaceWithOwner(
-      { email: "owner2@focura.test" },
+      { email: "owner2@gablura.test" },
       { slug: "ws-second" },
     );
     const sharedMember = await createUser();

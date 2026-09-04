@@ -1,6 +1,6 @@
-# 🚀 Focura Backend Deployment Guide
+# 🚀 Gablura Backend Deployment Guide
 
-A complete production deployment guide for the Focura Backend API.
+A complete production deployment guide for the Gablura Backend API.
 
 ## Overview
 
@@ -62,9 +62,9 @@ Create production environment variables in your hosting provider.
 NODE_ENV=production
 PORT=5000
 
-ALLOWED_ORIGIN=https://app.focura.com
-CLIENT_URL=https://app.focura.com
-BACKEND_URL=https://api.focura.com
+ALLOWED_ORIGIN=https://app..com
+CLIENT_URL=https://app..com
+BACKEND_URL=https://api..com
 
 DATABASE_URL=postgresql://...
 DIRECT_URL=postgresql://...
@@ -179,13 +179,13 @@ Recommended for startups and MVPs.
 ### Build
 
 ```bash
-docker build -t focura-backend .
+docker build -t -backend .
 ```
 
 ### Run
 
 ```bash
-docker run -p 5000:5000 focura-backend
+docker run -p 5000:5000 -backend
 ```
 
 ---
@@ -225,7 +225,7 @@ Recommended for scalable production workloads.
 ### Health Check
 
 ```bash
-curl https://api.focura.com/health
+curl https://api..com/health
 ```
 
 ### Verify Database
@@ -270,7 +270,7 @@ Redeploy a previous successful deployment.
 ### Kubernetes
 
 ```bash
-kubectl rollout undo deployment/focura-backend
+kubectl rollout undo deployment/-backend
 ```
 
 ### AWS ECS
@@ -325,7 +325,7 @@ railway logs
 ```
 
 ```bash
-kubectl logs deployment/focura-backend
+kubectl logs deployment/-backend
 ```
 
 ```bash
@@ -354,4 +354,4 @@ If deployment fails:
 
 ---
 
-Built for the **Focura Backend** project.
+Built for the **Gablura Backend** project.

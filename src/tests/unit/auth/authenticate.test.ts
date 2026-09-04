@@ -70,7 +70,7 @@ import {
 
 const mockUser = {
   id: "user-test-001",
-  email: "test@focura.com",
+  email: "test@gablura.com",
   name: "Test User",
   role: "USER" as const,
   emailVerified: new Date(),

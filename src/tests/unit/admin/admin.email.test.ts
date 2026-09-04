@@ -15,7 +15,7 @@ describe('admin.email', () => {
     delete process.env.SMTP_HOST;
     delete process.env.SMTP_USER;
     delete process.env.SMTP_PASS;
-    process.env.CLIENT_URL = 'https://focura.app';
+    process.env.CLIENT_URL = 'https://gablura.app';
   });
 
   describe('sendWorkspaceDeletedEmail', () => {
@@ -98,7 +98,7 @@ describe('admin.email', () => {
 describe('admin.email template builders', () => {
   beforeEach(() => {
     vi.resetModules();
-    process.env.CLIENT_URL = 'https://focura.app';
+    process.env.CLIENT_URL = 'https://gablura.app';
   });
 
   describe('workspace deleted HTML', () => {
@@ -205,7 +205,7 @@ describe('admin.email template builders', () => {
         expect.objectContaining({
           html: expect.stringContaining('Harassment'),
           text: expect.stringContaining('Harassment'),
-          subject: 'Your Focura account has been suspended',
+          subject: 'Your Gablura account has been suspended',
         }),
       );
     });
@@ -266,7 +266,7 @@ describe('admin.email template builders', () => {
   });
 
   describe('base wrapper', () => {
-    it('should include Focura branding in the footer', async () => {
+    it('should include Gablura branding in the footer', async () => {
       const { sendBanEmail } = await import('../../../admin/admin.email.js');
       const sendMail = vi.fn().mockResolvedValue({ messageId: 'test' });
 
@@ -285,7 +285,7 @@ describe('admin.email template builders', () => {
 
       expect(sendMail).toHaveBeenCalledWith(
         expect.objectContaining({
-          html: expect.stringContaining('Focura'),
+          html: expect.stringContaining('Gablura'),
         }),
       );
     });

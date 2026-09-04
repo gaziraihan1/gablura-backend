@@ -1,8 +1,8 @@
-# 🚀 Focura: The Next-Generation Hyper-Productivity OS
+# 🚀 Gablura: The Next-Generation Hyper-Productivity OS
 
-Focura is not just another "Task Management" app. It is a sophisticated, production-ready **Productivity Infrastructure** designed to handle the complexities of modern team collaboration, mental well-being, and high-scale performance.
+Gablura is not just another "Task Management" app. It is a sophisticated, production-ready **Productivity Infrastructure** designed to handle the complexities of modern team collaboration, mental well-being, and high-scale performance.
 
-While most productivity tools focus on _what_ needs to be done, Focura focuses on _how_ it is done—integrating energy levels, burnout prevention, and cognitive capacity into the workflow.
+While most productivity tools focus on _what_ needs to be done, Gablura focuses on _how_ it is done—integrating energy levels, burnout prevention, and cognitive capacity into the workflow.
 
 ---
 
@@ -10,25 +10,25 @@ While most productivity tools focus on _what_ needs to be done, Focura focuses o
 
 Modern workers are not suffering from a lack of tools, but from **Tool Fatigue** and **Cognitive Overload**. We have lists for everything, yet we feel less productive and more burnt out than ever.
 
-Focura is designed to be the **"Operating System for Work."**
+Gablura is designed to be the **"Operating System for Work."**
 
-The goal is to move away from static lists and move toward **Dynamic Resource Management**. By tracking not just time, but _focus_ and _capacity_, Focura allows users and managers to optimize their most valuable resource: **Human Attention.**
+The goal is to move away from static lists and move toward **Dynamic Resource Management**. By tracking not just time, but _focus_ and _capacity_, Gablura allows users and managers to optimize their most valuable resource: **Human Attention.**
 
-### The Market Gap Focura Fills:
+### The Market Gap Gablura Fills:
 
-- **Beyond Time-Blocking:** While others block time, Focura matches tasks to **Energy Types** (Low/Medium/High).
-- **Burnout as a Metric:** Instead of waiting for an employee to quit, Focura provides **Burnout Signals** based on workload density.
+- **Beyond Time-Blocking:** While others block time, Gablura matches tasks to **Energy Types** (Low/Medium/High).
+- **Burnout as a Metric:** Instead of waiting for an employee to quit, Gablura provides **Burnout Signals** based on workload density.
 - **True Multi-Tenancy:** A robust Workspace-based architecture that allows a single user to seamlessly switch between a personal life, a side hustle, and a corporate job without data leakage.
 
 ---
 
 ## 🛠️ Technical Masterclass (The Asset Value)
 
-For a buyer, the primary value of Focura is the **engineering rigor**. You are not buying a prototype; you are buying a professional-grade foundation that would typically cost $50k-$100k in senior engineering salaries to build.
+For a buyer, the primary value of Gablura is the **engineering rigor**. You are not buying a prototype; you are buying a professional-grade foundation that would typically cost $50k-$100k in senior engineering salaries to build.
 
 ### 🏗️ Architecture: The Modular Monolith
 
-Focura employs a **Modular Monolith** pattern. Each domain (Task, Workspace, Billing, Notification) is completely self-contained.
+Gablura employs a **Modular Monolith** pattern. Each domain (Task, Workspace, Billing, Notification) is completely self-contained.
 
 - **The Benefit:** You get the simplicity of a single deployment with the organizational discipline of microservices. If the app grows to millions of users, any module can be ripped out and moved to its own microservice in hours, not weeks.
 
@@ -73,11 +73,11 @@ The billing system is a complete "Business-in-a-Box" integrated with Lemon Squee
 
 ## 📈 The Potential: Scaling to a Giant
 
-Focura is currently a powerful tool, but its architecture allows it to evolve into a massive ecosystem.
+Gablura is currently a powerful tool, but its architecture allows it to evolve into a massive ecosystem.
 
 ### 1. The AI Intelligence Layer (Immediate Value Add)
 
-Because the data is already structured by "Energy Type" and "Focus Level," Focura is the perfect dataset for LLM integration:
+Because the data is already structured by "Energy Type" and "Focus Level," Gablura is the perfect dataset for LLM integration:
 
 - **AI Auto-Scheduler:** An AI that monitors "Burnout Signals" and automatically reschedules high-stress tasks to the user's peak energy windows.
 - **Automatic Cognitive Breakdown:** AI that transforms a "Big Goal" into a sequence of Low $
@@ -86,7 +86,7 @@ ightarrow$ High energy tasks.
 
 ### 2. B2B Enterprise Pivot
 
-The Workspace/Member/Role architecture is designed for the corporate world. By adding **SAML/SSO** and **Audit Logs**, Focura can move from a "Prosumer" tool to an Enterprise-grade platform for agencies and corporations.
+The Workspace/Member/Role architecture is designed for the corporate world. By adding **SAML/SSO** and **Audit Logs**, Gablura can move from a "Prosumer" tool to an Enterprise-grade platform for agencies and corporations.
 
 ### 3. The Productivity Marketplace
 
@@ -96,15 +96,15 @@ The "Popular Resources" and "Product Updates" modules are the seeds for a market
 
 ## 🚀 The "Time-to-Market" Advantage
 
-If you were to build Focura today, you would spend:
+If you were to build Gablura today, you would spend:
 
 - **3 Months** on Auth, Security, and Session Management.
 - **2 Months** on Multi-tenant Workspace and RBAC logic.
 - **2 Months** on Payment Provider Integration (Lemon Squeezy, Stripe, Paddle) and Usage-limit engines.
 - **2 Months** on Redis Caching and SSE Real-time notifications.
 
-**By acquiring Focura, you skip 9+ months of high-risk development.**
+**By acquiring Gablura, you skip 9+ months of high-risk development.**
 
 You are starting at the **95% mark**. The "plumbing" is finished, the security is locked, and the performance is optimized. Your only remaining task is to choose the market and hit **Launch**.
 
-**Focura is not just code. It is a head-start.**
+**Gablura is not just code. It is a head-start.**
