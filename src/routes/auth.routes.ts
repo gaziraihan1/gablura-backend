@@ -39,6 +39,7 @@ import {
 } from "../errors/index.js";
 import { validate } from "../middleware/validate.js";
 import { exchangeSchema, refreshSchema, logoutSchema } from "../lib/validation/auth.validation.js";
+import { CacheClient, CACHE_KEYS } from "../lib/redis/cache.client.js";
 
 const router = Router();
 // ... (rest of the file)
@@ -413,7 +414,12 @@ router.post(
 
   // Revoke tokens — best effort, don't block the response on Redis failure
   try {
-    if (tokenJti) await revokeAccessToken(tokenJti, 900);
+    if (tokenJti) {
+      await revokeAccessToken(tokenJti, 900);
+      // Drop the auth-result cache so the revoked token is rejected immediately
+      // instead of surviving up to AUTH_RESULT_TTL (5 min) via the cached path.
+      await CacheClient.delete(CACHE_KEYS.authResult(tokenJti));
+    }
     if (logoutAll && userId) await revokeAllRefreshTokens(userId);
     if (sessionId) {
       await invalidateSession(sessionId);
