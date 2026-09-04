@@ -1,4 +1,4 @@
-openapi: 3.1.0
+openapi: 3.0.3
 info:
   title: Focura API
   description: |
@@ -141,6 +141,10 @@ paths:
       security: []
       operationId: healthCheck
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Server is healthy
           content:
@@ -164,6 +168,10 @@ paths:
       security: []
       operationId: dbPoolHealth
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Pool stats
 
@@ -228,6 +236,10 @@ paths:
                   type: boolean
                   default: false
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Logged out
 
@@ -237,6 +249,10 @@ paths:
       summary: Get CSRF token
       operationId: getCsrfToken
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: CSRF token
           content:
@@ -253,6 +269,10 @@ paths:
       summary: Get current user profile
       operationId: getUserProfile
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: User profile
           content:
@@ -270,6 +290,10 @@ paths:
             schema:
               $ref: '#/components/schemas/UpdateProfileRequest'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Updated profile
 
@@ -285,6 +309,10 @@ paths:
             schema:
               $ref: '#/components/schemas/ChangePasswordRequest'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Password changed
 
@@ -294,6 +322,10 @@ paths:
       summary: Export user data (GDPR)
       operationId: exportUserData
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Export initiated
 
@@ -303,6 +335,10 @@ paths:
       summary: Delete account
       operationId: deleteUserAccount
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Account deleted
 
@@ -312,6 +348,10 @@ paths:
       summary: Get security info
       operationId: getUserSecurity
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Security info
 
@@ -321,6 +361,10 @@ paths:
       summary: Setup 2FA
       operationId: setup2FA
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: 2FA setup data
           content:
@@ -354,6 +398,10 @@ paths:
                   type: string
                   pattern: '^\d{6}$'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: 2FA enabled
 
@@ -373,6 +421,10 @@ paths:
                 password:
                   type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: 2FA disabled
 
@@ -382,6 +434,10 @@ paths:
       summary: List active sessions
       operationId: getUserSessions
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Active sessions
     delete:
@@ -389,6 +445,10 @@ paths:
       summary: Revoke all sessions
       operationId: revokeAllSessions
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: All sessions revoked
 
@@ -400,6 +460,10 @@ paths:
       parameters:
         - $ref: '#/components/parameters/SessionId'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Session revoked
 
@@ -409,6 +473,10 @@ paths:
       summary: Get workspace members
       operationId: getWorkspaceMembers
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Members list
 
@@ -418,6 +486,10 @@ paths:
       summary: List user's workspaces
       operationId: listWorkspaces
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Workspaces
     post:
@@ -431,6 +503,10 @@ paths:
             schema:
               $ref: '#/components/schemas/CreateWorkspaceRequest'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '201':
           description: Created
 
@@ -440,6 +516,10 @@ paths:
       summary: Browse public workspaces
       operationId: listPublicWorkspaces
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Public workspaces
 
@@ -456,6 +536,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Invitation details
 
@@ -471,21 +555,32 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Accepted
 
-  /api/v1/workspaces/{slug}:
+  /api/v1/workspaces/{workspaceId}:
     get:
       tags: [Workspace]
-      summary: Get workspace by slug
+      summary: Get workspace
       operationId: getWorkspace
       parameters:
-        - $ref: '#/components/parameters/WorkspaceSlug'
+        - $ref: '#/components/parameters/WorkspaceId'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Workspace
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Workspace'
 
-  /api/v1/workspaces/{id}:
     put:
       tags: [Workspace]
       summary: Update workspace
@@ -499,6 +594,10 @@ paths:
             schema:
               $ref: '#/components/schemas/UpdateWorkspaceRequest'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Updated
     delete:
@@ -508,6 +607,10 @@ paths:
       parameters:
         - $ref: '#/components/parameters/WorkspaceId'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Deleted
 
@@ -523,6 +626,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Overview
 
@@ -538,10 +645,14 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Tasks
 
-  /api/v1/workspaces/{id}/members:
+  /api/v1/workspaces/{workspaceId}/members:
     get:
       tags: [Workspace]
       summary: List workspace members
@@ -549,10 +660,14 @@ paths:
       parameters:
         - $ref: '#/components/parameters/WorkspaceId'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Members
 
-  /api/v1/workspaces/{id}/invite:
+  /api/v1/workspaces/{workspaceId}/invite:
     post:
       tags: [Workspace]
       summary: Invite member
@@ -566,10 +681,14 @@ paths:
             schema:
               $ref: '#/components/schemas/InviteMemberRequest'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Invitation sent
 
-  /api/v1/workspaces/{id}/members/{memberId}:
+  /api/v1/workspaces/{workspaceId}/members/{memberId}:
     delete:
       tags: [Workspace]
       summary: Remove member
@@ -582,10 +701,14 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Removed
 
-  /api/v1/workspaces/{id}/members/{memberId}/role:
+  /api/v1/workspaces/{workspaceId}/members/{memberId}/role:
     put:
       tags: [Workspace]
       summary: Update member role
@@ -608,10 +731,14 @@ paths:
                 role:
                   $ref: '#/components/schemas/WorkspaceRole'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Role updated
 
-  /api/v1/workspaces/{id}/stats:
+  /api/v1/workspaces/{workspaceId}/stats:
     get:
       tags: [Workspace]
       summary: Workspace statistics
@@ -619,6 +746,10 @@ paths:
       parameters:
         - $ref: '#/components/parameters/WorkspaceId'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Stats
 
@@ -634,10 +765,14 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Storage info
 
-  /api/v1/workspaces/{id}/leave:
+  /api/v1/workspaces/{workspaceId}/leave:
     post:
       tags: [Workspace]
       summary: Leave workspace
@@ -645,6 +780,10 @@ paths:
       parameters:
         - $ref: '#/components/parameters/WorkspaceId'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Left
 
@@ -654,6 +793,10 @@ paths:
       summary: List user's projects
       operationId: listProjects
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Projects
     post:
@@ -667,6 +810,10 @@ paths:
             schema:
               $ref: '#/components/schemas/CreateProjectRequest'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '201':
           description: Created
 
@@ -676,6 +823,10 @@ paths:
       summary: List all user projects
       operationId: listAllUserProjects
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: All projects
 
@@ -691,6 +842,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Projects
 
@@ -706,6 +861,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Project
 
@@ -717,6 +876,10 @@ paths:
       parameters:
         - $ref: '#/components/parameters/ProjectId'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Project
     patch:
@@ -732,6 +895,10 @@ paths:
             schema:
               $ref: '#/components/schemas/UpdateProjectRequest'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Updated
     delete:
@@ -741,6 +908,10 @@ paths:
       parameters:
         - $ref: '#/components/parameters/ProjectId'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Deleted
 
@@ -758,6 +929,10 @@ paths:
             schema:
               $ref: '#/components/schemas/AddProjectMemberRequest'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Added
 
@@ -784,6 +959,10 @@ paths:
                 role:
                   $ref: '#/components/schemas/ProjectRole'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Updated
     delete:
@@ -798,6 +977,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Removed
 
@@ -809,6 +992,10 @@ paths:
       parameters:
         - $ref: '#/components/parameters/ProjectId'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Sections
     post:
@@ -824,6 +1011,10 @@ paths:
             schema:
               $ref: '#/components/schemas/CreateSectionRequest'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '201':
           description: Created
 
@@ -846,6 +1037,10 @@ paths:
                   items:
                     type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Reordered
 
@@ -868,6 +1063,10 @@ paths:
             schema:
               $ref: '#/components/schemas/UpdateSectionRequest'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Updated
     delete:
@@ -882,6 +1081,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Deleted
 
@@ -893,6 +1096,10 @@ paths:
       parameters:
         - $ref: '#/components/parameters/ProjectId'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Sprints
     post:
@@ -908,6 +1115,10 @@ paths:
             schema:
               $ref: '#/components/schemas/CreateSprintRequest'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '201':
           description: Created
 
@@ -919,6 +1130,10 @@ paths:
       parameters:
         - $ref: '#/components/parameters/ProjectId'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Active sprint
 
@@ -935,6 +1150,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Sprint
     patch:
@@ -955,6 +1174,10 @@ paths:
             schema:
               $ref: '#/components/schemas/UpdateSprintRequest'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Updated
     delete:
@@ -969,6 +1192,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Deleted
 
@@ -985,6 +1212,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Completed
 
@@ -996,6 +1227,10 @@ paths:
       parameters:
         - $ref: '#/components/parameters/ProjectId'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Milestones
     post:
@@ -1011,6 +1246,10 @@ paths:
             schema:
               $ref: '#/components/schemas/CreateMilestoneRequest'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '201':
           description: Created
 
@@ -1027,6 +1266,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Milestone
     patch:
@@ -1047,6 +1290,10 @@ paths:
             schema:
               $ref: '#/components/schemas/UpdateMilestoneRequest'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Updated
     delete:
@@ -1061,6 +1308,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Deleted
 
@@ -1077,6 +1328,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Updated
 
@@ -1088,6 +1343,10 @@ paths:
       parameters:
         - $ref: '#/components/parameters/ProjectId'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Views
     post:
@@ -1103,6 +1362,10 @@ paths:
             schema:
               $ref: '#/components/schemas/CreateViewRequest'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '201':
           description: Created
 
@@ -1125,6 +1388,10 @@ paths:
             schema:
               $ref: '#/components/schemas/UpdateViewRequest'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Updated
     delete:
@@ -1139,6 +1406,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Deleted
 
@@ -1148,6 +1419,10 @@ paths:
       summary: Get my favorites
       operationId: getMyFavorites
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Favorites
 
@@ -1159,6 +1434,10 @@ paths:
       parameters:
         - $ref: '#/components/parameters/ProjectId'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Toggled
 
@@ -1239,6 +1518,10 @@ paths:
             type: string
             enum: [asc, desc]
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Tasks
           content:
@@ -1256,6 +1539,10 @@ paths:
             schema:
               $ref: '#/components/schemas/CreateTaskRequest'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '201':
           description: Created
 
@@ -1265,6 +1552,10 @@ paths:
       summary: Personal task quota
       operationId: getPersonalTaskQuota
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Quota
 
@@ -1280,6 +1571,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Quota
 
@@ -1294,10 +1589,14 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Stats
 
-  /api/v1/tasks/{id}:
+  /api/v1/tasks/{taskId}:
     get:
       tags: [Task]
       summary: Get task
@@ -1305,6 +1604,10 @@ paths:
       parameters:
         - $ref: '#/components/parameters/TaskId'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Task
     put:
@@ -1320,6 +1623,10 @@ paths:
             schema:
               $ref: '#/components/schemas/UpdateTaskRequest'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Updated
     delete:
@@ -1329,10 +1636,14 @@ paths:
       parameters:
         - $ref: '#/components/parameters/TaskId'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Deleted
 
-  /api/v1/tasks/{id}/overview:
+  /api/v1/tasks/{taskId}/overview:
     get:
       tags: [Task]
       summary: Task overview (full detail)
@@ -1340,10 +1651,14 @@ paths:
       parameters:
         - $ref: '#/components/parameters/TaskId'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Overview
 
-  /api/v1/tasks/{id}/status:
+  /api/v1/tasks/{taskId}/status:
     patch:
       tags: [Task]
       summary: Update task status
@@ -1361,10 +1676,14 @@ paths:
                 status:
                   $ref: '#/components/schemas/TaskStatus'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Updated
 
-  /api/v1/tasks/{id}/recurrence:
+  /api/v1/tasks/{taskId}/recurrence:
     post:
       tags: [Task]
       summary: Set recurrence
@@ -1378,6 +1697,10 @@ paths:
             schema:
               $ref: '#/components/schemas/RecurrenceSchema'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Set
     delete:
@@ -1387,10 +1710,14 @@ paths:
       parameters:
         - $ref: '#/components/parameters/TaskId'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Removed
 
-  /api/v1/tasks/{id}/github-link:
+  /api/v1/tasks/{taskId}/github-link:
     put:
       tags: [Task]
       summary: Link GitHub entity
@@ -1398,10 +1725,14 @@ paths:
       parameters:
         - $ref: '#/components/parameters/TaskId'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Linked
 
-  /api/v1/tasks/{id}/github-unlink:
+  /api/v1/tasks/{taskId}/github-unlink:
     put:
       tags: [Task]
       summary: Unlink GitHub
@@ -1409,10 +1740,14 @@ paths:
       parameters:
         - $ref: '#/components/parameters/TaskId'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Unlinked
 
-  /api/v1/tasks/{id}/slack-link:
+  /api/v1/tasks/{taskId}/slack-link:
     put:
       tags: [Task]
       summary: Link Slack message
@@ -1420,10 +1755,14 @@ paths:
       parameters:
         - $ref: '#/components/parameters/TaskId'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Linked
 
-  /api/v1/tasks/{id}/slack-unlink:
+  /api/v1/tasks/{taskId}/slack-unlink:
     put:
       tags: [Task]
       summary: Unlink Slack
@@ -1431,6 +1770,10 @@ paths:
       parameters:
         - $ref: '#/components/parameters/TaskId'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Unlinked
 
@@ -1442,6 +1785,10 @@ paths:
       parameters:
         - $ref: '#/components/parameters/TaskId'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Attachments
     post:
@@ -1462,6 +1809,10 @@ paths:
                   type: string
                   format: binary
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '201':
           description: Uploaded
 
@@ -1478,6 +1829,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Deleted
 
@@ -1489,6 +1844,10 @@ paths:
       parameters:
         - $ref: '#/components/parameters/TaskId'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Subtasks
     post:
@@ -1504,6 +1863,10 @@ paths:
             schema:
               $ref: '#/components/schemas/CreateSubtaskRequest'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '201':
           description: Created
 
@@ -1515,6 +1878,10 @@ paths:
       parameters:
         - $ref: '#/components/parameters/TaskId'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Stats
 
@@ -1531,6 +1898,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Subtask
     put:
@@ -1551,6 +1922,10 @@ paths:
             schema:
               $ref: '#/components/schemas/UpdateSubtaskRequest'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Updated
     delete:
@@ -1565,6 +1940,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Deleted
 
@@ -1592,6 +1971,10 @@ paths:
                   type: string
                   enum: [TODO, IN_PROGRESS, COMPLETED, CANCELLED]
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Updated
 
@@ -1603,6 +1986,10 @@ paths:
       parameters:
         - $ref: '#/components/parameters/TaskId'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Comments
     post:
@@ -1618,6 +2005,10 @@ paths:
             schema:
               $ref: '#/components/schemas/CreateCommentRequest'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '201':
           description: Created
 
@@ -1640,6 +2031,10 @@ paths:
             schema:
               $ref: '#/components/schemas/UpdateCommentRequest'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Updated
     delete:
@@ -1654,6 +2049,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Deleted
 
@@ -1679,6 +2078,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Labels
     post:
@@ -1692,6 +2095,10 @@ paths:
             schema:
               $ref: '#/components/schemas/CreateLabelRequest'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '201':
           description: Created
 
@@ -1701,6 +2108,10 @@ paths:
       summary: Popular labels
       operationId: getPopularLabels
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Popular labels
 
@@ -1712,6 +2123,10 @@ paths:
       parameters:
         - $ref: '#/components/parameters/LabelId'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Label
     patch:
@@ -1727,6 +2142,10 @@ paths:
             schema:
               $ref: '#/components/schemas/UpdateLabelRequest'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Updated
     delete:
@@ -1736,6 +2155,10 @@ paths:
       parameters:
         - $ref: '#/components/parameters/LabelId'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Deleted
 
@@ -1747,6 +2170,10 @@ paths:
       parameters:
         - $ref: '#/components/parameters/LabelId'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Tasks
 
@@ -1767,6 +2194,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Added
     delete:
@@ -1785,6 +2216,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Removed
 
@@ -1800,6 +2235,10 @@ paths:
             type: string
             format: date
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Daily tasks
     post:
@@ -1813,6 +2252,10 @@ paths:
             schema:
               $ref: '#/components/schemas/AddDailyTaskRequest'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Added
 
@@ -1822,6 +2265,10 @@ paths:
       summary: Daily task stats
       operationId: getDailyTaskStats
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Stats
 
@@ -1831,6 +2278,10 @@ paths:
       summary: Clear expired daily tasks
       operationId: clearExpiredDailyTasks
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Cleared
 
@@ -1846,6 +2297,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Removed
 
@@ -1861,6 +2316,10 @@ paths:
             schema:
               $ref: '#/components/schemas/StartSessionRequest'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '201':
           description: Started
 
@@ -1870,6 +2329,10 @@ paths:
       summary: Get active session
       operationId: getActiveSession
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Active session
 
@@ -1886,6 +2349,10 @@ paths:
             default: 30
             maximum: 100
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: History
 
@@ -1895,6 +2362,10 @@ paths:
       summary: Session statistics
       operationId: getSessionStats
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Stats
 
@@ -1904,6 +2375,10 @@ paths:
       summary: Daily summary
       operationId: getDailySummary
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Summary
 
@@ -1919,6 +2394,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Completed
 
@@ -1934,6 +2413,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Cancelled
 
@@ -1949,6 +2432,10 @@ paths:
             schema:
               $ref: '#/components/schemas/CreateTimeEntryRequest'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '201':
           description: Created
 
@@ -1969,6 +2456,10 @@ paths:
             type: string
             format: date-time
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Entries
 
@@ -1984,6 +2475,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Entries
 
@@ -1999,6 +2494,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Entries
 
@@ -2020,6 +2519,10 @@ paths:
             schema:
               $ref: '#/components/schemas/UpdateTimeEntryRequest'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Updated
     delete:
@@ -2033,6 +2536,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Deleted
 
@@ -2055,6 +2562,10 @@ paths:
             type: string
             format: date
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Aggregates
 
@@ -2077,6 +2588,10 @@ paths:
             type: string
             format: date
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Insights
 
@@ -2086,6 +2601,10 @@ paths:
       summary: Get energy levels
       operationId: getEnergyLevels
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Energy data
     post:
@@ -2099,6 +2618,10 @@ paths:
             schema:
               $ref: '#/components/schemas/LogEnergyRequest'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Logged
 
@@ -2121,6 +2644,10 @@ paths:
             type: string
             format: date
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: History
 
@@ -2143,6 +2670,10 @@ paths:
             type: string
             format: date
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Export
 
@@ -2152,6 +2683,10 @@ paths:
       summary: Burnout trends
       operationId: getBurnoutTrends
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Trends
 
@@ -2161,6 +2696,10 @@ paths:
       summary: Wellness recommendations
       operationId: getRecommendations
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Recommendations
 
@@ -2176,6 +2715,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Dismissed
 
@@ -2185,6 +2728,10 @@ paths:
       summary: Dismiss all recommendations
       operationId: dismissAllRecommendations
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Dismissed
 
@@ -2207,6 +2754,10 @@ paths:
             type: string
             format: date
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Goals
     post:
@@ -2220,6 +2771,10 @@ paths:
             schema:
               $ref: '#/components/schemas/CreateGoalRequest'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '201':
           description: Created
 
@@ -2229,6 +2784,10 @@ paths:
       summary: Get capacity
       operationId: getCapacity
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Capacity
     put:
@@ -2242,6 +2801,10 @@ paths:
             schema:
               $ref: '#/components/schemas/UpdateCapacityRequest'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Updated
 
@@ -2251,6 +2814,10 @@ paths:
       summary: Get work schedule
       operationId: getSchedule
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Schedule
     put:
@@ -2264,6 +2831,10 @@ paths:
             schema:
               $ref: '#/components/schemas/UpdateScheduleRequest'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Updated
 
@@ -2273,6 +2844,10 @@ paths:
       summary: Recalculate aggregates
       operationId: recalculate
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Recalculated
 
@@ -2282,6 +2857,10 @@ paths:
       summary: Initialize calendar
       operationId: initializeCalendar
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Initialized
 
@@ -2297,6 +2876,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Overview
 
@@ -2312,6 +2895,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Trends
 
@@ -2327,6 +2914,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Health
 
@@ -2342,6 +2933,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Contributions
 
@@ -2357,6 +2952,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Summary
 
@@ -2372,6 +2971,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Report
 
@@ -2387,6 +2990,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Trends
 
@@ -2402,6 +3009,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Workload
 
@@ -2422,6 +3033,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Overview
 
@@ -2442,6 +3057,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Trends
 
@@ -2462,6 +3081,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Contributions
 
@@ -2482,6 +3105,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Summary
 
@@ -2502,6 +3129,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Report
 
@@ -2522,6 +3153,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Risk analysis
 
@@ -2531,6 +3166,10 @@ paths:
       summary: AI quota
       operationId: getAIQuota
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Quota
 
@@ -2546,6 +3185,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Usage
 
@@ -2562,6 +3205,10 @@ paths:
             schema:
               $ref: '#/components/schemas/AIAutocompleteRequest'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: AI suggestions
           content:
@@ -2581,6 +3228,10 @@ paths:
             schema:
               $ref: '#/components/schemas/AIBreakdownRequest'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Task breakdown
 
@@ -2596,6 +3247,10 @@ paths:
             schema:
               $ref: '#/components/schemas/AICommentAssistRequest'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Rewritten text
 
@@ -2612,6 +3267,10 @@ paths:
             schema:
               $ref: '#/components/schemas/AIDailyPlanRequest'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Plan
 
@@ -2627,6 +3286,10 @@ paths:
             schema:
               $ref: '#/components/schemas/AIMeetingSummaryRequest'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Summary
 
@@ -2642,6 +3305,10 @@ paths:
             schema:
               $ref: '#/components/schemas/AIWeeklyInsightsRequest'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Insights
 
@@ -2657,6 +3324,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Rules
     post:
@@ -2670,6 +3341,10 @@ paths:
             schema:
               $ref: '#/components/schemas/CreateAutomationRequest'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '201':
           description: Created
 
@@ -2685,6 +3360,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Rule
     patch:
@@ -2704,6 +3383,10 @@ paths:
             schema:
               $ref: '#/components/schemas/UpdateAutomationRequest'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Updated
     delete:
@@ -2717,6 +3400,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Deleted
 
@@ -2732,6 +3419,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Run history
 
@@ -2757,6 +3448,10 @@ paths:
                 taskId:
                   type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Test result
 
@@ -2766,6 +3461,10 @@ paths:
       summary: List notifications
       operationId: listNotifications
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Notifications
 
@@ -2776,6 +3475,10 @@ paths:
       security: []
       operationId: notificationStream
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Event stream
           content:
@@ -2789,6 +3492,10 @@ paths:
       summary: Get SSE token
       operationId: getSSEToken
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: SSE token
 
@@ -2798,6 +3505,10 @@ paths:
       summary: Unread count
       operationId: getUnreadCount
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Count
 
@@ -2813,6 +3524,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Marked
 
@@ -2822,6 +3537,10 @@ paths:
       summary: Mark all as read
       operationId: markAllRead
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: All marked
 
@@ -2831,6 +3550,10 @@ paths:
       summary: Delete all read notifications
       operationId: deleteAllRead
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Deleted
 
@@ -2846,6 +3569,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Deleted
 
@@ -2855,6 +3582,10 @@ paths:
       summary: List workspaces for storage
       operationId: listStorageWorkspaces
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Workspaces
 
@@ -2870,6 +3601,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Overview
 
@@ -2885,6 +3620,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Files
 
@@ -2913,6 +3652,10 @@ paths:
                     type: string
                   minItems: 1
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Deleted
 
@@ -2928,6 +3671,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Deleted
 
@@ -2953,6 +3700,10 @@ paths:
                 fileSize:
                   type: number
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Check result
 
@@ -2973,6 +3724,10 @@ paths:
                   type: string
                   format: binary
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '201':
           description: Uploaded
 
@@ -2988,6 +3743,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Subscription
 
@@ -3015,6 +3774,10 @@ paths:
                   type: string
                   enum: [MONTHLY, YEARLY]
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Checkout URL
 
@@ -3030,6 +3793,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Portal URL
 
@@ -3055,6 +3822,10 @@ paths:
                 planId:
                   type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Changed
 
@@ -3070,6 +3841,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Cancelled
 
@@ -3085,6 +3860,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Reactivated
 
@@ -3100,6 +3879,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Invoices
 
@@ -3109,6 +3892,10 @@ paths:
       summary: List integrations
       operationId: listIntegrations
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Integrations
     post:
@@ -3122,6 +3909,10 @@ paths:
             schema:
               $ref: '#/components/schemas/CreateIntegrationRequest'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Connected
 
@@ -3137,6 +3928,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Disconnected
 
@@ -3158,6 +3953,10 @@ paths:
             schema:
               $ref: '#/components/schemas/IntegrationConfigRequest'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Updated
 
@@ -3173,6 +3972,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Sync started
 
@@ -3192,6 +3995,10 @@ paths:
           schema:
             $ref: '#/components/schemas/MeetingStatus'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Meetings
     post:
@@ -3211,6 +4018,10 @@ paths:
             schema:
               $ref: '#/components/schemas/CreateMeetingRequest'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '201':
           description: Created
 
@@ -3231,6 +4042,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Meeting
     patch:
@@ -3255,6 +4070,10 @@ paths:
             schema:
               $ref: '#/components/schemas/UpdateMeetingRequest'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Updated
     delete:
@@ -3273,6 +4092,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Deleted
 
@@ -3288,6 +4111,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Announcements
     post:
@@ -3307,6 +4134,10 @@ paths:
             schema:
               $ref: '#/components/schemas/CreateAnnouncementRequest'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '201':
           description: Created
 
@@ -3322,6 +4153,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Announcement
     patch:
@@ -3341,6 +4176,10 @@ paths:
             schema:
               $ref: '#/components/schemas/UpdateAnnouncementRequest'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Updated
     delete:
@@ -3354,6 +4193,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Deleted
 
@@ -3369,6 +4212,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Toggled
 
@@ -3393,6 +4240,10 @@ paths:
             type: integer
             default: 20
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Features
     post:
@@ -3406,6 +4257,10 @@ paths:
             schema:
               $ref: '#/components/schemas/CreateFeatureRequest'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '201':
           description: Created
 
@@ -3421,6 +4276,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Feature
 
@@ -3442,6 +4301,10 @@ paths:
             schema:
               $ref: '#/components/schemas/UpdateFeatureStatusRequest'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Updated
 
@@ -3468,6 +4331,10 @@ paths:
                   type: string
                   enum: [UP, DOWN]
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Voted
 
@@ -3478,6 +4345,10 @@ paths:
       operationId: listCatalog
       security: []
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Templates
 
@@ -3494,6 +4365,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Template
 
@@ -3502,6 +4377,12 @@ paths:
       tags: [Template]
       summary: Use template
       operationId: useTemplate
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
       requestBody:
         required: true
         content:
@@ -3509,6 +4390,10 @@ paths:
             schema:
               $ref: '#/components/schemas/UseTemplateRequest'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '201':
           description: Project created
 
@@ -3517,6 +4402,12 @@ paths:
       tags: [Template]
       summary: Rate template
       operationId: rateTemplate
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
       requestBody:
         required: true
         content:
@@ -3530,6 +4421,10 @@ paths:
                   minimum: 1
                   maximum: 5
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Rated
 
@@ -3540,6 +4435,10 @@ paths:
       operationId: listRatings
       security: []
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Ratings
     post:
@@ -3553,6 +4452,10 @@ paths:
             schema:
               $ref: '#/components/schemas/CreateRatingRequest'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '201':
           description: Submitted
 
@@ -3562,6 +4465,10 @@ paths:
       summary: My rating
       operationId: getMyRating
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: My rating
 
@@ -3578,6 +4485,10 @@ paths:
             schema:
               $ref: '#/components/schemas/CreateContactRequest'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '201':
           description: Sent
 
@@ -3605,6 +4516,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Jobs
 
@@ -3621,6 +4536,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Job
 
@@ -3630,6 +4549,10 @@ paths:
       summary: List all (admin)
       operationId: listAllJobs
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Jobs
     post:
@@ -3643,6 +4566,10 @@ paths:
             schema:
               $ref: '#/components/schemas/CreateJobRequest'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '201':
           description: Created
 
@@ -3664,6 +4591,10 @@ paths:
             schema:
               $ref: '#/components/schemas/UpdateJobRequest'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Updated
     delete:
@@ -3677,6 +4608,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Deleted
 
@@ -3687,6 +4622,10 @@ paths:
       operationId: listPopularResources
       security: []
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Resources
 
@@ -3697,6 +4636,10 @@ paths:
       operationId: listProductUpdates
       security: []
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Updates
 
@@ -3706,6 +4649,10 @@ paths:
       summary: Dashboard stats
       operationId: getAdminStats
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Stats
 
@@ -3722,6 +4669,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Users
 
@@ -3737,6 +4688,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: User
 
@@ -3763,6 +4718,10 @@ paths:
                   type: string
                   maxLength: 500
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Banned
 
@@ -3778,6 +4737,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Unbanned
 
@@ -3790,6 +4753,10 @@ paths:
         - $ref: '#/components/parameters/AdminPage'
         - $ref: '#/components/parameters/AdminPageSize'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Workspaces
 
@@ -3802,6 +4769,10 @@ paths:
         - $ref: '#/components/parameters/AdminPage'
         - $ref: '#/components/parameters/AdminPageSize'
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Projects
 
@@ -3811,6 +4782,10 @@ paths:
       summary: List API keys
       operationId: listApiKeys
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Keys
     post:
@@ -3818,6 +4793,10 @@ paths:
       summary: Create API key
       operationId: createApiKey
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '201':
           description: Created
           content:
@@ -3849,6 +4828,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Toggled
 
@@ -3864,6 +4847,10 @@ paths:
           schema:
             type: string
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Deleted
 
@@ -3881,6 +4868,10 @@ paths:
             schema:
               type: object
       responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Processed
 
@@ -3900,12 +4891,6 @@ components:
   parameters:
     WorkspaceId:
       name: workspaceId
-      in: path
-      required: true
-      schema:
-        type: string
-    WorkspaceSlug:
-      name: slug
       in: path
       required: true
       schema:
@@ -3957,12 +4942,6 @@ components:
             $ref: '#/components/schemas/ErrorResponse'
     Unauthorized:
       description: Unauthorized
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/ErrorResponse'
-    NotFound:
-      description: Not found
       content:
         application/json:
           schema:
@@ -4033,9 +5012,6 @@ components:
     FeatureStatus:
       type: string
       enum: [PENDING, APPROVED, REJECTED, PLANNED, COMPLETED]
-    TemplateTier:
-      type: string
-      enum: [FREE, PRO, BUSINESS]
     JobDepartment:
       type: string
       enum: [ENGINEERING, DESIGN, PRODUCT, MARKETING, SALES, CUSTOMER_SUCCESS, OPERATIONS, FINANCE, HR, OTHER]
@@ -4045,9 +5021,6 @@ components:
     JobType:
       type: string
       enum: [FULL_TIME, PART_TIME, CONTRACT, INTERNSHIP, FREELANCE]
-    ResourceStatus:
-      type: string
-      enum: [DRAFT, PUBLIC, ARCHIVE]
 
     # ─── AUTH ───
     ExchangeRequest:
@@ -4156,18 +5129,6 @@ components:
           maxLength: 128
         confirmPassword:
           type: string
-    Session:
-      type: object
-      properties:
-        id:
-          type: string
-        device:
-          type: string
-        ip:
-          type: string
-        lastActive:
-          type: string
-          format: date-time
 
     # ─── WORKSPACE ───
     Workspace:
@@ -4201,15 +5162,6 @@ components:
         createdAt:
           type: string
           format: date-time
-    WorkspaceListResponse:
-      type: object
-      properties:
-        success:
-          type: boolean
-        data:
-          type: array
-          items:
-            $ref: '#/components/schemas/Workspace'
     CreateWorkspaceRequest:
       type: object
       required: [name]
@@ -4829,7 +5781,8 @@ components:
           minimum: 1
           maximum: 1440
         category:
-          $ref: '#/components/schemas/TimeEntryCategory'
+          allOf:
+            - $ref: '#/components/schemas/TimeEntryCategory'
           default: OTHER
         billable:
           type: boolean
@@ -5178,7 +6131,8 @@ components:
           minLength: 1
           maxLength: 10000
         visibility:
-          $ref: '#/components/schemas/AnnouncementVisibility'
+          allOf:
+            - $ref: '#/components/schemas/AnnouncementVisibility'
           default: PUBLIC
         isPinned:
           type: boolean
@@ -5244,47 +6198,11 @@ components:
           type: string
           minLength: 1
           maxLength: 80
-    UpdateTemplateRequest:
-      type: object
-      properties:
-        title:
-          type: string
-          minLength: 1
-          maxLength: 80
-        description:
-          type: string
-          maxLength: 500
-        category:
-          type: string
-          maxLength: 40
-        complexity:
-          type: string
-          enum: [starter, intermediate, advanced]
-        tier:
-          $ref: '#/components/schemas/TemplateTier'
-        featured:
-          type: boolean
-        tags:
-          type: array
-          items:
-            type: string
-          maxItems: 20
 
     # ─── RATING ───
     CreateRatingRequest:
       type: object
       required: [stars]
-      properties:
-        stars:
-          type: integer
-          minimum: 1
-          maximum: 5
-        comment:
-          type: string
-          maxLength: 2000
-          nullable: true
-    UpdateRatingRequest:
-      type: object
       properties:
         stars:
           type: integer
@@ -5336,10 +6254,12 @@ components:
           minLength: 2
           maxLength: 100
         locationType:
-          $ref: '#/components/schemas/JobLocationType'
+          allOf:
+            - $ref: '#/components/schemas/JobLocationType'
           default: REMOTE
         type:
-          $ref: '#/components/schemas/JobType'
+          allOf:
+            - $ref: '#/components/schemas/JobType'
           default: FULL_TIME
         experienceLevel:
           type: string
@@ -5347,10 +6267,12 @@ components:
           default: MID
         salaryMin:
           type: integer
-          exclusiveMinimum: 0
+          minimum: 0
+          exclusiveMinimum: true
         salaryMax:
           type: integer
-          exclusiveMinimum: 0
+          minimum: 0
+          exclusiveMinimum: true
         salaryCurrency:
           type: string
           minLength: 3
@@ -5451,141 +6373,7 @@ components:
                 type: string
 
     # ─── RESOURCE ───
-    CreatePopularResourceRequest:
-      type: object
-      required: [title, description, image, category]
-      properties:
-        title:
-          type: string
-          minLength: 1
-          maxLength: 200
-        description:
-          type: string
-          minLength: 1
-          maxLength: 5000
-        image:
-          type: string
-          format: uri
-        category:
-          type: string
-          minLength: 1
-          maxLength: 100
-        status:
-          $ref: '#/components/schemas/ResourceStatus'
-          default: DRAFT
-    UpdatePopularResourceRequest:
-      type: object
-      properties:
-        title:
-          type: string
-          minLength: 1
-          maxLength: 200
-        description:
-          type: string
-          maxLength: 5000
-        image:
-          type: string
-          format: uri
-        category:
-          type: string
-        status:
-          $ref: '#/components/schemas/ResourceStatus'
-    CreateProductUpdateRequest:
-      type: object
-      required: [title, date, description, version]
-      properties:
-        title:
-          type: string
-          minLength: 1
-          maxLength: 200
-        date:
-          type: string
-          format: date-time
-        description:
-          type: string
-          minLength: 1
-          maxLength: 5000
-        version:
-          type: string
-          minLength: 1
-          maxLength: 50
-        status:
-          $ref: '#/components/schemas/ResourceStatus'
-          default: DRAFT
-    UpdateProductUpdateRequest:
-      type: object
-      properties:
-        title:
-          type: string
-          minLength: 1
-          maxLength: 200
-        date:
-          type: string
-          format: date-time
-        description:
-          type: string
-          maxLength: 5000
-        version:
-          type: string
-          maxLength: 50
-        status:
-          $ref: '#/components/schemas/ResourceStatus'
 
     # ─── ADMIN ───
-    UpdateWorkspaceLimitsRequest:
-      type: object
-      required: [plan, maxMembers, maxStorage]
-      properties:
-        plan:
-          type: string
-          enum: [FREE, PRO, BUSINESS, ENTERPRISE]
-        maxMembers:
-          type: integer
-          description: Use -1 for unlimited
-        maxStorage:
-          type: integer
-          description: Use -1 for unlimited
-        aiDailyCalls:
-          type: integer
-          nullable: true
-        aiMonthlyTokens:
-          type: integer
-          nullable: true
-        aiMaxOutputTokens:
-          type: integer
-          nullable: true
 
     # ─── FILE ───
-    File:
-      type: object
-      properties:
-        id:
-          type: string
-        name:
-          type: string
-        originalName:
-          type: string
-        size:
-          type: integer
-        mimeType:
-          type: string
-        url:
-          type: string
-          format: uri
-        thumbnail:
-          type: string
-          nullable: true
-        uploadedAt:
-          type: string
-          format: date-time
-        uploadedById:
-          type: string
-        workspaceId:
-          type: string
-          nullable: true
-        projectId:
-          type: string
-          nullable: true
-        taskId:
-          type: string
-          nullable: true
