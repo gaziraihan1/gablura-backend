@@ -12,7 +12,7 @@ import { getRedisClient } from "../redis/redis.client.js";
 
 const MAX_RETRY_ATTEMPTS = 3;
 const RETRY_DELAY_MS = 100;
-const HEARTBEAT_INTERVAL_MS = 25_000;
+const HEARTBEAT_INTERVAL_MS = parseInt(process.env.SSE_HEARTBEAT_INTERVAL_MS ?? "30000"); // 30s (increased from 25s to reduce Redis commands)
 const DELIVERY_TRACKING_TTL = 3600; // 1 hour
 const MAX_CONNECTIONS_PER_USER = 5;
 const MAX_TOTAL_CONNECTIONS = 10_000;

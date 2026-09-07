@@ -60,7 +60,7 @@ function verifyInternalProof(req: Request): boolean {
   const age = Date.now() - timestamp;
   if (age > 60_000 || age < 0) return false;
 
-  const { timestamp: _t, signature: _s, ...fields } = body;
+  const { signature: _s, ...fields } = body;
   const payload = JSON.stringify(fields);
   const expected = crypto
     .createHmac("sha256", process.env.NEXTAUTH_SECRET!)

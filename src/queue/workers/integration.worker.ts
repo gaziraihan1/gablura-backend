@@ -45,7 +45,7 @@ export function createIntegrationWorker() {
         tls: process.env.REDIS_URL?.startsWith("rediss://") ? {} : undefined,
       },
       concurrency: 3,
-      stalledInterval: 120_000, // 2 min (default: 30s) — non-urgent, reduce Redis polling
+      stalledInterval: parseInt(process.env.BULLMQ_STALLED_INTERVAL_INTEGRATION ?? "300000"), // 5 min (default: 30s) — non-urgent, reduced Redis polling
       limiter: {
         max: 20,
         duration: 1000,

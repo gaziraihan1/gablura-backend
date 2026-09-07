@@ -8,6 +8,7 @@ export const emailQueue = new Queue(EMAIL_QUEUE_NAME, {
     port: parseInt(process.env.REDIS_PORT ?? "6379"),
     password: process.env.REDIS_PASSWORD ?? undefined,
     tls: process.env.REDIS_URL?.startsWith("rediss://") ? {} : undefined,
+    maxRetriesPerRequest: parseInt(process.env.REDIS_MAX_RETRIES ?? "3"),
   },
   defaultJobOptions: {
     attempts: 3,
@@ -15,8 +16,8 @@ export const emailQueue = new Queue(EMAIL_QUEUE_NAME, {
       type: "exponential",
       delay: 2000,
     },
-    removeOnComplete: 100,
-    removeOnFail: 50,
+    removeOnComplete: 50, // Reduced from 100 to reduce Redis memory usage
+    removeOnFail: 25,    // Reduced from 50 to reduce Redis memory usage
   },
 });
 

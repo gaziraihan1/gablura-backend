@@ -46,7 +46,7 @@ export function createAutomationWorker() {
         password: process.env.REDIS_PASSWORD ?? undefined,
         tls: process.env.REDIS_URL?.startsWith('rediss://') ? {} : undefined,
       },
-      stalledInterval: 120_000, // 2 min (default: 30s) — non-urgent, reduce Redis polling
+      stalledInterval: parseInt(process.env.BULLMQ_STALLED_INTERVAL_AUTOMATION ?? "300000"), // 5 min (default: 30s) — non-urgent, reduced Redis polling
     },
   );
   return worker;

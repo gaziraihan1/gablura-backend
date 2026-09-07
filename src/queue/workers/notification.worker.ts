@@ -66,7 +66,7 @@ export function createNotificationWorker() {
         tls: process.env.REDIS_URL?.startsWith("rediss://") ? {} : undefined,
       },
       concurrency: 5,
-      stalledInterval: 60_000, // 60s (default: 30s) — reduce Redis polling
+      stalledInterval: parseInt(process.env.BULLMQ_STALLED_INTERVAL_NOTIFICATION ?? "180000"), // 3 min (default: 30s) — reduced Redis polling
     }
   );
 

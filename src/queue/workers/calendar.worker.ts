@@ -93,7 +93,7 @@ export function createCalendarWorker() {
         tls: process.env.REDIS_URL?.startsWith("rediss://") ? {} : undefined,
       },
       concurrency: 2,
-      stalledInterval: 120_000, // 2 min (default: 30s) — non-urgent, reduce Redis polling
+      stalledInterval: parseInt(process.env.BULLMQ_STALLED_INTERVAL_CALENDAR ?? "300000"), // 5 min (default: 30s) — non-urgent, reduced Redis polling
     }
   );
 

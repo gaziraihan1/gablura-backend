@@ -60,7 +60,7 @@ export function createBillingWebhookWorker() {
         tls: process.env.REDIS_URL?.startsWith("rediss://") ? {} : undefined,
       },
       concurrency: 2,
-      stalledInterval: 90_000, // 90s (default: 30s) — billing retries are infrequent
+      stalledInterval: parseInt(process.env.BULLMQ_STALLED_INTERVAL_BILLING_WEBHOOK ?? "300000"), // 5 min (default: 30s) — billing retries are infrequent
       limiter: {
         max: 10,
         duration: 1000,
