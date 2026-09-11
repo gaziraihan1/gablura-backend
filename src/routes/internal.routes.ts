@@ -72,8 +72,9 @@ function verifyInternalProof(req: Request): boolean {
 
   const { signature: _s, ...fields } = body;
   const payload = JSON.stringify(fields);
+  const secret = process.env.NEXTAUTH_SECRET!;
   const expected = crypto
-    .createHmac("sha256", process.env.NEXTAUTH_SECRET!)
+    .createHmac("sha256", secret)
     .update(payload)
     .digest("hex");
   try {
@@ -81,7 +82,13 @@ function verifyInternalProof(req: Request): boolean {
     const expBuf = Buffer.from(expected, "hex");
     const match = crypto.timingSafeEqual(sigBuf, expBuf);
     if (!match) {
-      console.error("[internal] HMAC mismatch", { payload: payload.substring(0, 200), expected: expected.substring(0, 16), got: signature.substring(0, 16) });
+      console.error("[internal] HMAC mismatch", {
+        secretLen: secret.length,
+        secretBytes: [...Buffer.from(secret)].slice(0, 4),
+        payload: payload.substring(0, 200),
+        expected: expected.substring(0, 16),
+        got: signature.substring(0, 16),
+      });
     }
     return match;
   } catch (err) {
