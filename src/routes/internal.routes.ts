@@ -165,11 +165,19 @@ router.post(
     if (!valid) {
       return res.status(400).json({ success: false, error: "Invalid verification code. Please try again." });
     }
+    const markerKey = `gablura:2fa:verified:${userId}`;
     try {
-      await getRedisClient().setex(`gablura:2fa:verified:${userId}`, 600, "1");
+      await getRedisClient().setex(markerKey, 600, "1");
     } catch (err) {
-      console.error("[2fa-verify] Failed to set Redis marker:", err);
-      return res.status(503).json({ success: false, error: "Verification service unavailable. Please try again." });
+      // Transient Redis failures are common — retry once after a short delay
+      console.warn("[2fa-verify] Redis setex failed, retrying in 500ms:", err);
+      try {
+        await new Promise((r) => setTimeout(r, 500));
+        await getRedisClient().setex(markerKey, 600, "1");
+      } catch (retryErr) {
+        console.error("[2fa-verify] Redis setex retry also failed:", retryErr);
+        return res.status(503).json({ success: false, error: "Verification service unavailable. Please try again." });
+      }
     }
     return res.json({ success: true });
   }),
