@@ -1,25 +1,7 @@
-import { Queue } from "bullmq";
+import { jobsQueue } from "./jobs.queue.js";
 
-const BILLING_WEBHOOK_QUEUE_NAME = "billing-webhook";
-
-export const billingWebhookQueue = new Queue(BILLING_WEBHOOK_QUEUE_NAME, {
-  connection: {
-    host: process.env.REDIS_HOST ?? "localhost",
-    port: parseInt(process.env.REDIS_PORT ?? "6379"),
-    password: process.env.REDIS_PASSWORD ?? undefined,
-    tls: process.env.REDIS_URL?.startsWith("rediss://") ? {} : undefined,
-    maxRetriesPerRequest: parseInt(process.env.REDIS_MAX_RETRIES ?? "3"),
-  },
-  defaultJobOptions: {
-    attempts: 3,
-    backoff: {
-      type: "exponential",
-      delay: 10000, // 10s, 20s, 40s
-    },
-    removeOnComplete: 50, // Reduced from 100 to reduce Redis memory usage
-    removeOnFail: 25,    // Reduced from 50 to reduce Redis memory usage
-  },
-});
+// Legacy alias — retained so existing imports/tests keep working.
+export const billingWebhookQueue = jobsQueue;
 
 // Job data type
 export interface BillingWebhookRetryJobData {
@@ -50,8 +32,12 @@ export async function addBillingWebhookRetryJob(
     return null;
   }
 
-  return billingWebhookQueue.add("retry-webhook", jobData, {
+  return jobsQueue.add("retry-webhook", jobData, {
     delay: 10000 * Math.pow(2, jobData.retryCount), // 10s, 20s, 40s, 80s, 160s
     priority: 1,
+    attempts: 3,
+    backoff: { type: "exponential", delay: 10000 },
+    removeOnComplete: 50,
+    removeOnFail: 25,
   });
 }

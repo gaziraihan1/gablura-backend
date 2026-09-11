@@ -1,25 +1,7 @@
-import { Queue } from "bullmq";
+import { jobsQueue } from "./jobs.queue.js";
 
-const ACTIVITY_QUEUE_NAME = "activity";
-
-export const activityQueue = new Queue(ACTIVITY_QUEUE_NAME, {
-  connection: {
-    host: process.env.REDIS_HOST ?? "localhost",
-    port: parseInt(process.env.REDIS_PORT ?? "6379"),
-    password: process.env.REDIS_PASSWORD ?? undefined,
-    tls: process.env.REDIS_URL?.startsWith("rediss://") ? {} : undefined,
-    maxRetriesPerRequest: parseInt(process.env.REDIS_MAX_RETRIES ?? "3"),
-  },
-  defaultJobOptions: {
-    attempts: 2,
-    backoff: {
-      type: "fixed",
-      delay: 500,
-    },
-    removeOnComplete: 25, // Reduced from 50 to reduce Redis memory usage
-    removeOnFail: 12,    // Reduced from 25 to reduce Redis memory usage
-  },
-});
+// Legacy alias — retained so existing imports/tests keep working.
+export const activityQueue = jobsQueue;
 
 // Job data types
 export interface LogActivityJobData {
@@ -46,15 +28,24 @@ export interface UpdateStorageQuotaJobData {
   operation: "increment" | "decrement";
 }
 
+const ACTIVITY_JOB_OPTS = {
+  attempts: 2,
+  backoff: { type: "fixed" as const, delay: 500 },
+  removeOnComplete: 25,
+  removeOnFail: 12,
+};
+
 export async function addLogActivityJob(jobData: LogActivityJobData) {
-  return activityQueue.add("log-activity", jobData, {
+  return jobsQueue.add("log-activity", jobData, {
     priority: 5,
+    ...ACTIVITY_JOB_OPTS,
   });
 }
 
 export async function addInvalidateCacheJob(jobData: InvalidateCacheJobData) {
-  return activityQueue.add("invalidate-cache", jobData, {
+  return jobsQueue.add("invalidate-cache", jobData, {
     priority: 3,
+    ...ACTIVITY_JOB_OPTS,
   });
 }
 
@@ -73,13 +64,15 @@ export async function addInvalidateCacheJob(jobData: InvalidateCacheJobData) {
 export async function addBatchInvalidateCacheJob(jobs: InvalidateCacheJobData[]) {
   if (jobs.length === 0) return;
   if (jobs.length === 1) return addInvalidateCacheJob(jobs[0]);
-  return activityQueue.add("invalidate-cache-batch", { jobs }, {
+  return jobsQueue.add("invalidate-cache-batch", { jobs }, {
     priority: 3,
+    ...ACTIVITY_JOB_OPTS,
   });
 }
 
 export async function addUpdateStorageQuotaJob(jobData: UpdateStorageQuotaJobData) {
-  return activityQueue.add("update-storage-quota", jobData, {
+  return jobsQueue.add("update-storage-quota", jobData, {
     priority: 4,
+    ...ACTIVITY_JOB_OPTS,
   });
 }

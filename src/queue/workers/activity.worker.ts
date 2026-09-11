@@ -1,16 +1,18 @@
-import { Worker, Job } from "bullmq";
+import { Job } from "bullmq";
 
 import { AttachmentRepository } from "../../modules/attachment/attachment.repository.js";
 import { AnalyticsCache, WorkspaceCache, TaskCache, CalendarCache, AccessControlCache, ActivityCache } from "../../lib/redis/cache.client.js";
 import { incrementWorkspaceStorage, decrementWorkspaceStorage } from "../../modules/attachment/attatchment.quota.service.js";
 import type { LogActivityJobData, InvalidateCacheJobData, UpdateStorageQuotaJobData } from "../queues/activity.queue.js";
 
-const ACTIVITY_WORKER_NAME = "activity-worker";
-
-export function createActivityWorker() {
-  const worker = new Worker(
-    ACTIVITY_WORKER_NAME,
-    async (job: Job<LogActivityJobData | InvalidateCacheJobData | UpdateStorageQuotaJobData>) => {
+/**
+ * Processor for activity/cache-invalidation jobs. Previously owned by a
+ * dedicated Worker instance; now invoked by the consolidated jobs worker
+ * (src/queue/workers/jobs.worker.ts).
+ */
+export async function processActivityJob(
+  job: Job<LogActivityJobData | InvalidateCacheJobData | UpdateStorageQuotaJobData>,
+): Promise<void> {
       console.log(`[ActivityWorker] Processing ${job.name} job ${job.id}`);
 
       switch (job.name) {
@@ -148,26 +150,4 @@ export function createActivityWorker() {
       }
 
       console.log(`[ActivityWorker] Completed ${job.name} job ${job.id}`);
-    },
-    {
-      connection: {
-        host: process.env.REDIS_HOST ?? "localhost",
-        port: parseInt(process.env.REDIS_PORT ?? "6379"),
-        password: process.env.REDIS_PASSWORD ?? undefined,
-        tls: process.env.REDIS_URL?.startsWith("rediss://") ? {} : undefined,
-      },
-      concurrency: 3,
-      stalledInterval: parseInt(process.env.BULLMQ_STALLED_INTERVAL_ACTIVITY ?? "300000"), // 5 min (default: 30s) — non-urgent, reduced Redis polling
-    }
-  );
-
-  worker.on("completed", (job) => {
-    console.log(`[ActivityWorker] Job ${job.id} completed`);
-  });
-
-  worker.on("failed", (job, err) => {
-    console.error(`[ActivityWorker] Job ${job?.id} failed:`, err.message);
-  });
-
-  return worker;
 }

@@ -1,25 +1,8 @@
-import { Queue } from "bullmq";
+import { jobsQueue } from "./jobs.queue.js";
 
-const EMAIL_QUEUE_NAME = "email";
-
-export const emailQueue = new Queue(EMAIL_QUEUE_NAME, {
-  connection: {
-    host: process.env.REDIS_HOST ?? "localhost",
-    port: parseInt(process.env.REDIS_PORT ?? "6379"),
-    password: process.env.REDIS_PASSWORD ?? undefined,
-    tls: process.env.REDIS_URL?.startsWith("rediss://") ? {} : undefined,
-    maxRetriesPerRequest: parseInt(process.env.REDIS_MAX_RETRIES ?? "3"),
-  },
-  defaultJobOptions: {
-    attempts: 3,
-    backoff: {
-      type: "exponential",
-      delay: 2000,
-    },
-    removeOnComplete: 50, // Reduced from 100 to reduce Redis memory usage
-    removeOnFail: 25,    // Reduced from 50 to reduce Redis memory usage
-  },
-});
+// Legacy alias — retained so existing imports/tests keep working.
+// All domain queues now share ONE physical BullMQ queue ("jobs").
+export const emailQueue = jobsQueue;
 
 // Job data types
 export interface SendEmailJobData {
@@ -30,7 +13,9 @@ export interface SendEmailJobData {
 }
 
 export async function addSendEmailJob(jobData: SendEmailJobData) {
-  return emailQueue.add(`send-${jobData.type}`, jobData, {
+  return jobsQueue.add(`send-${jobData.type}`, jobData, {
     priority: jobData.type === "ban-email" ? 1 : 2,
+    attempts: 3,
+    backoff: { type: "exponential", delay: 2000 },
   });
 }

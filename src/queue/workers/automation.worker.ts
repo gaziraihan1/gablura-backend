@@ -6,7 +6,7 @@
  * internal call that never emits a new event, so rules cannot re-trigger
  * themselves — loop-safety by construction.
  */
-import { Worker, Job } from 'bullmq';
+import { Job } from 'bullmq';
 import { prisma } from '../../lib/prisma.js';
 import { notifyWorkspaceMembers } from '../../modules/notification/notification.helpers.js';
 import { AutomationActivity } from '../../modules/automation/automation.activity.js';
@@ -19,7 +19,6 @@ import type {
   NotifyMembersActionConfig,
 } from '../../modules/automation/automation.types.js';
 
-const AUTOMATION_WORKER_NAME = 'automation-worker';
 const MAX_RULE_EXECUTIONS_PER_BURST = 20;
 
 interface WorkerTask {
@@ -31,25 +30,14 @@ interface WorkerTask {
   status: string;
 }
 
-export function createAutomationWorker() {
-  const worker = new Worker(
-    AUTOMATION_WORKER_NAME,
-    async (job: Job<AutomationEvent>) => {
-      const event = job.data;
-      if (event.trigger === 'STATUS_CHANGED' && event.fromStatus === event.toStatus) return;
-      await processAutomationEvent(event);
-    },
-    {
-      connection: {
-        host: process.env.REDIS_HOST ?? 'localhost',
-        port: parseInt(process.env.REDIS_PORT ?? '6379'),
-        password: process.env.REDIS_PASSWORD ?? undefined,
-        tls: process.env.REDIS_URL?.startsWith('rediss://') ? {} : undefined,
-      },
-      stalledInterval: parseInt(process.env.BULLMQ_STALLED_INTERVAL_AUTOMATION ?? "300000"), // 5 min (default: 30s) — non-urgent, reduced Redis polling
-    },
-  );
-  return worker;
+/**
+ * Processor for automation event jobs. Previously owned by a dedicated
+ * Worker instance; now invoked by the consolidated jobs worker.
+ */
+export async function processAutomationJob(job: Job<AutomationEvent>): Promise<void> {
+  const event = job.data;
+  if (event.trigger === 'STATUS_CHANGED' && event.fromStatus === event.toStatus) return;
+  await processAutomationEvent(event);
 }
 
 // ─── Core processing (exported for unit testing) ──────────────────────────────

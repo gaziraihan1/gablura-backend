@@ -1,25 +1,7 @@
-import { Queue } from "bullmq";
+import { jobsQueue } from "./jobs.queue.js";
 
-const ANALYTICS_QUEUE_NAME = "analytics";
-
-export const analyticsQueue = new Queue(ANALYTICS_QUEUE_NAME, {
-  connection: {
-    host: process.env.REDIS_HOST ?? "localhost",
-    port: parseInt(process.env.REDIS_PORT ?? "6379"),
-    password: process.env.REDIS_PASSWORD ?? undefined,
-    tls: process.env.REDIS_URL?.startsWith("rediss://") ? {} : undefined,
-    maxRetriesPerRequest: parseInt(process.env.REDIS_MAX_RETRIES ?? "3"),
-  },
-  defaultJobOptions: {
-    attempts: 2,
-    backoff: {
-      type: "fixed",
-      delay: 10000,
-    },
-    removeOnComplete: 5, // Reduced from 10 to reduce Redis memory usage
-    removeOnFail: 2,    // Reduced from 5 to reduce Redis memory usage
-  },
-});
+// Legacy alias — retained so existing imports/tests keep working.
+export const analyticsQueue = jobsQueue;
 
 // Job data types
 export interface PreComputeAnalyticsJobData {
@@ -32,13 +14,21 @@ export interface ComputeFocusStreakJobData {
 }
 
 export async function addPreComputeAnalyticsJob(jobData: PreComputeAnalyticsJobData) {
-  return analyticsQueue.add("pre-compute-analytics", jobData, {
+  return jobsQueue.add("pre-compute-analytics", jobData, {
     priority: 5,
+    attempts: 2,
+    backoff: { type: "fixed", delay: 10000 },
+    removeOnComplete: 5,
+    removeOnFail: 2,
   });
 }
 
 export async function addComputeFocusStreakJob(jobData: ComputeFocusStreakJobData) {
-  return analyticsQueue.add("compute-focus-streak", jobData, {
+  return jobsQueue.add("compute-focus-streak", jobData, {
     priority: 4,
+    attempts: 2,
+    backoff: { type: "fixed", delay: 10000 },
+    removeOnComplete: 5,
+    removeOnFail: 2,
   });
 }

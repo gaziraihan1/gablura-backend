@@ -1,25 +1,7 @@
-import { Queue } from "bullmq";
+import { jobsQueue } from "./jobs.queue.js";
 
-const INTEGRATION_QUEUE_NAME = "integration";
-
-export const integrationQueue = new Queue(INTEGRATION_QUEUE_NAME, {
-  connection: {
-    host: process.env.REDIS_HOST ?? "localhost",
-    port: parseInt(process.env.REDIS_PORT ?? "6379"),
-    password: process.env.REDIS_PASSWORD ?? undefined,
-    tls: process.env.REDIS_URL?.startsWith("rediss://") ? {} : undefined,
-    maxRetriesPerRequest: parseInt(process.env.REDIS_MAX_RETRIES ?? "3"),
-  },
-  defaultJobOptions: {
-    attempts: 3,
-    backoff: {
-      type: "exponential",
-      delay: 5000,
-    },
-    removeOnComplete: 50, // Reduced from 100 to reduce Redis memory usage
-    removeOnFail: 25,    // Reduced from 50 to reduce Redis memory usage
-  },
-});
+// Legacy alias — retained so existing imports/tests keep working.
+export const integrationQueue = jobsQueue;
 
 // Job data types
 export interface SyncIntegrationJobData {
@@ -35,14 +17,23 @@ export interface ProcessWebhookJobData {
   timestamp?: string;
 }
 
+const INTEGRATION_JOB_OPTS = {
+  attempts: 3,
+  backoff: { type: "exponential" as const, delay: 5000 },
+  removeOnComplete: 50,
+  removeOnFail: 25,
+};
+
 export async function addSyncIntegrationJob(jobData: SyncIntegrationJobData) {
-  return integrationQueue.add("sync-integration", jobData, {
+  return jobsQueue.add("sync-integration", jobData, {
     priority: 2,
+    ...INTEGRATION_JOB_OPTS,
   });
 }
 
 export async function addProcessWebhookJob(jobData: ProcessWebhookJobData) {
-  return integrationQueue.add("process-webhook", jobData, {
+  return jobsQueue.add("process-webhook", jobData, {
     priority: 1,
+    ...INTEGRATION_JOB_OPTS,
   });
 }

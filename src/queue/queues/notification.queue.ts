@@ -1,25 +1,7 @@
-import { Queue } from "bullmq";
+import { jobsQueue } from "./jobs.queue.js";
 
-const NOTIFICATION_QUEUE_NAME = "notification";
-
-export const notificationQueue = new Queue(NOTIFICATION_QUEUE_NAME, {
-  connection: {
-    host: process.env.REDIS_HOST ?? "localhost",
-    port: parseInt(process.env.REDIS_PORT ?? "6379"),
-    password: process.env.REDIS_PASSWORD ?? undefined,
-    tls: process.env.REDIS_URL?.startsWith("rediss://") ? {} : undefined,
-    maxRetriesPerRequest: parseInt(process.env.REDIS_MAX_RETRIES ?? "3"),
-  },
-  defaultJobOptions: {
-    attempts: 3,
-    backoff: {
-      type: "exponential",
-      delay: 1000,
-    },
-    removeOnComplete: 100, // Reduced from 200 to reduce Redis memory usage
-    removeOnFail: 50,     // Reduced from 100 to reduce Redis memory usage
-  },
-});
+// Legacy alias — retained so existing imports/tests keep working.
+export const notificationQueue = jobsQueue;
 
 // Job data types
 export interface SendNotificationJobData {
@@ -52,13 +34,28 @@ export interface NotifyWorkspaceMembersJobData {
 }
 
 export async function addSendNotificationJob(jobData: SendNotificationJobData) {
-  return notificationQueue.add("send-notification", jobData);
+  return jobsQueue.add("send-notification", jobData, {
+    attempts: 3,
+    backoff: { type: "exponential", delay: 1000 },
+    removeOnComplete: 100,
+    removeOnFail: 50,
+  });
 }
 
 export async function addNotifyTaskAssigneesJob(jobData: NotifyTaskAssigneesJobData) {
-  return notificationQueue.add("notify-task-assignees", jobData);
+  return jobsQueue.add("notify-task-assignees", jobData, {
+    attempts: 3,
+    backoff: { type: "exponential", delay: 1000 },
+    removeOnComplete: 100,
+    removeOnFail: 50,
+  });
 }
 
 export async function addNotifyWorkspaceMembersJob(jobData: NotifyWorkspaceMembersJobData) {
-  return notificationQueue.add("notify-workspace-members", jobData);
+  return jobsQueue.add("notify-workspace-members", jobData, {
+    attempts: 3,
+    backoff: { type: "exponential", delay: 1000 },
+    removeOnComplete: 100,
+    removeOnFail: 50,
+  });
 }
