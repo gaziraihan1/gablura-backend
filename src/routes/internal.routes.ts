@@ -51,14 +51,24 @@ function verifyInternalProof(req: Request): boolean {
   const body: Record<string, unknown> = req.body ?? {};
   const { timestamp, signature } = body;
   if (typeof timestamp !== "number" || typeof signature !== "string") {
+    console.error("[internal] Missing or invalid timestamp/signature fields", {
+      hasBody: !!req.body,
+      bodyKeys: Object.keys(body ?? {}),
+      timestampType: typeof timestamp,
+      signatureType: typeof signature,
+    });
     return false;
   }
   if (!process.env.NEXTAUTH_SECRET) {
-    return false; // no shared secret configured — reject rather than throw
+    console.error("[internal] NEXTAUTH_SECRET not configured");
+    return false;
   }
   // Proof must be fresh (< 60s) to bound replayability of the signed payload.
   const age = Date.now() - timestamp;
-  if (age > 60_000 || age < 0) return false;
+  if (age > 60_000 || age < 0) {
+    console.error("[internal] Timestamp expired or future", { age, timestamp, now: Date.now() });
+    return false;
+  }
 
   const { signature: _s, ...fields } = body;
   const payload = JSON.stringify(fields);
@@ -67,11 +77,15 @@ function verifyInternalProof(req: Request): boolean {
     .update(payload)
     .digest("hex");
   try {
-    return crypto.timingSafeEqual(
-      Buffer.from(signature, "hex"),
-      Buffer.from(expected, "hex"),
-    );
-  } catch {
+    const sigBuf = Buffer.from(signature, "hex");
+    const expBuf = Buffer.from(expected, "hex");
+    const match = crypto.timingSafeEqual(sigBuf, expBuf);
+    if (!match) {
+      console.error("[internal] HMAC mismatch", { payload: payload.substring(0, 200), expected: expected.substring(0, 16), got: signature.substring(0, 16) });
+    }
+    return match;
+  } catch (err) {
+    console.error("[internal] HMAC comparison error:", err);
     return false;
   }
 }
