@@ -51,48 +51,26 @@ function verifyInternalProof(req: Request): boolean {
   const body: Record<string, unknown> = req.body ?? {};
   const { timestamp, signature } = body;
   if (typeof timestamp !== "number" || typeof signature !== "string") {
-    console.error("[internal] Missing or invalid timestamp/signature fields", {
-      hasBody: !!req.body,
-      bodyKeys: Object.keys(body ?? {}),
-      timestampType: typeof timestamp,
-      signatureType: typeof signature,
-    });
     return false;
   }
   if (!process.env.NEXTAUTH_SECRET) {
-    console.error("[internal] NEXTAUTH_SECRET not configured");
     return false;
   }
-  // Proof must be fresh (< 60s) to bound replayability of the signed payload.
   const age = Date.now() - timestamp;
-  if (age > 60_000 || age < 0) {
-    console.error("[internal] Timestamp expired or future", { age, timestamp, now: Date.now() });
-    return false;
-  }
+  if (age > 60_000 || age < 0) return false;
 
-  const { signature: _s, ...fields } = body;
+  const { signature: _s, timestamp: _t, ...fields } = body;
   const payload = JSON.stringify(fields);
-  const secret = process.env.NEXTAUTH_SECRET!;
   const expected = crypto
-    .createHmac("sha256", secret)
+    .createHmac("sha256", process.env.NEXTAUTH_SECRET!)
     .update(payload)
     .digest("hex");
   try {
-    const sigBuf = Buffer.from(signature, "hex");
-    const expBuf = Buffer.from(expected, "hex");
-    const match = crypto.timingSafeEqual(sigBuf, expBuf);
-    if (!match) {
-      console.error("[internal] HMAC mismatch", {
-        secretLen: secret.length,
-        secretBytes: [...Buffer.from(secret)].slice(0, 4),
-        payload: payload.substring(0, 200),
-        expected: expected.substring(0, 16),
-        got: signature.substring(0, 16),
-      });
-    }
-    return match;
-  } catch (err) {
-    console.error("[internal] HMAC comparison error:", err);
+    return crypto.timingSafeEqual(
+      Buffer.from(signature, "hex"),
+      Buffer.from(expected, "hex"),
+    );
+  } catch {
     return false;
   }
 }
