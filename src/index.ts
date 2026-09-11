@@ -58,6 +58,7 @@ import {
   initAutomationCrons,
 } from "./modules/automation/index.js";
 import { aiRouter } from "./modules/ai/index.js";
+import { ratingRouter } from "./modules/rating/index.js";
 import { timeEntryRouter } from "./modules/timeEntry/index.js";
 import { integrationRouter, workspaceIntegrationRouter, integrationWebhookRouter } from "./modules/integration/index.js";
 import { initQueueWorkers, closeQueueWorkers } from "./queue/index.js";
@@ -241,6 +242,7 @@ app.get("/api/v1/auth/activity", authenticate, sessionTimeout, (_req, res) =>
 // Public Routes (No Auth, No CSRF)
 // ============================================================================
 app.use("/api/v1/notifications", notificationRouter);
+app.use("/api/v1/ratings", ratingRouter);
 app.use("/api/v1/contact", contactRouter);
 app.use("/api/v1/jobs", jobRouter);
 app.use("/api/v1/templates", templatesRouter);
